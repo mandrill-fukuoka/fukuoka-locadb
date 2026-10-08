@@ -1,0 +1,15 @@
+# Supabase無料枠の一時停止（1週間アクセスなし）を防ぐ：木曜・土曜に軽く接続
+name: keepalive
+on:
+  schedule: [{ cron: "0 0 * * 4,6" }]
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/rpc/ping" \
+            -H "apikey: $KEY" -H "Content-Type: application/json" -d '{}'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
