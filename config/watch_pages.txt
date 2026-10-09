@@ -1,6 +1,22 @@
-# 変化リスク監視の対象ページ（1行1URL。タブの後にラベルを書ける）
-# 一次資料を優先して登録してください。例：
-#   福岡市の都市計画・再開発（天神ビッグバン、博多コネクティッド等）の公式ページ
-#   福岡市・福岡県の報道発表一覧
-#   区役所・施設の閉館・移転のお知らせ
-# https://www.city.fukuoka.lg.jp/...	天神ビッグバン
+# 変化リスクの監視対象（1行1URL。タブの後にラベル）
+# 週1回取得し、前回から内容が変わったページだけ、登録地点名と
+# 「解体・閉店・閉館・再開発・建替・移転・跡地活用」などの語を照合して「要確認」に登録します。
+# {YYYY} {M} を含むURLは、今月と先月のページに自動で置き換えます。
+
+# --- 都心部の再開発（天神・博多） ---
+https://www.city.fukuoka.lg.jp/jutaku-toshi/kaihatsu/shisei/tbb_shintyoku.html	天神ビッグバンの進捗
+https://www.city.fukuoka.lg.jp/jutaku-toshi/kaihatsu/shisei/tbb_ref.html	天神ビッグバン関連資料・最新情報
+https://www.city.fukuoka.lg.jp/jutaku-toshi/kaihatsu/shisei/tbbb_hc_special.html	天神ビッグバン・博多コネクティッド特設ページ
+https://tbbhc.jp/	天神ビッグバン・博多コネクティッド（市の特設サイト）
+
+# --- 大規模な跡地・まちづくり ---
+https://www.city.fukuoka.lg.jp/jutaku-toshi/gakkenntoshi/machi/002_2.html	九州大学箱崎キャンパス跡地のまちづくり（東区）
+https://www.city.fukuoka.lg.jp/jutaku-toshi/atoti_keikaku/shisei/reisen_atochi.html	冷泉小学校跡地活用（博多区）
+https://www.city.fukuoka.lg.jp/kyoiku-iinkai/y_keikaku/shisei/sunoko_atochi.html	簀子小学校跡地活用（中央区）
+
+# --- 建替・大規模事業 ---
+https://www.city.fukuoka.lg.jp/jutaku-toshi/tatekae/life/fukuokacitymunicipalhousingrebuilding.html	市営住宅建替事業（団地の建替予定）
+https://www.city.fukuoka.lg.jp/kankyo/k-chosei/hp/assess/jissi/jisshi.html	環境影響評価の実施状況（大規模開発の一覧）
+
+# --- 福岡市の報道発表（月別一覧。閉館・移転・跡地活用などの発表を拾う） ---
+https://www.city.fukuoka.lg.jp/shisei/kouhou-hodo/hodo-happyo/{YYYY}/{M}.html	福岡市 記者発表（今月・先月）
