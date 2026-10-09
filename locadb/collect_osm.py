@@ -11,7 +11,12 @@ import requests
 
 from .db import connect, job
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# 公開Overpassサーバー（混雑時は順に切り替え）
+OVERPASS_URLS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+]
 
 # エリアコード → OSMの区名
 AREA_NAMES = {
@@ -63,15 +68,20 @@ out center tags;
 """
 
 
-def fetch(query: str) -> list[dict]:
-    for attempt in range(4):
-        r = requests.post(OVERPASS_URL, data={"data": query}, timeout=180,
-                          headers={"User-Agent": "fukuoka-locadb/0.1 (location research)"})
-        if r.status_code == 200:
-            return r.json().get("elements", [])
-        time.sleep(10 * (attempt + 1))  # 429/504 対策
-    r.raise_for_status()
-    return []
+def fetch(query: str) -> list[dict] | None:
+    """取得できなければ None（その種別は今回スキップし、登録済みデータは残す）"""
+    for attempt in range(3):
+        for url in OVERPASS_URLS:
+            try:
+                r = requests.post(url, data={"data": query}, timeout=200,
+                                  headers={"User-Agent": "fukuoka-locadb/0.1 (location research)"})
+                if r.status_code == 200:
+                    return r.json().get("elements", [])
+                print(f"    {url.split('/')[2]}: HTTP {r.status_code}")
+            except (requests.RequestException, ValueError) as e:
+                print(f"    {url.split('/')[2]}: {type(e).__name__}")
+        time.sleep(20 * (attempt + 1))  # 混雑時は待ってから再試行
+    return None
 
 
 def point_of(el: dict):
@@ -87,6 +97,10 @@ def run(area_code: str, categories: list[str] | None = None) -> dict:
     with connect() as conn, job(conn, f"collect_osm:{area_code}") as stats:
         for cat in cats:
             els = fetch(build_query(area_name, CATEGORY_QUERIES[cat]))
+            if els is None:
+                print(f"  {cat}: 取得失敗（サーバー混雑）→ 今回はスキップ")
+                stats.setdefault("skipped", []).append(cat)
+                continue
             n = 0
             for el in els:
                 pt = point_of(el)
