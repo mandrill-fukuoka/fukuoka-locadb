@@ -6,6 +6,7 @@
 """
 import hashlib
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -14,11 +15,20 @@ from .db import connect, job
 
 KEYWORDS = [
     ("demolition", r"解体|取り壊し|除却"),
-    ("closure", r"閉店|閉館|閉鎖|営業終了|閉院|廃校"),
+    ("closure", r"閉店|閉館|閉鎖|営業終了|閉院|廃校|閉校|廃止"),
     ("redevelopment", r"再開発|建て替え|建替|新築計画|都市計画決定"),
-    ("use_change", r"用途変更|移転|跡地活用|リノベーション"),
+    ("use_change", r"用途変更|移転|跡地|リノベーション"),
 ]
 CONFIG = Path(__file__).resolve().parent.parent / "config" / "watch_pages.txt"
+
+
+def expand_url(url: str) -> list[str]:
+    """{YYYY}/{M} を含むURLは、今月と先月の2件に展開する（月別の報道発表一覧など）"""
+    if "{YYYY}" not in url and "{M}" not in url:
+        return [url]
+    now = datetime.now(timezone(timedelta(hours=9)))
+    prev = (now.replace(day=1) - timedelta(days=1))
+    return [url.replace("{YYYY}", str(d.year)).replace("{M}", str(d.month)) for d in (now, prev)]
 
 
 def page_text(html: str) -> str:
@@ -47,14 +57,20 @@ def run() -> dict:
             "and name not like '（無名）%%'").fetchall()
         changed = found = 0
         for p in conn.execute("select * from watch_pages").fetchall():
-            try:
-                r = requests.get(p["url"], timeout=30, headers={"User-Agent": "fukuoka-locadb/0.1"})
-                r.raise_for_status()
-            except requests.RequestException as e:
-                print(f"  取得失敗 {p['url']}: {e}")
+            texts = []
+            for url in expand_url(p["url"]):
+                try:
+                    r = requests.get(url, timeout=30, headers={"User-Agent": "fukuoka-locadb/0.1"})
+                    r.raise_for_status()
+                except requests.RequestException as e:
+                    print(f"  取得失敗 {url}: {e}")
+                    continue
+                r.encoding = r.apparent_encoding
+                texts.append(page_text(r.text))
+            if not texts:
                 continue
-            r.encoding = r.apparent_encoding
-            text = page_text(r.text)
+            text = " ".join(texts)
+            src_url = expand_url(p["url"])[0]
             h = hashlib.sha256(text.encode()).hexdigest()
             conn.execute("update watch_pages set last_checked=now(), last_hash=%s where id=%s", (h, p["id"]))
             if h == p["last_hash"]:
@@ -68,14 +84,14 @@ def run() -> dict:
                         continue
                     exists = conn.execute(
                         "select 1 from change_risks where spot_id=%s and source_url=%s and risk_type=%s",
-                        (s["id"], p["url"], rtype)).fetchone()
+                        (s["id"], src_url, rtype)).fetchone()
                     if not exists:
                         conn.execute(
                             """insert into change_risks (spot_id, risk_type, evidence, source_url, verified, review_by)
                                values (%s,%s,%s,%s,false, current_date + 14)""",
-                            (s["id"], rtype, ctx, p["url"]))
+                            (s["id"], rtype, ctx, src_url))
                         found += 1
-                        print(f"  要確認: {s['name']} [{rtype}] ← {p['url']}")
+                        print(f"  要確認: {s['name']} [{rtype}] ← {src_url}")
                     break
             conn.commit()
         stats.update(pages_changed=changed, risks_flagged=found)
