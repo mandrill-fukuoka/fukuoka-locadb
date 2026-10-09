@@ -5,6 +5,7 @@
   python -m locadb.pipeline --area fuk-chuo --skip-collect
 """
 import argparse
+import os
 
 from . import build_clusters, classify, collect_osm, merge, monitor_risk
 
@@ -24,7 +25,9 @@ def main():
         if not a.skip_collect:
             print("[1] OSM収集");      collect_osm.run(area)
         print("[2] 重複統合");          merge.run(area)
-        if not a.skip_classify:
+        if a.skip_classify or not os.environ.get("ANTHROPIC_API_KEY"):
+            print("[3] AI分類：スキップ（ANTHROPIC_API_KEY 未設定）")
+        else:
             print("[3] AI分類");       classify.run(area, limit=1000)
         print("[4] クラスター生成");    build_clusters.run(area)
     print("[5] 変化リスク監視");        monitor_risk.run()
