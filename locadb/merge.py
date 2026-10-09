@@ -30,7 +30,8 @@ def run(area_code: str) -> dict:
         for r in rows:
             match = conn.execute(
                 """select id from spots
-                   where ST_DWithin(geom, ST_SetSRID(ST_MakePoint(%(lon)s,%(lat)s),4326)::geography, 80)
+                   where status <> 'archived'
+                     and ST_DWithin(geom, ST_SetSRID(ST_MakePoint(%(lon)s,%(lat)s),4326)::geography, 80)
                      and ( (%(name)s::text is not null and similarity(name, %(name)s::text) >= 0.6)
                            or (category = %(cat)s::text and ST_DWithin(geom,
                                ST_SetSRID(ST_MakePoint(%(lon)s,%(lat)s),4326)::geography, 30)) )
@@ -58,7 +59,7 @@ def run(area_code: str) -> dict:
                 """insert into sources (spot_id, kind, title, url)
                    values (%s, %s, %s, %s)""",
                 (spot_id, r["source"], r["source_ref"],
-                 "https://www.openstreetmap.org/" + r["source_ref"].split(":", 1)[1]
+                 "https://www.openstreetmap.org/" + r["source_ref"].split(":", 1)[1].split("@")[0]
                  if r["source"] == "osm" else None),
             )
         stats.update(created=created, merged=merged)
