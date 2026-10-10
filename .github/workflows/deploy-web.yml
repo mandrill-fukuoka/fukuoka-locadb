@@ -13,6 +13,7 @@ concurrency: { group: deploy-web, cancel-in-progress: false }
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: FTP_HOST        # FTP の Secrets はこの環境に登録されている
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp php-cli
