@@ -52,9 +52,10 @@ def sync_config(conn):
 def run(run_id: int | None = None) -> dict:
     with connect() as conn, job(conn, "monitor_risk", run_id) as stats:
         sync_config(conn)
+        # 同じ名前の地点（川の流域の地点など）は1件だけ照合する（同じ根拠で何件も「要確認」にしない）
         names = conn.execute(
-            "select id, name from spots where data_status<>'archived' and char_length(name) >= 4 "
-            "and name not like '（無名）%%'").fetchall()
+            "select distinct on (name) id, name from spots where data_status<>'archived' and char_length(name) >= 4 "
+            "and name not like '（無名）%%' order by name, (sample_key is not null), id").fetchall()
         changed = found = failed = 0
         for p in conn.execute("select * from watch_pages").fetchall():
             texts, errors = [], []

@@ -1,0 +1,20 @@
+# 旧版で人が確認した地点・保存した流れ・変化リスクを、新しい地点に引き継ぐ（何度実行しても二重にならない）
+name: import-legacy
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+concurrency: { group: database, cancel-in-progress: false }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "psycopg[binary]>=3.2"
+      - run: python tools/import_legacy.py $( [ "${{ inputs.mode }}" = apply ] || echo --dry-run )
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
