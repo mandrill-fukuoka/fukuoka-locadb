@@ -81,7 +81,7 @@ page_header('ロケハンリスト', 'list.php');
   <?php endif; ?>
 </section>
 <script>
-(function () {
+document.addEventListener('DOMContentLoaded', function () {
   const L = window.locadbList;
   const urlIds = <?= json_encode(array_map('intval', array_column($rows, 'id'))) ?>;
   const mine = L.read();
@@ -110,6 +110,6 @@ page_header('ロケハンリスト', 'list.php');
   cp && cp.addEventListener('click', () => {
     navigator.clipboard && navigator.clipboard.writeText(cp.dataset.url).then(() => { cp.textContent = 'コピーしました'; });
   });
-})();
+});
 </script>
 <?php overview_map_script(); page_footer();
