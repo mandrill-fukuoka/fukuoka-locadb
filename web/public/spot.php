@@ -63,14 +63,14 @@ $osmUrl = fn($f) => $f['kind'] === 'element'
     : (!empty($f['way_ids'][0]) ? 'https://www.openstreetmap.org/way/' . $f['way_ids'][0] : '');
 $lineName = ($s['shape'] ?? '') === 'line' ? preg_replace('/^（無名）.*/u', '', (string)($s['osm'][0]['name'] ?? '')) : '';
 
-page_header($s['name'], '');
+page_header(nm($s['name']), '');
 ?>
 <article class="spotpage">
   <p class="crumb small muted"><a href="index.php?grp=<?= h($s['grp_code']) ?>"><?= dot($s['grp_code']) ?><?= h($s['grp']) ?></a>
     ／ <a href="index.php?cat=<?= h($s['category']) ?>"><?= h($s['category_name']) ?></a>
     ／ <a href="index.php?area=<?= h($s['area_code']) ?>"><?= h(AREA_LABEL[$s['area_code']] ?? '') ?></a>
     <span class="code"><?= h($s['code']) ?></span></p>
-  <h1><?= h($s['name']) ?></h1>
+  <h1><?= h(nm($s['name'])) ?></h1>
   <p class="lead">
     <?php if ($s['address']): ?><span><?= h($s['address']) ?></span><?php endif; ?>
     <?php foreach ($s['extra_categories'] ?? [] as $x): ?><span class="chip"><?= h($x) ?></span><?php endforeach; ?>
@@ -95,7 +95,7 @@ page_header($s['name'], '');
         <a class="gmaps-btn" target="_blank" rel="noopener" href="<?= h($gmaps) ?>">Googleマップで開く</a>
         <a class="gmaps-btn" target="_blank" rel="noopener" href="<?= h($streetView) ?>">ストリートビュー</a>
         <a class="gmaps-btn addlist" href="#" data-id="<?= (int)$s['id'] ?>">＋ロケハンリスト</a>
-        <a class="gmaps-btn" href="flow.php?<?= h(http_build_query(['start' => $s['id'], 'start_name' => $s['name']])) ?>">ここから流れを探す</a>
+        <a class="gmaps-btn" href="flow.php?<?= h(http_build_query(['start' => $s['id'], 'start_name' => nm($s['name'])])) ?>">ここから流れを探す</a>
       </p>
       <p class="small muted">位置：<?= h(POSITION_LABEL[$s['position_kind']] ?? '') ?>。<?= h(number_format($lat, 5)) ?>, <?= h(number_format($lon, 5)) ?>
         <?php if ($s['position_kind'] === 'standpoint'): ?>（線上の位置から近くの道に寄せています）<?php endif; ?></p>
@@ -137,7 +137,7 @@ page_header($s['name'], '');
         <?php if (!$nearby): ?><p class="muted small">周辺に登録地点がありません。</p><?php else: ?>
         <ul class="nearby compact">
           <?php foreach (array_slice($nearby, 0, 14) as $n): ?>
-            <li><?= dot($n['grp_code'] ?? $n['grp']) ?><a class="plain" href="spot.php?id=<?= (int)$n['id'] ?>"><?= h($n['name']) ?></a>
+            <li><?= dot($n['grp_code'] ?? $n['grp']) ?><a class="plain" href="spot.php?id=<?= (int)$n['id'] ?>"><?= h(nm($n['name'])) ?></a>
               <span class="muted small"><?= (int)$n['meters'] ?>m</span></li>
           <?php endforeach; ?>
         </ul>

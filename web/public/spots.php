@@ -96,7 +96,7 @@ page_header('地点の確認', 'spots.php');
   <?php foreach ($rows as $s): $has = array_column($s['tags'] ?? [], 'origin', 'code'); ?>
     <details class="card spot" <?= $queue === 'review' ? 'open' : '' ?>>
       <summary>
-        <strong><?= h($s['name']) ?></strong>
+        <strong><?= h(nm($s['name'])) ?></strong>
         <span class="muted"><?= h($s['category']) ?>・<?= h($s['address'] ?: (AREA_LABEL[$s['area_code']] ?? '')) ?></span>
         <span class="chip dim"><?= h(STATUS_LABEL[$s['status']] ?? '') ?>／<?= h(CONF_LABEL[$s['confidence']] ?? '') ?></span>
         <?php if ($s['data_status'] === 'needs_review'): ?><span class="chip warn"><?= h($s['review_reason'] ?: '要確認') ?></span><?php endif; ?>
@@ -106,13 +106,13 @@ page_header('地点の確認', 'spots.php');
       <p class="small"><a href="spot.php?id=<?= (int)$s['id'] ?>">詳細・変更履歴</a>・<?= h($s['code']) ?>・時代感 <?= h($s['era_feel'] ?? '—') ?>
         ・<a target="_blank" rel="noopener" href="https://www.google.com/maps?q=<?= h($s['lat']) ?>,<?= h($s['lon']) ?>">地図</a></p>
       <?php if ($s['data_status'] === 'archived'): ?>
-        <form method="post" class="row"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$s['id'] ?>"><input type="hidden" name="name" value="<?= h($s['name']) ?>">
+        <form method="post" class="row"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$s['id'] ?>"><input type="hidden" name="name" value="<?= h(nm($s['name'])) ?>">
           <input name="note" placeholder="メモ"><button name="action" value="restore" class="secondary">掲載に戻す</button></form>
       <?php else: ?>
       <form method="post" action="<?= h($qs(['p' => $page])) ?>">
         <?= csrf_field() ?>
         <input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
-        <input type="hidden" name="name" value="<?= h($s['name']) ?>">
+        <input type="hidden" name="name" value="<?= h(nm($s['name'])) ?>">
         <label>説明<textarea name="summary" rows="2"><?= h($s['summary']) ?></textarea></label>
         <fieldset class="tags"><legend>タグ（チェックしたものを人の判断として保存）</legend>
           <?php foreach ($tags as $t): ?>

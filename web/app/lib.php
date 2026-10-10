@@ -16,6 +16,13 @@ session_start();
 
 function cfg(string $key, $default = null) { global $CONFIG; return $CONFIG[$key] ?? $default; }
 function h($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+// 地点名の表示：名前のない地点（「（無名）種別（町丁目）」）は「町丁目の種別」と表示する
+function nm($name): string {
+    $name = (string)$name;
+    if (preg_match('/^（無名）(.+?)（(.+)）$/u', $name, $m)) return $m[2] . 'の' . $m[1];
+    if (preg_match('/^（無名）(.+)$/u', $name, $m)) return $m[1] . '（名称なし）';
+    return $name;
+}
 
 // ---------- ログイン ----------
 function current_user(): ?string { return $_SESSION['user'] ?? null; }
@@ -301,7 +308,7 @@ function render_route_card(array $r, int $i, array $opt = []): void {
           <li class="cut" style="--c:<?= h($c) ?>">
             <div class="shot">
               <?php if (!empty($s['photo_url'])): ?>
-                <img src="<?= h($s['photo_url']) ?>" alt="<?= h($s['name']) ?>" loading="lazy">
+                <img src="<?= h($s['photo_url']) ?>" alt="<?= h(nm($s['name'])) ?>" loading="lazy">
               <?php else: ?>
                 <?= minimap_html($s, 16) ?>
               <?php endif; ?>
@@ -310,7 +317,7 @@ function render_route_card(array $r, int $i, array $opt = []): void {
             <?php if ($k > 0): ?><span class="hop"><?= h($modeLabel) ?> <?= h($s['minutes_from_prev'] ?? '') ?>分</span><?php endif; ?>
             <div class="cap">
               <span class="grp"><i class="dot" aria-hidden="true"></i><?= h($s['group'] ?? '') ?></span>
-              <strong class="name"><?php if (!empty($s['id'])): ?><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h($s['name']) ?></a><?php else: ?><?= h($s['name']) ?><?php endif; ?></strong>
+              <strong class="name"><?php if (!empty($s['id'])): ?><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h(nm($s['name'])) ?></a><?php else: ?><?= h(nm($s['name'])) ?><?php endif; ?></strong>
               <span class="flags"><?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?><?php if (($s['data_status'] ?? '') === 'archived'): ?><span class="chip warn">対象外</span><?php endif; ?><?php if (($s['confidence'] ?? '') !== 'field_checked' && !empty(CONF_LABEL[$s['confidence'] ?? ''])): ?><span class="chip dim"><?= h(CONF_LABEL[$s['confidence']]) ?></span><?php endif; ?></span>
               <?php if (!empty($s['summary'])): ?><span class="desc"><?= h($s['summary']) ?></span><?php endif; ?>
               <?php if (!empty($s['id'])): ?><span class="links"><a href="spot.php?id=<?= (int)$s['id'] ?>">詳細</a><a href="index.php?near=<?= (int)$s['id'] ?>">周辺の景観</a><a href="#" class="addlist" data-id="<?= (int)$s['id'] ?>">＋リスト</a></span><?php endif; ?>

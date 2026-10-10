@@ -72,14 +72,14 @@ page_header('場所を探す', 'index.php');
 
 <?php if ($near && $nearSpot): ?>
   <section class="card">
-    <h2>「<?= h($nearSpot['name']) ?>」の周辺（約800m以内）</h2>
-    <p><a class="gmaps-btn" href="flow.php?<?= h(http_build_query(['start' => $near, 'start_name' => $nearSpot['name']])) ?>">ここを起点に流れを探す</a></p>
+    <h2>「<?= h(nm($nearSpot['name'])) ?>」の周辺（約800m以内）</h2>
+    <p><a class="gmaps-btn" href="flow.php?<?= h(http_build_query(['start' => $near, 'start_name' => nm($nearSpot['name'])])) ?>">ここを起点に流れを探す</a></p>
     <?php if (!$nearby): ?><p class="muted">周辺に登録地点がありません。</p><?php else: ?>
-      <?php overview_map(array_map(fn($n) => ['lat' => $n['lat'], 'lon' => $n['lon'], 'name' => $n['name'], 'grp' => $n['grp_code'] ?? '',
+      <?php overview_map(array_map(fn($n) => ['lat' => $n['lat'], 'lon' => $n['lon'], 'name' => nm($n['name']), 'grp' => $n['grp_code'] ?? '',
             'sub' => $n['grp'] . '・' . (int)$n['meters'] . 'm'], $nearby), 'nearmap', 'map'); ?>
       <ul class="nearby">
         <?php foreach ($nearby as $k => $n): ?>
-          <li id="nearmap-item-<?= $k + 1 ?>"><span class="num"><?= $k + 1 ?></span><strong><a class="plain" href="spot.php?id=<?= (int)$n['id'] ?>"><?= h($n['name']) ?></a></strong> <span class="muted"><?= dot($n['grp_code'] ?? $n['grp']) ?><?= h($n['grp']) ?>・<?= (int)$n['meters'] ?>m</span>
+          <li id="nearmap-item-<?= $k + 1 ?>"><span class="num"><?= $k + 1 ?></span><strong><a class="plain" href="spot.php?id=<?= (int)$n['id'] ?>"><?= h(nm($n['name'])) ?></a></strong> <span class="muted"><?= dot($n['grp_code'] ?? $n['grp']) ?><?= h($n['grp']) ?>・<?= (int)$n['meters'] ?>m</span>
             <a class="small" href="?near=<?= (int)$n['id'] ?>">周辺</a>
             <a class="small" target="_blank" rel="noopener" href="https://www.google.com/maps?q=<?= h($n['lat']) ?>,<?= h($n['lon']) ?>">地図</a></li>
         <?php endforeach; ?>
@@ -93,14 +93,14 @@ page_header('場所を探す', 'index.php');
   <?php if ($rows): ?>
     <section class="card places-wrap">
       <h2>検索結果 <?= count($rows) ?>件<?= count($rows) === $per ? '（このページ）' : '' ?></h2>
-      <?php overview_map(array_map(fn($s) => ['lat' => $s['lat'], 'lon' => $s['lon'], 'name' => $s['name'], 'grp' => $s['grp_code'] ?? '',
+      <?php overview_map(array_map(fn($s) => ['lat' => $s['lat'], 'lon' => $s['lon'], 'name' => nm($s['name']), 'grp' => $s['grp_code'] ?? '',
             'sub' => $s['category'] . '・' . (AREA_LABEL[$s['area_code']] ?? '')], $rows), 'ovmap'); ?>
       <p class="small muted">ピン、または一覧の「全体地図で表示」を押すと、その地点に寄ります。各候補の右の地図は周辺地図です（押すとGoogleマップで開きます）。川・線路など長いものは、同じ区の地点を「ほか○か所」として1件にまとめています（詳細ページで流域の地点を確認できます）。</p>
       <ol class="places">
         <?php foreach ($rows as $i => $s): ?>
           <li id="ovmap-item-<?= $i + 1 ?>" class="place-item">
             <div class="place-body">
-            <div><span class="num" style="background:<?= h(group_color((string)($s['grp_code'] ?? ''))) ?>"><?= $i + 1 ?></span><strong><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h($s['name']) ?></a></strong>
+            <div><span class="num" style="background:<?= h(group_color((string)($s['grp_code'] ?? ''))) ?>"><?= $i + 1 ?></span><strong><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h(nm($s['name'])) ?></a></strong>
               <span class="muted"><?= dot($s['grp_code'] ?? '') ?><?= h($s['category']) ?>・<?= h($s['address'] ?: (AREA_LABEL[$s['area_code']] ?? '')) ?></span>
               <?php if (($s['data_status'] ?? '') === 'needs_review'): ?><span class="chip warn">データ要確認</span><?php endif; ?>
               <?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?>
@@ -114,7 +114,7 @@ page_header('場所を探す', 'index.php');
               <a href="#ovmap" class="showmap" data-n="<?= $i + 1 ?>">全体地図で表示</a>
               <a href="spot.php?id=<?= (int)$s['id'] ?>">詳細</a>
               <a href="?near=<?= (int)$s['id'] ?>">周辺の景観</a>
-              <a href="flow.php?<?= h(http_build_query(['start' => $s['id'], 'start_name' => $s['name']])) ?>">ここから流れを探す</a>
+              <a href="flow.php?<?= h(http_build_query(['start' => $s['id'], 'start_name' => nm($s['name'])])) ?>">ここから流れを探す</a>
               <a href="#" class="addlist" data-id="<?= (int)$s['id'] ?>">＋ロケハンリスト</a>
             </div>
             </div>

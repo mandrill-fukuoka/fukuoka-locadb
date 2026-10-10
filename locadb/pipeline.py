@@ -32,9 +32,10 @@ def get_snapshot(pbf: str | None, watch: set[str]):
         print("[1] OSMファイルの取得（Geofabrik・九州）")
         src = osm_source.download(full)
         path = tmp / "fukuoka.osm.pbf"
+        src["osm_timestamp"] = osm_source.file_timestamp(full)    # 切り出すとヘッダーの時点が消えるので先に読む
         osm_source.clip(full, path)
         full.unlink()
-    src["osm_timestamp"] = osm_source.file_timestamp(path)
+    src.setdefault("osm_timestamp", osm_source.file_timestamp(path))
     print(f"    データ時点 {src.get('osm_timestamp')}")
     print("[2] 読み取り")
     snap = osm_source.read(path, watch)

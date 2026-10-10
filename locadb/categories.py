@@ -186,6 +186,9 @@ def display_name(t: dict, category: str) -> str:
         return next((x for x in parts if x.endswith("橋")), parts[0])
     if ROAD_NUMBER.match(nm):
         return ""
+    if category == "station" and nm and t.get("railway") in ("station", "halt") and not nm.endswith("駅") \
+            and t.get("bus") != "yes":
+        return nm + "駅"                              # 「大橋」→「大橋駅」（駅名で探せるように）
     return nm
 
 

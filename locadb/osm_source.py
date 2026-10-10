@@ -96,13 +96,16 @@ def clip(src: Path, dest: Path) -> None:
 
 
 def file_timestamp(path: Path) -> str | None:
-    """ファイルのデータ時点（OSMの最新編集の取り込み時刻）"""
-    try:
-        out = subprocess.run(["osmium", "fileinfo", "-g", "header.option.osmosis_replication_timestamp", str(path)],
-                             capture_output=True, text=True, check=True).stdout.strip()
-        return out or None
-    except Exception:  # noqa: BLE001
-        return None
+    """ファイルのデータ時点（ヘッダーの取り込み時刻。なければ最も新しい編集の時刻）"""
+    for args in (["-g", "header.option.osmosis_replication_timestamp"], ["-e", "-g", "data.timestamp.last"]):
+        try:
+            out = subprocess.run(["osmium", "fileinfo", *args, str(path)],
+                                 capture_output=True, text=True, check=True).stdout.strip()
+            if out:
+                return out
+        except Exception:  # noqa: BLE001
+            pass
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -329,7 +332,10 @@ def read(pbf: Path, watch: set[str] | None = None) -> Snapshot:
                     stand = best[1].interpolate(best[1].project(pt)); kind = "standpoint"
             lon, lat = to_ll(stand.x, stand.y)
             llon, llat = to_ll(pt.x, pt.y)
-            ac = area_of(lon, lat) or area_of(llon, llat)
+            ac = area_of(lon, lat)
+            if not ac:                                   # 寄せた先が市外なら線上の位置のまま
+                lon, lat, kind = llon, llat, "line_sample"
+                ac = area_of(lon, lat)
             if not ac:
                 continue
             samples.append(LineSample(f"{line_key}#{int(spacing)}:{cx}_{cy}", line_key, cat, name or "",

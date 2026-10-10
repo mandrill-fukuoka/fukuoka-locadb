@@ -4,6 +4,7 @@
 名前のない地点は「（無名）種別（町丁目）」と表示できるようにする。
 """
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -40,9 +41,9 @@ def run(run_id: int | None = None, limit: int = 20000) -> dict:
                                                              where h.spot_id = s.id and h.event = 'moved'))
                 order by s.id limit %s""", (limit,)).fetchall()
         ok = ng = 0
-        with requests.Session() as sess:
-            for r in rows:
-                addr = lookup(r["lon"], r["lat"], sess)
+        # 国土地理院のサービスへの負荷を抑えつつ、4件ずつ並行して問い合わせる
+        with requests.Session() as sess, ThreadPoolExecutor(max_workers=4) as pool:
+            for r, addr in zip(rows, pool.map(lambda r: lookup(r["lon"], r["lat"], sess), rows)):
                 if not addr:
                     ng += 1
                     continue
@@ -56,8 +57,7 @@ def run(run_id: int | None = None, limit: int = 20000) -> dict:
                 ok += 1
                 if ok % 200 == 0:
                     conn.commit()
-                    print(f"    住所 {ok}/{len(rows)}")
-                time.sleep(0.1)
+                    print(f"    住所 {ok}/{len(rows)}", flush=True)
         conn.commit()
         stats.update(target=len(rows), filled=ok, failed=ng)
         print(f"    住所を入れた地点 {ok}（取得できず {ng}）")
