@@ -49,30 +49,37 @@ def sync_config(conn):
     conn.commit()
 
 
-def run() -> dict:
-    with connect() as conn, job(conn, "monitor_risk") as stats:
+def run(run_id: int | None = None) -> dict:
+    with connect() as conn, job(conn, "monitor_risk", run_id) as stats:
         sync_config(conn)
         names = conn.execute(
-            "select id, name from spots where status<>'archived' and char_length(name) >= 4 "
+            "select id, name from spots where data_status<>'archived' and char_length(name) >= 4 "
             "and name not like '（無名）%%'").fetchall()
-        changed = found = 0
+        changed = found = failed = 0
         for p in conn.execute("select * from watch_pages").fetchall():
-            texts = []
+            texts, errors = [], []
             for url in expand_url(p["url"]):
                 try:
-                    r = requests.get(url, timeout=30, headers={"User-Agent": "fukuoka-locadb/0.1"})
+                    r = requests.get(url, timeout=30, headers={"User-Agent": "fukuoka-locadb/2.0"})
                     r.raise_for_status()
                 except requests.RequestException as e:
                     print(f"  取得失敗 {url}: {e}")
+                    errors.append(f"{url}: {type(e).__name__}")
                     continue
                 r.encoding = r.apparent_encoding
                 texts.append(page_text(r.text))
             if not texts:
+                # ページを取得できなかったことは、施設の閉鎖・消失とは別の情報として記録するだけ
+                failed += 1
+                conn.execute("update watch_pages set last_checked=now(), last_status='fetch_failed', last_error=%s "
+                             "where id=%s", ("; ".join(errors)[:500], p["id"]))
+                conn.commit()
                 continue
             text = " ".join(texts)
             src_url = expand_url(p["url"])[0]
             h = hashlib.sha256(text.encode()).hexdigest()
-            conn.execute("update watch_pages set last_checked=now(), last_hash=%s where id=%s", (h, p["id"]))
+            conn.execute("update watch_pages set last_checked=now(), last_hash=%s, last_status='ok', last_error=null "
+                         "where id=%s", (h, p["id"]))
             if h == p["last_hash"]:
                 continue
             changed += 1
@@ -87,14 +94,15 @@ def run() -> dict:
                         (s["id"], src_url, rtype)).fetchone()
                     if not exists:
                         conn.execute(
-                            """insert into change_risks (spot_id, risk_type, evidence, source_url, verified, review_by)
-                               values (%s,%s,%s,%s,false, current_date + 14)""",
+                            """insert into change_risks (spot_id, risk_type, evidence, source_url, fetched_at,
+                                                         certainty, verified, review_by)
+                               values (%s,%s,%s,%s,now(),'keyword',false, current_date + 14)""",
                             (s["id"], rtype, ctx, src_url))
                         found += 1
                         print(f"  要確認: {s['name']} [{rtype}] ← {src_url}")
                     break
             conn.commit()
-        stats.update(pages_changed=changed, risks_flagged=found)
+        stats.update(pages_changed=changed, risks_flagged=found, pages_failed=failed)
     return stats
 
 

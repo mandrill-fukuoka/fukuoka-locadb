@@ -1,4 +1,7 @@
 psycopg[binary]>=3.2
 requests>=2.31
+osmium>=4.0
+shapely>=2.0
+numpy>=1.26
 anthropic>=0.40
 python-dotenv>=1.0

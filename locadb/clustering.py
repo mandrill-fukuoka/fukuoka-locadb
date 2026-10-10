@@ -128,12 +128,20 @@ def build_from(anchor: Spot, pool: list[Spot], mode: str, max_stops: int = 4) ->
     return c
 
 
-def generate(spots: list[Spot], mode: str = "walk", top: int = 50, max_overlap: float = 0.5) -> list[Cluster]:
-    """全地点を起点に候補を作り、重複の少ない上位クラスターを返す"""
+def generate(spots: list[Spot], mode: str = "walk", top: int = 50, max_overlap: float = 0.5,
+             anchors: list[Spot] | None = None) -> list[Cluster]:
+    """起点（anchors。省略時は全地点）ごとに候補を作り、重複の少ない上位クラスターを返す。
+    途中の地点は spots 全体から選ぶので、区の境をまたぐ流れもできる"""
     radius = MAX_TOTAL_MIN[mode] * SPEED_M_PER_MIN[mode] / DETOUR
+    cell = radius
+    grid: dict = {}
+    for s in spots:
+        grid.setdefault((int(s.lat * 111000 // cell), int(s.lon * 92700 // cell)), []).append(s)
     cands = []
-    for a in spots:
-        pool = [s for s in spots if s.id != a.id and haversine_m(a, s) <= radius]
+    for a in (anchors if anchors is not None else spots):
+        cy, cx = int(a.lat * 111000 // cell), int(a.lon * 92700 // cell)
+        near = [s for dy in (-1, 0, 1) for dx in (-1, 0, 1) for s in grid.get((cy + dy, cx + dx), ())]
+        pool = [s for s in near if s.id != a.id and haversine_m(a, s) <= radius]
         c = build_from(a, pool, mode)
         if c:
             cands.append(c)

@@ -22,6 +22,15 @@ SYSTEM = """あなたは映像制作のロケーションリサーチャーで�
 - 出力はJSONのみ"""
 
 
+ERA = ("showa", "heisei", "reiwa", "mixed", "historic")
+SCOPE = ("exterior_public", "exterior_offsite", "interior_permit", "unknown")
+OWNER = ("public", "private", "mixed", "unknown")
+
+
+def pick(v, allowed, default):
+    return v if v in allowed else default
+
+
 def load_vocab(conn):
     tags = conn.execute("select code, name, facet from tags order by facet, code").fetchall()
     cats = conn.execute("select code, name from spot_categories").fetchall()
@@ -32,13 +41,14 @@ def context_for(conn, spot_id: int) -> dict:
     s = conn.execute(
         """select s.id, s.name, s.category, sc.name as category_name,
                   ST_Y(s.geom::geometry) lat, ST_X(s.geom::geometry) lon,
-                  (select jsonb_agg(rc.raw->'tags') from raw_candidates rc where rc.spot_id=s.id) osm_tags
+                  (select jsonb_agg(f.tags) from spot_features sf join features f on f.key = sf.feature_key
+                    where sf.spot_id=s.id and f.tags is not null) osm_tags
            from spots s left join spot_categories sc on sc.code=s.category where s.id=%s""",
         (spot_id,),
     ).fetchone()
     near = conn.execute(
         """select n.name, n.category, round(ST_Distance(n.geom, s.geom)) m
-           from spots s join spots n on n.id<>s.id and ST_DWithin(n.geom, s.geom, 400)
+           from spots s join spots n on n.id<>s.id and ST_DWithin(n.geom, s.geom, 400) and n.data_status<>'archived'
            where s.id=%s order by m limit 15""",
         (spot_id,),
     ).fetchall()
@@ -55,11 +65,8 @@ def classify_batch(client, tags, cats, items: list[dict]) -> list[dict]:
 # タグ語彙
 {vocab}
 
-# 地点種別（現在の種別が不適切なら修正案を category に）
-{cat_list}
-
 # 出力形式（JSON配列のみ）
-[{{"id": 1, "category": "code", "era_feel": "showa|heisei|reiwa|mixed|historic",
+[{{"id": 1, "era_feel": "showa|heisei|reiwa|mixed|historic",
   "shoot_scope": "exterior_public|exterior_offsite|interior_permit|unknown",
   "owner_type": "public|private|mixed|unknown",
   "tags": [{{"code": "lonely", "score": 0.7}}],
@@ -74,15 +81,20 @@ def classify_batch(client, tags, cats, items: list[dict]) -> list[dict]:
     return json.loads(text)
 
 
-def run(area_code: str, limit: int = 200) -> dict:
+def run_all(run_id: int | None = None, limit: int = 1500) -> dict:
+    return run(None, limit, run_id)
+
+
+def run(area_code: str | None, limit: int = 200, run_id: int | None = None) -> dict:
     client = anthropic.Anthropic()
-    with connect() as conn, job(conn, f"classify:{area_code}") as stats:
+    with connect() as conn, job(conn, f"classify:{area_code or 'all'}", run_id) as stats:
         tags, cats = load_vocab(conn)
         valid_tags = {t["code"] for t in tags}
         valid_cats = {c["code"] for c in cats}
         ids = [r["id"] for r in conn.execute(
-            "select id from spots where area_code=%s and status='candidate' order by id limit %s",
-            (area_code, limit)).fetchall()]
+            """select id from spots where (%s::text is null or area_code=%s) and status='candidate'
+                 and data_status <> 'archived' and origin = 'osm' and not locked order by id limit %s""",
+            (area_code, area_code, limit)).fetchall()]
         done = 0
         for i in range(0, len(ids), BATCH):
             items = [context_for(conn, sid) for sid in ids[i:i + BATCH]]
@@ -92,12 +104,11 @@ def run(area_code: str, limit: int = 200) -> dict:
                     continue
                 conn.execute(
                     """update spots set
-                         category = coalesce(%s, category), era_feel=%s, shoot_scope=%s,
+                         era_feel=%s, shoot_scope=%s,
                          owner_type=%s, summary=%s, status='ai_tagged', confidence='ai_estimated'
                        where id=%s and status='candidate'""",
-                    (res.get("category") if res.get("category") in valid_cats else None,
-                     res.get("era_feel"), res.get("shoot_scope", "unknown"),
-                     res.get("owner_type", "unknown"), res.get("summary"), sid),
+                    (pick(res.get("era_feel"), ERA, None), pick(res.get("shoot_scope"), SCOPE, "unknown"),
+                     pick(res.get("owner_type"), OWNER, "unknown"), res.get("summary"), sid),
                 )
                 for t in res.get("tags", []):
                     if t.get("code") in valid_tags:

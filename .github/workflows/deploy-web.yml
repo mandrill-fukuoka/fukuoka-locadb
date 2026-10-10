@@ -1,0 +1,73 @@
+# Web画面を heteml に反映する（FTP）。config.php はサーバーにだけ置くので、上書き・削除しない
+# Secrets：FTP_HOST / FTP_USER / FTP_PASSWORD（任意：FTP_DIR。既定は web/locadb）
+name: deploy-web
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "probe（サーバーのフォルダを確認するだけ）/ deploy（反映）"
+        type: choice
+        options: [probe, deploy]
+        default: probe
+concurrency: { group: deploy-web, cancel-in-progress: false }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp php-cli
+      - name: サーバーのフォルダ確認
+        if: inputs.mode == 'probe'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_DIR: ${{ secrets.FTP_DIR }}
+        run: |
+          DIR="${FTP_DIR:-web/locadb}"
+          lftp -u "$FTP_USER","$FTP_PASSWORD" "$FTP_HOST" <<EOF2
+          set ftp:ssl-allow true
+          set ssl:verify-certificate no
+          set net:max-retries 2
+          pwd
+          cls -1
+          cls -l $DIR/
+          cls -l $DIR/_app/
+          bye
+          EOF2
+      - name: 構文チェック
+        if: inputs.mode == 'deploy'
+        run: for f in web/public/*.php web/app/*.php; do php -l "$f" >/dev/null || exit 1; done
+      - name: 版の記録
+        if: inputs.mode == 'deploy'
+        run: echo "${GITHUB_SHA::12} $(date -u +%Y-%m-%dT%H:%MZ)" > web/public/version.txt
+      - name: 反映
+        if: inputs.mode == 'deploy'
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_DIR: ${{ secrets.FTP_DIR }}
+        run: |
+          DIR="${FTP_DIR:-web/locadb}"
+          lftp -u "$FTP_USER","$FTP_PASSWORD" "$FTP_HOST" <<EOF2
+          set ftp:ssl-allow true
+          set ssl:verify-certificate no
+          set net:max-retries 3
+          set net:timeout 30
+          mirror -R --verbose --no-perms --exclude-glob _app/ --exclude-glob config.php --exclude-glob make_hash.php web/public/ $DIR/
+          mkdir -pf $DIR/_app
+          put -O $DIR/_app web/app/lib.php
+          put -O $DIR/_app web/app/.htaccess
+          rm -f $DIR/make_hash.php
+          bye
+          EOF2
+      - name: 確認
+        if: inputs.mode == 'deploy'
+        run: |
+          sleep 3
+          curl -fsS "https://fukanim.heteml.net/locadb/version.txt" && echo
+          code=$(curl -s -o /dev/null -w "%{http_code}" "https://fukanim.heteml.net/locadb/index.php")
+          echo "index.php → $code"; [ "$code" = 200 ]
+          code=$(curl -s -o /dev/null -w "%{http_code}" "https://fukanim.heteml.net/locadb/_app/config.php")
+          echo "_app/config.php（外から見えないこと）→ $code"; [ "$code" = 403 ] || [ "$code" = 404 ]

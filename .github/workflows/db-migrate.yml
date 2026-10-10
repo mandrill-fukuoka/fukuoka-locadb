@@ -1,0 +1,36 @@
+# データベースの変更（sql/migrations・sql/api・sql/grants.sql）を適用する
+# Actions →「db-migrate」→ Run workflow：status（一覧）/ dry_run（試し）/ apply（バックアップしてから適用）
+name: db-migrate
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [status, dry_run, apply]
+        default: dry_run
+concurrency: { group: database, cancel-in-progress: false }
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "psycopg[binary]>=3.2"
+      - name: バックアップ
+        if: inputs.mode == 'apply'
+        run: |
+          docker run --rm -v "$PWD:/out" -e DATABASE_URL postgres:17 \
+            pg_dump "$DATABASE_URL" --no-owner --no-privileges -Fc -f /out/before-migrate-$(date +%Y%m%d-%H%M).dump
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - uses: actions/upload-artifact@v4
+        if: inputs.mode == 'apply'
+        with: { name: backup-before-migrate, path: "before-migrate-*.dump", retention-days: 90 }
+      - name: 適用
+        run: |
+          case "${{ inputs.mode }}" in
+            status)  python tools/migrate.py --status ;;
+            dry_run) python tools/migrate.py --dry-run ;;
+            apply)   python tools/migrate.py ;;
+          esac
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }

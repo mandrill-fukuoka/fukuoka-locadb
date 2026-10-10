@@ -1,0 +1,17 @@
+Options -Indexes
+DirectoryIndex index.php
+<FilesMatch "^(bootstrap\.php|\.ht.*)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+<IfModule mod_headers.c>
+  Header set X-Frame-Options "DENY"
+  Header set X-Content-Type-Options "nosniff"
+  Header set Referrer-Policy "same-origin"
+  Header set X-Robots-Tag "noindex, nofollow"
+</IfModule>
