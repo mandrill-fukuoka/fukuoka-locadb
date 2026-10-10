@@ -41,6 +41,15 @@ def run(run_id: int | None = None, limit: int = 20000) -> dict:
                                                              where h.spot_id = s.id and h.event = 'moved'))
                 order by s.id limit %s""", (limit,)).fetchall()
         ok = ng = 0
+        batch = []
+
+        def flush():
+            if batch:
+                with conn.cursor() as cur:
+                    cur.executemany("""update spots set address=%s, address_at=now(),
+                                         name = case when %s::text is not null then %s else name end where id=%s""", batch)
+                conn.commit()
+                batch.clear()
         # 国土地理院のサービスへの負荷を抑えつつ、4件ずつ並行して問い合わせる
         with requests.Session() as sess, ThreadPoolExecutor(max_workers=4) as pool:
             for r, addr in zip(rows, pool.map(lambda r: lookup(r["lon"], r["lat"], sess), rows)):
@@ -51,14 +60,11 @@ def run(run_id: int | None = None, limit: int = 20000) -> dict:
                 new_name = None
                 if r["name"].startswith("（無名）") and town:
                     new_name = f"（無名）{r['catname']}（{town}）"
-                conn.execute("""update spots set address=%s, address_at=now(),
-                                  name = case when %s::text is not null then %s else name end where id=%s""",
-                             (addr, new_name, new_name, r["id"]))
+                batch.append((addr, new_name, new_name, r["id"]))
                 ok += 1
-                if ok % 200 == 0:
-                    conn.commit()
-                    print(f"    住所 {ok}/{len(rows)}", flush=True)
-        conn.commit()
+                if len(batch) >= 200:
+                    flush(); print(f"    住所 {ok}/{len(rows)}", flush=True)
+        flush()
         stats.update(target=len(rows), filled=ok, failed=ng)
         print(f"    住所を入れた地点 {ok}（取得できず {ng}）")
     return stats

@@ -45,6 +45,9 @@ def get_snapshot(pbf: str | None, watch: set[str]):
 
 def run_sync(conn, snap_loader, mode: str, allow_large_change: bool = False) -> dict:
     """取得→反映→判定→（試し・停止なら取り消し）。結果 {run_id, status, summary, report}"""
+    # 前回が途中で止まった（キャンセル・時間切れ）記録を片付ける（同時に2つは動かない設定）
+    conn.execute("""update data_runs set status='failed', finished_at=now(),
+                      error=coalesce(error, '途中で中断された（キャンセル・時間切れ）') where status='running'""")
     run_id = conn.execute("""insert into data_runs (mode, code_version, rules_version) values (%s,%s,%s)
                              returning id""", (mode, code_version(), RULES_VERSION)).fetchone()["id"]
     conn.commit()

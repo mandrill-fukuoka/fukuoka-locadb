@@ -30,7 +30,7 @@ def run_all(run_id: int | None = None, top: int = 50) -> dict:
     with connect() as conn, job(conn, "clusters", run_id) as stats:
         loaded = load_spots(conn)
         spots = [s for s, _ in loaded]
-        conn.execute("delete from clusters where origin='auto' and status='candidate'")
+        made = []
         n = 0
         for area in AREAS:
             anchors = [s for s, a in loaded if a == area]
@@ -38,17 +38,22 @@ def run_all(run_id: int | None = None, top: int = 50) -> dict:
             for mode in ("walk", "car"):
                 for c in generate(spots, mode=mode, top=top, anchors=anchors):
                     n += 1
-                    cid = conn.execute(
-                        """insert into clusters (code, name, area_code, transition_score, transition_label,
-                                                 total_minutes, travel_mode)
-                           values (%s,%s,%s,%s,%s,%s,%s) returning id""",
-                        (f"{prefix}-C{mode[0].upper()}{n:03d}", f"{c.spots[0].name} 〜 {c.spots[-1].name}", area,
-                         c.score, c.label, c.minutes, mode)).fetchone()["id"]
-                    for i, s in enumerate(c.spots):
-                        conn.execute(
-                            """insert into cluster_spots (cluster_id, seq, spot_id, minutes_from_prev, meters_from_prev)
-                               values (%s,%s,%s,%s,%s)""",
-                            (cid, i, s.id, c.legs_min[i - 1] if i else None, round(c.legs_m[i - 1]) if i else None))
+                    made.append((f"{prefix}-C{mode[0].upper()}{n:03d}", area, mode, c))
+        # まとめて書く（本番DBは遠いので、1件ずつ往復しない）
+        ids = [r["id"] for r in conn.execute(
+            "select nextval(pg_get_serial_sequence('clusters','id')) id from generate_series(1, %s)", (max(len(made), 1),))]
+        conn.execute("delete from clusters where origin='auto' and status='candidate'")
+        with conn.cursor() as cur:
+            cur.executemany(
+                """insert into clusters (id, code, name, area_code, transition_score, transition_label, total_minutes, travel_mode)
+                   values (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                [(cid, code, f"{c.spots[0].name} 〜 {c.spots[-1].name}", area, c.score, c.label, c.minutes, mode)
+                 for cid, (code, area, mode, c) in zip(ids, made)])
+            cur.executemany(
+                """insert into cluster_spots (cluster_id, seq, spot_id, minutes_from_prev, meters_from_prev)
+                   values (%s,%s,%s,%s,%s)""",
+                [(cid, i, s.id, c.legs_min[i - 1] if i else None, round(c.legs_m[i - 1]) if i else None)
+                 for cid, (_, _, _, c) in zip(ids, made) for i, s in enumerate(c.spots)])
         stats.update(spots=len(spots), clusters=n)
         print(f"    地点 {len(spots)} → 自動生成の流れ {n}")
     return stats

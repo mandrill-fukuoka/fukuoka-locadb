@@ -85,6 +85,7 @@ class Sync:
     def __init__(self, conn, snap: Snapshot, run_id: int, log=print, allow_large_change: bool = False):
         self.c, self.snap, self.run, self.log = conn, snap, run_id, log
         self.allow_large_change = allow_large_change
+        self._hist, self._ids = [], []
         self.events = Counter()
         self.lists = defaultdict(list)
         self.seen_spots: set[int] = set()
@@ -92,9 +93,23 @@ class Sync:
 
     # ---------------------------------------------------------------- 記録
     def hist(self, spot_id, event, detail=None):
-        self.c.execute("insert into spot_history (spot_id, run_id, event, detail) values (%s,%s,%s,%s)",
-                       (spot_id, self.run, event, json.dumps(detail or {}, ensure_ascii=False)))
+        # 履歴はためておき、最後にまとめて書く（本番DBは遠いので1件ずつ往復しない）
+        self._hist.append((spot_id, self.run, event, json.dumps(detail or {}, ensure_ascii=False, default=str)))
         self.events[event] += 1
+
+    def flush_history(self):
+        if self._hist:
+            with self.c.cursor() as cur:
+                cur.executemany("insert into spot_history (spot_id, run_id, event, detail) values (%s,%s,%s,%s)",
+                                self._hist)
+            self._hist = []
+
+    def next_id(self):
+        """地点IDを500件ずつまとめて確保する（新規登録のたびに往復しない）"""
+        if not self._ids:
+            self._ids = [r["id"] for r in self.c.execute(
+                "select nextval(pg_get_serial_sequence('spots','id')) id from generate_series(1, 500)").fetchall()]
+        return self._ids.pop(0)
 
     def note(self, kind, s: Spot, text):
         if len(self.lists[kind]) < 40:
@@ -179,15 +194,16 @@ class Sync:
         if not name:
             name = f"（無名）{CATEGORIES[cat][0]}"
         code = self.new_code(area)
-        sid = self.c.execute(
-            """insert into spots (code, name, area_code, geom, category, extra_categories, position_kind,
+        sid = self.next_id()
+        self.c.execute(
+            """insert into spots (id, code, name, area_code, geom, category, extra_categories, position_kind,
                                   line_geom, line_key, sample_key, created_run, last_seen_run)
-               values (%s,%s,%s, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s,%s,%s,
+               values (%s,%s,%s,%s, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s,%s,%s,
                        case when %s::float8 is null then null else ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography end,
-                       %s,%s,%s,%s) returning id""",
-            (code, name, area, ll[0], ll[1], cat, extra, kind,
+                       %s,%s,%s,%s)""",
+            (sid, code, name, area, ll[0], ll[1], cat, extra, kind,
              sample.line_lon if sample else None, sample.line_lon if sample else None, sample.line_lat if sample else None,
-             sample.line_key if sample else None, sample.key if sample else None, self.run, self.run)).fetchone()["id"]
+             sample.line_key if sample else None, sample.key if sample else None, self.run, self.run))
         s = Spot(sid, code, name, ll, cat, extra, area, "current", "candidate", "unverified", "osm", False, 0,
                  None, sample.key if sample else None, sample.line_key if sample else None, None, {})
         self.spots[sid] = s
@@ -269,18 +285,19 @@ class Sync:
 
     # ---------------------------------------------------------------- 点・面
     def sync_points(self, missing_now: set[str]):
-        for f in self.snap.points:
-            cat, extra = f.cats[0], f.cats[1:]
-            ll = (f.lon, f.lat)
-            self.c.execute(
+        with self.c.cursor() as cur:
+            cur.executemany(
                 """insert into features (key, kind, osm_type, osm_id, name, categories, tags, geom, extent_m,
                                          first_seen_run, last_seen_run, missing_runs, updated_at)
                    values (%s,'element',%s,%s,%s,%s,%s, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography,%s,%s,%s,0,now())
                    on conflict (key) do update set name=excluded.name, categories=excluded.categories, tags=excluded.tags,
                      geom=excluded.geom, extent_m=excluded.extent_m, last_seen_run=excluded.last_seen_run,
                      missing_runs=0, updated_at=now()""",
-                (f.key, f.osm_type, f.osm_id, f.name or None, f.cats, json.dumps(f.tags, ensure_ascii=False),
-                 f.lon, f.lat, f.extent_m, self.run, self.run))
+                [(f.key, f.osm_type, f.osm_id, f.name or None, f.cats, json.dumps(f.tags, ensure_ascii=False),
+                  f.lon, f.lat, f.extent_m, self.run, self.run) for f in self.snap.points])
+        for f in self.snap.points:
+            cat, extra = f.cats[0], f.cats[1:]
+            ll = (f.lon, f.lat)
             linked = [self.spots[i] for i in self.by_feature.get(f.key, [])]
             if linked:
                 for s in linked:
@@ -340,13 +357,13 @@ class Sync:
         for smp in self.snap.samples:
             L = lines[smp.line_key]
             L["ways"].update(smp.way_ids); L["name"], L["cat"] = smp.name, smp.cat
-        for key, L in lines.items():
-            self.c.execute(
+        with self.c.cursor() as cur:
+            cur.executemany(
                 """insert into features (key, kind, name, categories, way_ids, first_seen_run, last_seen_run, missing_runs, updated_at)
                    values (%s,'line',%s,%s,%s,%s,%s,0,now())
                    on conflict (key) do update set name=excluded.name, way_ids=excluded.way_ids,
                      last_seen_run=excluded.last_seen_run, missing_runs=0, updated_at=now()""",
-                (key, L["name"] or None, [L["cat"]], sorted(L["ways"]), self.run, self.run))
+                [(key, L["name"] or None, [L["cat"]], sorted(L["ways"]), self.run, self.run) for key, L in lines.items()])
         seen_keys = {smp.key for smp in self.snap.samples}
         for smp in self.snap.samples:
             ll = (smp.lon, smp.lat)
@@ -448,9 +465,11 @@ class Sync:
         snap_keys = {f.key for f in self.snap.points}
         missing_now = {k for k, f in self.features.items() if f["kind"] == "element" and k not in snap_keys}
         n_before = sum(1 for s in self.spots.values() if s.data_status != "archived")
-        self.sync_points(missing_now)
-        self.sync_lines(True)
-        self.missing(present_keys, frozen, rules_changed)
+        with self.c.pipeline():                 # 書き込みをまとめて送る（往復を減らす）
+            self.sync_points(missing_now)
+            self.sync_lines(True)
+            self.missing(present_keys, frozen, rules_changed)
+            self.flush_history()
         clusters = self.clusters()
         n_after = self.c.execute("select count(*) n from spots where data_status <> 'archived'").fetchone()["n"]
         summary = {
