@@ -23,6 +23,28 @@ function current_user(): ?string { return $_SESSION['user'] ?? null; }
 function require_login(): void {
     if (!current_user()) { header('Location: login.php'); exit; }
 }
+// ログインしていない人が編集操作を送ってきたとき
+function deny_unless_logged_in(): void {
+    if (!current_user()) { http_response_code(403); exit('この操作にはログインが必要です'); }
+}
+
+// ---------- 利用回数の制限（ログインなしの検索・AI解釈用） ----------
+// $perIp=false にすると全員の合計で数える
+function rate_limit_ok(string $bucket, int $max, int $windowSec, bool $perIp = true): bool {
+    $who = $perIp ? ($_SERVER['REMOTE_ADDR'] ?? 'x') : 'all';
+    $file = sys_get_temp_dir() . '/locadb_rl_' . hash('sha256', $bucket . '|' . $who . '|' . (string)cfg('supabase_url', ''));
+    $fp = @fopen($file, 'c+');
+    if (!$fp) return true;
+    flock($fp, LOCK_EX);
+    $now = time();
+    $ts = json_decode((string)stream_get_contents($fp), true);
+    $ts = array_values(array_filter(is_array($ts) ? $ts : [], fn($t) => is_int($t) && $t > $now - $windowSec));
+    $ok = count($ts) < $max;
+    if ($ok) $ts[] = $now;
+    ftruncate($fp, 0); rewind($fp); fwrite($fp, json_encode($ts));
+    flock($fp, LOCK_UN); fclose($fp);
+    return $ok;
+}
 
 function try_login(string $user, string $pass): bool {
     $users = cfg('users', []);
@@ -49,7 +71,9 @@ function sb_request(string $method, string $path, $body = null) {
     $url = rtrim(cfg('supabase_url'), '/') . '/rest/v1/' . ltrim($path, '/');
     $key = cfg('supabase_service_key');
     $ch = curl_init($url);
-    $headers = ['apikey: ' . $key, 'Authorization: Bearer ' . $key, 'Content-Type: application/json'];
+    $headers = ['apikey: ' . $key, 'Content-Type: application/json', 'User-Agent: locadb-server/1.0'];
+    // 旧形式（eyJ...のJWT）のみ Authorization にも入れる。新形式 sb_secret_... は apikey ヘッダーのみ
+    if (strncmp($key, 'sb_', 3) !== 0) $headers[] = 'Authorization: Bearer ' . $key;
     curl_setopt_array($ch, [
         CURLOPT_CUSTOMREQUEST => $method,
         CURLOPT_RETURNTRANSFER => true,
@@ -80,7 +104,8 @@ function interpret_scene(string $scene, array $tags, array $groups): array {
         . "# タグ\n" . json_encode($tags, JSON_UNESCAPED_UNICODE) . "\n\n"
         . "# 出力形式\n{\"sequence\": [\"commercial\",\"water\"], \"tags\": {\"lonely\": 1.0}, "
         . "\"travel_mode\": \"walk|car|any\", \"notes\": \"解釈の要点を1文で\"}\n"
-        . "sequence はシーン内で景観が移り変わる順（1〜4個）。tags の重みは0〜1。";
+        . "sequence はシーン内で景観が移り変わる順（1〜4個）。川は river、海・海辺・港の水際は sea、砂浜は beach、池・湖・お堀は lake を使い分け、"
+        . "どの水辺でもよい場合だけ water を使う。tags の重みは0〜1。";
     $ch = curl_init('https://api.anthropic.com/v1/messages');
     curl_setopt_array($ch, [
         CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 60,
@@ -107,7 +132,12 @@ function interpret_by_keywords(string $scene): array {
         'urban_new' => '高層|再開発|オフィス|近代|ビル街|都会', 'old_town' => '路地|下町|古い街|商店街|細い道',
         'commercial' => '繁華街|飲み屋|ネオン|中洲|天神|賑やか', 'residential' => '住宅|団地|マンション|家の前',
         'institution' => '学校|病院|役所|図書館|大学', 'transport' => '駅|線路|高架|歩道橋|橋',
-        'port_industrial' => '港|倉庫|工場|コンテナ|ふ頭', 'water' => '海|川|水辺|海岸|干潟|漁港',
+        'port_industrial' => '倉庫|工場|コンテナ|ふ頭|埠頭|港湾',
+        'river' => '川|河川|河原|河川敷|運河|川沿い|川べり',
+        'sea' => '海(?!水浴)|海辺|海岸|岸壁|堤防|防波堤|漁港|干潟|湾|港',
+        'beach' => '砂浜|ビーチ|浜辺|海水浴|波打ち際',
+        'lake' => '池|湖|ため池|溜池|貯水池|ダム湖|お堀|堀端',
+        'water' => '水辺|水際',
         'green' => '公園|山|丘|森|緑', 'historic' => '神社|寺|歴史|城', 'vacant' => '廃墟|空き|廃校|閉鎖',
     ];
     $tagWords = [
@@ -128,32 +158,325 @@ function interpret_by_keywords(string $scene): array {
 
 // ---------- 表示用ラベル ----------
 const STATUS_LABEL = ['candidate' => '候補', 'ai_tagged' => 'AI分類済み', 'scouted' => 'ロケハン済み',
-                      'verified' => '確認済み', 'archived' => '対象外'];
+                      'verified' => '確認済み'];
+const DATA_STATUS_LABEL = ['current' => '掲載中', 'needs_review' => '要確認', 'archived' => '対象外'];
+const POSITION_LABEL = ['point' => 'OSMの地点の位置', 'area' => '敷地・範囲の代表点（実際の撮影位置とは限りません）',
+                        'line_sample' => '線（川・線路など）の上の位置', 'standpoint' => '線（川・線路など）に近い道の上の位置',
+                        'manual' => '手入力の位置'];
 const CONF_LABEL = ['unverified' => '未確認', 'ai_estimated' => 'AI推定', 'desk_checked' => '資料確認済み',
                     'field_checked' => '現地確認済み'];
 const RISK_LABEL = ['redevelopment' => '再開発', 'demolition' => '解体', 'closure' => '閉店・閉館',
                     'use_change' => '用途変更', 'none' => 'なし'];
+const HISTORY_LABEL = ['created' => '新規登録', 'moved' => '位置の更新', 'renamed' => '名前の更新', 'recategorized' => '種別の更新',
+    'linked' => '同じ場所のデータを統合', 'relinked' => 'OSMデータの付け替え', 'missing' => 'OSMで見つからず', 'archived' => '対象外（自動）',
+    'restored' => '復帰（自動）', 'needs_review' => '要確認', 'reviewed' => '確認', 'area' => '区の更新', 'reclassify' => 'AI分類のやり直し',
+    'address' => '住所', 'resolve' => '要確認を解消', 'archive' => '対象外にした', 'restore' => '掲載に戻した', 'lock' => '位置を固定',
+    'unlock' => '固定を外した', 'merged' => '重複を統合', 'merged_into' => '別の地点に統合'];
 const MODE_LABEL = ['walk' => '徒歩', 'car' => '車', 'mixed' => '徒歩＋車', 'any' => '指定なし'];
 const AREA_LABEL = ['fuk-chuo' => '中央区', 'fuk-hakata' => '博多区', 'fuk-higashi' => '東区',
                     'fuk-sawara' => '早良区', 'fuk-nishi' => '西区', 'fuk-minami' => '南区', 'fuk-jonan' => '城南区'];
 
 function page_header(string $title, string $active = ''): void {
-    $nav = ['index.php' => 'シーン検索', 'spots.php' => '地点の確認', 'risks.php' => '変化リスク'];
+    $nav = ['index.php' => '場所を探す', 'flow.php' => '流れで探す', 'flows.php' => 'おすすめの流れ', 'list.php' => 'ロケハンリスト'];
+    if (current_user()) $nav += ['spots.php' => '地点の確認', 'risks.php' => '変化リスク', 'runs.php' => '収集の記録'];
     echo '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
        . '<meta name="viewport" content="width=device-width,initial-scale=1">'
-       . '<meta name="robots" content="noindex,nofollow">'
-       . '<title>' . h($title) . '｜福岡ロケーションDB</title>'
+       . (cfg('allow_indexing', false) ? '' : '<meta name="robots" content="noindex,nofollow">')
+       . '<title>' . h($title) . ' | FUKUOKA LOCATIONS</title>'
+       . '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+       . '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Noto+Sans+JP:wght@400;500&family=Shippori+Mincho:wght@600;700&display=swap">'
        . '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">'
        . '<link rel="stylesheet" href="assets/style.css"></head><body>'
-       . '<header class="top"><a class="brand" href="index.php">福岡ロケーションDB</a>';
-    if (current_user()) {
-        echo '<nav>';
-        foreach ($nav as $href => $label) echo '<a href="' . $href . '"' . ($active === $href ? ' class="on"' : '') . '>' . $label . '</a>';
-        echo '<a href="logout.php" class="muted">ログアウト</a></nav>';
-    }
+       . '<header class="top"><a class="brand" href="index.php">FUKUOKA LOCATIONS</a>';
+    echo '<nav class="mainnav">';
+    foreach ($nav as $href => $label) echo '<a href="' . $href . '"' . ($active === $href ? ' class="on" aria-current="page"' : '') . '>' . $label . '</a>';
+    echo current_user()
+        ? '<a href="logout.php" class="out">ログアウト</a>'
+        : '<a href="login.php" class="out' . ($active === 'login.php' ? ' on' : '') . '">ログイン</a>';
+    echo '</nav>';
     echo '</header><main>';
 }
+
+// ---------- 景観グループの色（色ドット・ピンに使う） ----------
+const GROUP_COLOR = [
+    'commercial' => '#C8423A', 'old_town' => '#D27A2C', 'urban_new' => '#7A5BA6', 'residential' => '#B9547F',
+    'institution' => '#4F5DA8', 'transport' => '#2F8DA0', 'port_industrial' => '#6B6F72', 'river' => '#3478C6',
+    'sea' => '#1F4E8C', 'beach' => '#C49A45', 'lake' => '#2E8C7E', 'water' => '#3478C6', 'green' => '#4F8A4E',
+    'historic' => '#8C6A4F', 'vacant' => '#9C978E',
+];
+// 景観グループ名（表示名）→ 色。表示名しか持たないデータ（ルートの地点など）用
+function group_color(string $nameOrCode): string {
+    static $byName = null;
+    if (isset(GROUP_COLOR[$nameOrCode])) return GROUP_COLOR[$nameOrCode];
+    if ($byName === null) {
+        $byName = [];
+        try {
+            foreach (sb_get('landscape_groups?select=code,name') ?? [] as $g) $byName[$g['name']] = GROUP_COLOR[$g['code']] ?? '';
+        } catch (Throwable $e) {}
+    }
+    return $byName[$nameOrCode] ?? '#9C978E';
+}
+function dot(string $nameOrCode): string {
+    return '<i class="dot" style="--c:' . h(group_color($nameOrCode)) . '" aria-hidden="true"></i>';
+}
+// ---------- Googleマップ：地点1か所の埋め込みURL ----------
+// 名前のある地点は「名前＋区名」で検索させ、Googleの施設情報（写真・住所など）を表示する。
+// 無名の地点や道路名などは座標で表示する。
+function place_embed_url(array $s, string $areaCode = ''): string {
+    $name = (string)($s['name'] ?? '');
+    $useName = $name !== '' && strpos($name, '（無名）') !== 0
+        && !preg_match('/(号線|線路|道路|通り)$/u', $name);
+    $q = $useName ? $name . ' 福岡市' . (AREA_LABEL[$areaCode ?: ($s['area_code'] ?? '')] ?? '')
+                  : $s['lat'] . ',' . $s['lon'];
+    return 'https://www.google.com/maps/embed/v1/place?' . http_build_query([
+        'key' => cfg('google_maps_embed_key'), 'q' => $q,
+        'center' => $s['lat'] . ',' . $s['lon'], 'zoom' => 17, 'language' => 'ja', 'region' => 'JP']);
+}
+// 周辺地図（小）：座標を中心にした地図＋中央にピン。押すとGoogleマップで開く
+// Googleキーがあれば Embed API（view モード・無料）、なければ OpenStreetMap
+function minimap_html(array $s, int $zoom = 16): string {
+    $lat = (float)$s['lat']; $lon = (float)$s['lon'];
+    $link = place_link_url($s);
+    $style = !empty($s['grp_code']) ? ' style="--c:' . h(group_color((string)$s['grp_code'])) . '"' : '';
+    $key = (string)cfg('google_maps_embed_key', '');
+    if ($key !== '') {
+        $src = 'https://www.google.com/maps/embed/v1/view?' . http_build_query([
+            'key' => $key, 'center' => $lat . ',' . $lon, 'zoom' => $zoom, 'maptype' => 'roadmap', 'language' => 'ja', 'region' => 'JP']);
+        return '<a class="minimap"' . $style . ' href="' . h($link) . '" target="_blank" rel="noopener" title="Googleマップで開く">'
+             . '<iframe loading="lazy" tabindex="-1" referrerpolicy="no-referrer-when-downgrade" src="' . h($src) . '"></iframe>'
+             . '<span class="pin" aria-hidden="true"></span><span class="open">Googleマップで開く ↗</span></a>';
+    }
+    return '<a class="minimap"' . $style . ' href="' . h($link) . '" target="_blank" rel="noopener" title="地図で開く">'
+         . '<span class="osm" data-lat="' . $lat . '" data-lon="' . $lon . '" data-zoom="' . $zoom . '"></span>'
+         . '<span class="pin" aria-hidden="true"></span><span class="open">地図で開く ↗</span></a>';
+}
+function place_link_url(array $s): string {
+    return 'https://www.google.com/maps/search/?' . http_build_query(['api' => 1, 'query' => $s['lat'] . ',' . $s['lon']]);
+}
+
+// ---------- ルートカード（流れで探す・おすすめの流れで共通） ----------
+// $opt: save_key（保存ボタン）, saved（保存済み表示）, archive_id（外すボタン）, extra（メタ情報の追記）
+function render_route_card(array $r, int $i, array $opt = []): void {
+    $spots = $r['spots'] ?? [];
+    if (!$spots) return;
+    $pts = array_map(fn($s) => $s['lat'] . ',' . $s['lon'], $spots);
+    $gmode = ($r['travel_mode'] ?? '') === 'car' ? 'driving' : 'walking';
+    $dir = ['origin' => $pts[0], 'destination' => end($pts)];
+    if (count($pts) > 2) $dir['waypoints'] = implode('|', array_slice($pts, 1, -1));
+    $routeUrl = 'https://www.google.com/maps/dir/?' . http_build_query(['api' => 1] + $dir + ['travelmode' => $gmode]);
+    $embedKey = cfg('google_maps_embed_key');
+    $modeLabel = MODE_LABEL[$r['travel_mode'] ?? ''] ?? '';
+    ?>
+    <article class="route">
+      <div class="route-head">
+        <div class="grow">
+          <div class="route-no">ROUTE <?= sprintf('%02d', $i + 1) ?></div>
+          <h3 class="route-title">
+            <?php foreach ($spots as $k => $s): ?><?php if ($k): ?><span class="arr" aria-label="から">→</span><?php endif; ?><span class="g"><?= dot((string)($s['grp_code'] ?? $s['group'] ?? '')) ?><?= h($s['group'] ?? '') ?></span><?php endforeach; ?>
+          </h3>
+          <p class="meta">
+            <span><?= h(AREA_LABEL[$r['area_code'] ?? ''] ?? '') ?></span>
+            <span><?= h($modeLabel) ?><?php if (count($spots) > 1): ?> 約<?= h(round((float)($r['total_minutes'] ?? 0))) ?>分<span class="muted">（直線距離からの目安）</span><?php else: ?>（単独の地点）<?php endif; ?></span>
+            <?php if (!empty($r['needs_review'])): ?><span class="chip warn" title="<?= h($r['review_note'] ?? '') ?>">地点に変化あり・要再確認</span><?php endif; ?>
+            <?php if (isset($r['match'])): ?><span>適合度 <?= h(round((float)$r['match'] * 100)) ?>%</span><?php endif; ?>
+            <?= $opt['extra'] ?? '' ?></p>
+        </div>
+        <div class="head-actions">
+        <?php if (!empty($opt['saved'])): ?>
+          <span class="chip ok">★ 保存済み</span>
+        <?php elseif (!empty($opt['save_key'])): ?>
+          <form method="post" class="inline"><?= csrf_field() ?>
+            <input type="hidden" name="action" value="save"><input type="hidden" name="route_key" value="<?= h($opt['save_key']) ?>">
+            <button class="secondary small-btn">☆ おすすめに保存</button></form>
+        <?php endif; ?>
+        <?php if (!empty($opt['archive_id'])): ?>
+          <form method="post" class="inline"><?= csrf_field() ?>
+            <input type="hidden" name="action" value="archive"><input type="hidden" name="id" value="<?= (int)$opt['archive_id'] ?>">
+            <button class="secondary small-btn">外す</button></form>
+        <?php endif; ?>
+        </div>
+      </div>
+      <ol class="cuts" style="--n:<?= max(count($spots), 3) ?>">
+        <?php foreach ($spots as $k => $s): $c = group_color((string)($s['grp_code'] ?? $s['group'] ?? '')); ?>
+          <li class="cut" style="--c:<?= h($c) ?>">
+            <div class="shot">
+              <?php if (!empty($s['photo_url'])): ?>
+                <img src="<?= h($s['photo_url']) ?>" alt="<?= h($s['name']) ?>" loading="lazy">
+              <?php else: ?>
+                <?= minimap_html($s, 16) ?>
+              <?php endif; ?>
+              <span class="cutno">CUT <?= $k + 1 ?></span>
+            </div>
+            <?php if ($k > 0): ?><span class="hop"><?= h($modeLabel) ?> <?= h($s['minutes_from_prev'] ?? '') ?>分</span><?php endif; ?>
+            <div class="cap">
+              <span class="grp"><i class="dot" aria-hidden="true"></i><?= h($s['group'] ?? '') ?></span>
+              <strong class="name"><?php if (!empty($s['id'])): ?><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h($s['name']) ?></a><?php else: ?><?= h($s['name']) ?><?php endif; ?></strong>
+              <span class="flags"><?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?><?php if (($s['data_status'] ?? '') === 'archived'): ?><span class="chip warn">対象外</span><?php endif; ?><?php if (($s['confidence'] ?? '') !== 'field_checked' && !empty(CONF_LABEL[$s['confidence'] ?? ''])): ?><span class="chip dim"><?= h(CONF_LABEL[$s['confidence']]) ?></span><?php endif; ?></span>
+              <?php if (!empty($s['summary'])): ?><span class="desc"><?= h($s['summary']) ?></span><?php endif; ?>
+              <?php if (!empty($s['id'])): ?><span class="links"><a href="spot.php?id=<?= (int)$s['id'] ?>">詳細</a><a href="index.php?near=<?= (int)$s['id'] ?>">周辺の景観</a><a href="#" class="addlist" data-id="<?= (int)$s['id'] ?>">＋リスト</a></span><?php endif; ?>
+            </div>
+          </li>
+        <?php endforeach; ?>
+      </ol>
+      <?php if ($embedKey && count($spots) === 1): ?>
+        <iframe class="map" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen
+          src="<?= h(place_embed_url($spots[0], (string)($r['area_code'] ?? ''))) ?>"></iframe>
+      <?php elseif ($embedKey): ?>
+        <iframe class="map" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen
+          src="<?= h('https://www.google.com/maps/embed/v1/directions?' . http_build_query(['key' => $embedKey] + $dir
+            + ['mode' => $gmode, 'language' => 'ja', 'region' => 'JP'])) ?>"></iframe>
+      <?php else: ?>
+        <div class="map" data-spots='<?= h(json_encode($spots, JSON_UNESCAPED_UNICODE)) ?>'></div>
+      <?php endif; ?>
+      <?php if (count($spots) > 1): ?>
+        <p class="card-foot"><a class="gmaps-btn" target="_blank" rel="noopener" href="<?= h($routeUrl) ?>">Googleマップでルートを開く</a></p>
+      <?php else: ?>
+        <p class="card-foot"><a class="gmaps-btn" target="_blank" rel="noopener" href="<?= h(place_link_url($spots[0])) ?>">Googleマップで開く</a>
+          <span class="muted small">景観が1つだけの検索です。流れにするには、景観を2つ以上指定してください。</span></p>
+      <?php endif; ?>
+    </article>
+    <?php
+}
+
+// OpenStreetMap表示（Googleキー未設定時、または複数地点の一覧地図）
+function leaflet_script(bool $line = true): void { ?>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+document.querySelectorAll('div.map[data-spots]').forEach(el => {
+  const spots = JSON.parse(el.dataset.spots);
+  if (!spots.length) return;
+  const map = L.map(el, { scrollWheelZoom: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { attribution: '© OpenStreetMap contributors', maxZoom: 19 }).addTo(map);
+  const pts = spots.map(s => [s.lat, s.lon]);
+  spots.forEach((s, i) => {
+    const label = document.createElement('span');
+    label.textContent = (i + 1) + '. ' + s.name;
+    L.marker([s.lat, s.lon]).addTo(map).bindTooltip(label);
+  });
+  <?php if ($line): ?>if (el.dataset.line !== '0') L.polyline(pts, { weight: 4, opacity: .7 }).addTo(map);<?php endif; ?>
+  if (pts.length === 1) map.setView(pts[0], 16); else map.fitBounds(pts, { padding: [24, 24] });
+});
+document.querySelectorAll('.minimap .osm').forEach(el => {
+  if (el.dataset.ready) return; el.dataset.ready = '1';
+  const m = L.map(el, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false,
+    keyboard: false, touchZoom: false, attributionControl: false })
+   .setView([+el.dataset.lat, +el.dataset.lon], +el.dataset.zoom || 16);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(m);
+});
+</script>
+<?php }
+
+// ---------- 全体地図（複数地点にピン） ----------
+// Googleマップ（Maps JavaScript API）で表示。使えない場合は自動で OpenStreetMap に切り替える。
+// $points: [['lat','lon','name','sub'], ...]  一覧の項目は id="{$id}-item-{番号}" にしておく。
+function overview_map(array $points, string $id = 'ovmap', string $class = 'map tall'): void {
+    $pts = [];
+    foreach (array_values($points) as $i => $p) {
+        $pts[] = ['lat' => (float)$p['lat'], 'lon' => (float)$p['lon'], 'name' => (string)($p['name'] ?? ''),
+                  'sub' => (string)($p['sub'] ?? ''), 'n' => $i + 1,
+                  'c' => !empty($p['grp']) ? group_color((string)$p['grp']) : '#1B1B1B'];
+    }
+    echo '<div id="' . h($id) . '" class="' . h($class) . ' ovmap" data-points=\'' . h(json_encode($pts, JSON_UNESCAPED_UNICODE)) . '\'></div>';
+}
+function overview_map_script(): void {
+    $key = (string)cfg('google_maps_embed_key', '');
+    $useGoogle = $key !== '' && cfg('google_maps_js', true) !== false;
+    ?>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function () {
+  const maps = {};
+  const els = () => Array.from(document.querySelectorAll('div.ovmap'));
+  const ptsOf = el => JSON.parse(el.dataset.points || '[]');
+  window.ovFocus = (id, n) => { if (maps[id]) maps[id].focus(n); };
+
+  function onPick(id, n) {
+    document.querySelectorAll('.picked').forEach(e => e.classList.remove('picked'));
+    const li = document.getElementById(id + '-item-' + n);
+    if (!li) return;
+    li.classList.add('picked');
+    const a = li.querySelector('a.showmap');
+    const f = document.getElementById('placeMap');
+    if (a && f && a.dataset.src) f.src = a.dataset.src;
+  }
+  function infoNode(p) {           // 名前はテキストとして表示
+    const d = document.createElement('div');
+    const b = document.createElement('strong'); b.textContent = p.n + '. ' + p.name; d.appendChild(b);
+    if (p.sub) { const s = document.createElement('div'); s.style.fontSize = '12px'; s.textContent = p.sub; d.appendChild(s); }
+    return d;
+  }
+  function initLeaflet() {
+    els().forEach(el => {
+      const pts = ptsOf(el); if (!pts.length || el.dataset.ready) return;
+      el.dataset.ready = '1';
+      const map = L.map(el, { scrollWheelZoom: false });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        { attribution: '© OpenStreetMap contributors', maxZoom: 19 }).addTo(map);
+      const mks = pts.map(p => {
+        const icon = L.divIcon({ className: 'numpin', html: '<span style="background:' + p.c + '">' + p.n + '</span>', iconSize: [24, 24], iconAnchor: [12, 12] });
+        const mk = L.marker([p.lat, p.lon], { icon }).addTo(map).bindPopup(infoNode(p));
+        mk.on('click', () => onPick(el.id, p.n));
+        return mk;
+      });
+      if (pts.length === 1) map.setView([pts[0].lat, pts[0].lon], 16);
+      else map.fitBounds(pts.map(p => [p.lat, p.lon]), { padding: [30, 30] });
+      maps[el.id] = { focus: n => { const mk = mks[n - 1]; if (!mk) return; map.setView(mk.getLatLng(), 17); mk.openPopup(); onPick(el.id, n); } };
+    });
+  }
+  window.initGoogleOv = function () {
+    els().forEach(el => {
+      const pts = ptsOf(el); if (!pts.length) return;
+      const map = new google.maps.Map(el, { mapTypeControl: false, streetViewControl: false, gestureHandling: 'cooperative' });
+      const bounds = new google.maps.LatLngBounds();
+      const iw = new google.maps.InfoWindow();
+      const mks = pts.map(p => {
+        const mk = new google.maps.Marker({ position: { lat: p.lat, lng: p.lon }, map, title: p.name,
+          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 11, fillColor: p.c, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 },
+          label: { text: String(p.n), color: '#fff', fontSize: '11px', fontWeight: '700' } });
+        mk.addListener('click', () => { iw.setContent(infoNode(p)); iw.open({ anchor: mk, map }); onPick(el.id, p.n); });
+        bounds.extend(mk.getPosition());
+        return mk;
+      });
+      if (pts.length === 1) { map.setCenter(bounds.getCenter()); map.setZoom(16); } else map.fitBounds(bounds, 40);
+      maps[el.id] = { focus: n => { const mk = mks[n - 1]; if (!mk) return; map.panTo(mk.getPosition()); map.setZoom(17); google.maps.event.trigger(mk, 'click'); } };
+    });
+  };
+  // Google側で使えない（API未有効・キー制限など）ときは OpenStreetMap に切り替え
+  window.gm_authFailure = function () {
+    els().forEach(el => { const n = el.cloneNode(false); n.removeAttribute('style'); delete n.dataset.ready; el.replaceWith(n); });
+    initLeaflet();
+  };
+  // 周辺地図（小）の OpenStreetMap 版
+  const io = 'IntersectionObserver' in window ? new IntersectionObserver(es => es.forEach(e => {
+    if (!e.isIntersecting) return; io.unobserve(e.target); makeMini(e.target);
+  }), { rootMargin: '200px' }) : null;
+  function makeMini(el) {
+    if (el.dataset.ready) return; el.dataset.ready = '1';
+    const m = L.map(el, { zoomControl: false, dragging: false, scrollWheelZoom: false, doubleClickZoom: false,
+      boxZoom: false, keyboard: false, touchZoom: false, attributionControl: false })
+      .setView([+el.dataset.lat, +el.dataset.lon], +el.dataset.zoom || 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(m);
+  }
+  document.querySelectorAll('.minimap .osm').forEach(el => io ? io.observe(el) : makeMini(el));
+
+  <?php if ($useGoogle): ?>
+  const sc = document.createElement('script');
+  sc.src = 'https://maps.googleapis.com/maps/api/js?' + new URLSearchParams({
+    key: <?= json_encode($key) ?>, callback: 'initGoogleOv', language: 'ja', region: 'JP', loading: 'async' });
+  sc.async = true; sc.onerror = window.gm_authFailure;
+  document.head.appendChild(sc);
+  <?php else: ?>
+  initLeaflet();
+  <?php endif; ?>
+})();
+</script>
+<?php }
+
 function page_footer(): void {
-    echo '</main><footer>候補は組み合わせの提案であり、撮影可能性を保証するものではありません。'
-       . '地図データ © OpenStreetMap contributors</footer></body></html>';
+    echo '</main><footer>FUKUOKA LOCATIONS　候補は組み合わせの提案であり、撮影の許可・立入の可否・撮影できることを保証するものではありません。'
+       . '地点の位置はOpenStreetMapのデータに基づく手がかりです。移動時間は直線距離からの目安です。'
+       . '地図データ © Google / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>（ODbL）'
+       . '・住所 国土地理院</footer>'
+       . '<script src="assets/list.js"></script></body></html>';
 }

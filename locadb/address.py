@@ -1,0 +1,64 @@
+"""地点の住所（町丁目まで）を国土地理院の逆ジオコーダーで入れる（無料・キー不要）
+
+対象：住所が空の地点と、住所を入れた後に位置が変わった地点。
+名前のない地点は「（無名）種別（町丁目）」と表示できるようにする。
+"""
+import time
+
+import requests
+
+from .db import connect, job
+
+URL = "https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress"
+MUNI = {"40131": "福岡市東区", "40132": "福岡市博多区", "40133": "福岡市中央区", "40134": "福岡市南区",
+        "40135": "福岡市西区", "40136": "福岡市城南区", "40137": "福岡市早良区"}
+
+
+def lookup(lon: float, lat: float, session=requests) -> str | None:
+    for attempt in range(3):
+        try:
+            r = session.get(URL, params={"lat": f"{lat:.6f}", "lon": f"{lon:.6f}"}, timeout=20,
+                            headers={"User-Agent": "fukuoka-locadb/2.0 (location research)"})
+            if r.status_code == 200:
+                res = (r.json() or {}).get("results") or {}
+                muni = MUNI.get(res.get("muniCd", ""), "")
+                town = (res.get("lv01Nm") or "").replace("－", "")
+                return (muni + town) or None
+        except (requests.RequestException, ValueError):
+            pass
+        time.sleep(2 * (attempt + 1))
+    return None
+
+
+def run(run_id: int | None = None, limit: int = 20000) -> dict:
+    with connect() as conn, job(conn, "address", run_id) as stats:
+        rows = conn.execute(
+            """select s.id, s.name, s.category, sc.name catname, ST_X(s.geom::geometry) lon, ST_Y(s.geom::geometry) lat
+                 from spots s join spot_categories sc on sc.code = s.category
+                where s.data_status <> 'archived'
+                  and (s.address is null or s.address_at < (select max(h.at) from spot_history h
+                                                             where h.spot_id = s.id and h.event = 'moved'))
+                order by s.id limit %s""", (limit,)).fetchall()
+        ok = ng = 0
+        with requests.Session() as sess:
+            for r in rows:
+                addr = lookup(r["lon"], r["lat"], sess)
+                if not addr:
+                    ng += 1
+                    continue
+                town = addr.split("区", 1)[-1] if "区" in addr else addr
+                new_name = None
+                if r["name"].startswith("（無名）") and town:
+                    new_name = f"（無名）{r['catname']}（{town}）"
+                conn.execute("""update spots set address=%s, address_at=now(),
+                                  name = case when %s::text is not null then %s else name end where id=%s""",
+                             (addr, new_name, new_name, r["id"]))
+                ok += 1
+                if ok % 200 == 0:
+                    conn.commit()
+                    print(f"    住所 {ok}/{len(rows)}")
+                time.sleep(0.1)
+        conn.commit()
+        stats.update(target=len(rows), filled=ok, failed=ng)
+        print(f"    住所を入れた地点 {ok}（取得できず {ng}）")
+    return stats

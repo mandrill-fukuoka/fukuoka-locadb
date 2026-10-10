@@ -6,7 +6,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (try_login(trim($_POST['user'] ?? ''), $_POST['pass'] ?? '')) { header('Location: index.php'); exit; }
     $error = 'ユーザー名またはパスワードが違います';
 }
-page_header('ログイン');
+page_header('ログイン', 'login.php');
 ?>
 <form method="post" class="card narrow">
   <h1>ログイン</h1>

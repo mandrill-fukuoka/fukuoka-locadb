@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+*.osm
+*.pbf
+*.dump
+web/app/config.php

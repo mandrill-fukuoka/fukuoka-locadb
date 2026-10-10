@@ -137,6 +137,9 @@ do $$ begin
     grant execute on function search_clusters(text[],jsonb,text,text,int), review_queue(text,text,text,int,int),
       review_spot(bigint,text,text,text,text[],text), review_risk(bigint,boolean,boolean,text), ping()
       to service_role;
-    grant select on tags, areas, landscape_groups, spot_categories, v_clusters, v_risks_to_check to service_role;
+    -- 「Automatically expose new tables」をオフにした場合でも動くよう明示的に付与
+    grant usage on schema public to service_role;
+    grant select, insert, update, delete on all tables in schema public to service_role;
+    grant usage, select on all sequences in schema public to service_role;
   end if;
 end $$;

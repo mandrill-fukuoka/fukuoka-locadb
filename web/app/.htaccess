@@ -1,0 +1,8 @@
+# 直接アクセス禁止（Apache 2.4 / 2.2 両対応）
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order allow,deny
+  Deny from all
+</IfModule>

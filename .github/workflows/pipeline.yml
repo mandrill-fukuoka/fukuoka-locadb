@@ -1,0 +1,58 @@
+# 毎週月曜 6:00（日本時間）：OSMの取得 → 地点の反映 → 住所 → 流れの生成 → AI分類 → 変化リスク監視
+# 手動実行：Actions →「pipeline」→ Run workflow（mode で 試し / 本番 を選ぶ）
+name: pipeline
+on:
+  schedule: [{ cron: "0 21 * * 0" }]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run（試し：変更せずレポートだけ）/ apply（本番に反映）"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+      allow_large_change:
+        description: "大量の対象外・異常な減少を確認のうえ受け入れる（停止した回の再実行用）"
+        type: boolean
+        default: false
+concurrency: { group: database, cancel-in-progress: false }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+      - run: pip install -r requirements.txt
+      - name: 反映前のバックアップ（本番のときだけ）
+        if: github.event_name == 'schedule' || inputs.mode == 'apply'
+        run: |
+          docker run --rm -v "$PWD:/out" -e DATABASE_URL postgres:17 \
+            pg_dump "$DATABASE_URL" --no-owner --no-privileges -n public -n legacy -Fc -f /out/before-$(date +%Y%m%d-%H%M).dump
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'schedule' || inputs.mode == 'apply'
+        with: { name: backup-before, path: "before-*.dump", retention-days: 90 }
+      - name: 実行
+        id: run
+        run: |
+          MODE="${{ inputs.mode || 'apply' }}"
+          ARGS="--$( [ "$MODE" = apply ] && echo apply || echo dry-run )"
+          [ "${{ inputs.allow_large_change }}" = "true" ] && ARGS="$ARGS --allow-large-change"
+          set +e
+          python -m locadb.pipeline $ARGS 2>&1 | tee pipeline.log
+          code=${PIPESTATUS[0]}
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import os, psycopg
+          with psycopg.connect(os.environ["DATABASE_URL"]) as c:
+              r = c.execute("select id, mode, status, report from data_runs order by id desc limit 1").fetchone()
+              if r: print(f"## 収集 #{r[0]}（{r[1]} / {r[2]}）\n\n" + (r[3] or ""))
+          PY
+          exit $code
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: pipeline-log, path: pipeline.log, retention-days: 30 }
