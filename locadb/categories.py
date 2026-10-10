@@ -147,7 +147,7 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
             out.append("shotengai")
         if not on_bridge and (hw == "living_street" or t.get("service") == "alley" or hw == "steps"):
             out.append("alley")
-        if not on_bridge and hw == "pedestrian" and nm:
+        if not on_bridge and hw == "pedestrian" and nm and "商店街" not in nm:   # 商店街は商店街として扱う
             out.append("public_space")
         if t.get("waterway") in ("river", "canal") and nm:
             out.append("river")

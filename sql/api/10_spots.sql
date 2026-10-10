@@ -77,20 +77,24 @@ select coalesce(jsonb_agg(x order by x.ord), '[]'::jsonb) from (
 ) x;
 $$;
 
--- 地点の周辺（半径m以内）
+-- 地点の周辺（半径m以内）。同じ名前（川・商店街の流域の地点など）は最も近い1件だけ
 create function spots_nearby(p_id bigint, p_radius real default 800)
 returns jsonb language sql stable as $$
 select coalesce(jsonb_agg(x order by x.meters), '[]'::jsonb) from (
-  select n.id, n.name, lg.name as grp, sc.landscape_group as grp_code, sc.name as category,
-         round(ST_Distance(n.geom, s.geom)) as meters,
-         ST_Y(n.geom::geometry) as lat, ST_X(n.geom::geometry) as lon
-    from spots s
-    join spots n on n.id <> s.id and ST_DWithin(n.geom, s.geom, p_radius) and n.data_status <> 'archived'
-    join spot_categories sc on sc.code = n.category
-    join landscape_groups lg on lg.code = sc.landscape_group
-   where s.id = p_id and n.name not like '（無名）%'
-   order by ST_Distance(n.geom, s.geom)
-   limit 30
+  select * from (
+    select distinct on (n.name, sc.landscape_group)
+           n.id, n.name, lg.name as grp, sc.landscape_group as grp_code, sc.name as category,
+           round(ST_Distance(n.geom, s.geom)) as meters,
+           ST_Y(n.geom::geometry) as lat, ST_X(n.geom::geometry) as lon
+      from spots s
+      join spots n on n.id <> s.id and ST_DWithin(n.geom, s.geom, p_radius) and n.data_status <> 'archived'
+      join spot_categories sc on sc.code = n.category
+      join landscape_groups lg on lg.code = sc.landscape_group
+     where s.id = p_id and n.name not like '（無名）%' and n.name <> s.name
+     order by n.name, sc.landscape_group, ST_Distance(n.geom, s.geom)
+  ) d
+  order by d.meters
+  limit 30
 ) x;
 $$;
 
