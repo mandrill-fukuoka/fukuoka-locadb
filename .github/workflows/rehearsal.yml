@@ -1,0 +1,58 @@
+# リハーサル：本番に触れずに、使い捨てのDBで福岡市全体の収集→反映を2回まわし、件数と差分を確かめる
+name: rehearsal
+on: { workflow_dispatch: {} }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      pg:
+        image: postgis/postgis:16-3.4
+        env: { POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: locadb }
+        ports: ["5432:5432"]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env: { DATABASE_URL: "postgresql://app:app@localhost:5432/locadb" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+      - run: pip install -r requirements.txt
+      - run: python tools/migrate.py
+      - name: OSMファイルの取得と切り出し
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from locadb import osm_source
+          print(osm_source.download(Path("kyushu.osm.pbf")))
+          osm_source.clip(Path("kyushu.osm.pbf"), Path("fukuoka.osm.pbf"))
+          print("時点", osm_source.file_timestamp(Path("fukuoka.osm.pbf")))
+          PY
+          ls -la *.pbf
+      - name: 1回目（初回の登録）
+        run: python -m locadb.pipeline --apply --pbf fukuoka.osm.pbf --skip-address --skip-extras | tee run1.log
+      - name: 2回目（同じデータで変化がないこと）
+        run: |
+          python -m locadb.pipeline --apply --pbf fukuoka.osm.pbf --skip-address --skip-extras | tee run2.log
+          grep -E "^- (新規|位置の更新|対象外にした): 0$" run2.log | wc -l | grep -q 3
+      - name: 流れの生成
+        run: python -c "from locadb import build_clusters; build_clusters.run_all()"
+      - name: 診断と内訳
+        run: |
+          python - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import json, os, psycopg
+          with psycopg.connect(os.environ["DATABASE_URL"]) as c:
+              d = c.execute("select diag_summary()").fetchone()[0]
+              print("```json\n" + json.dumps({k: d[k] for k in d if k != 'last_runs'}, ensure_ascii=False, indent=1) + "\n```")
+              print("\n橋の例（30件）：" + "、".join(r[0] for r in c.execute(
+                  "select name from spots where category='bridge_overpass' order by random() limit 30")))
+              print("\n路地の例（20件）：" + "、".join(r[0] for r in c.execute(
+                  "select name from spots where category='alley' order by random() limit 20")))
+              print("\n線の地点の位置：" + json.dumps(dict(c.execute(
+                  "select position_kind, count(*) from spots where sample_key is not null group by 1").fetchall()), ensure_ascii=False))
+          PY
+      - uses: actions/upload-artifact@v4
+        with: { name: fukuoka-osm, path: fukuoka.osm.pbf, retention-days: 7 }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: rehearsal-logs, path: "run*.log", retention-days: 7 }
