@@ -27,7 +27,7 @@ select jsonb_build_object(
   'area_code', area_at(p_lat, p_lon),
   'nearby', (select coalesce(jsonb_agg(x order by x.similar desc, x.meters), '[]'::jsonb) from (
       select s.id, s.code, s.name, sc.name as category, sc.landscape_group as grp_code, s.origin,
-             round(ST_Distance(s.geom, p.g)) as meters,
+             round(ST_Distance(s.geom, p.g)) as meters, ST_Y(s.geom::geometry) as lat, ST_X(s.geom::geometry) as lon,
              (p.nn is not null and (regexp_replace(lower(s.name), '[\s・()（）]', '', 'g') = p.nn
                                     or similarity(s.name, p_name) > 0.4
                                     or exists (select 1 from unnest(s.alt_names) a

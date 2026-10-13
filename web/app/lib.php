@@ -178,14 +178,36 @@ const HISTORY_LABEL = ['created' => '新規登録', 'moved' => '位置の更新'
     'linked' => '同じ場所のデータを統合', 'relinked' => 'OSMデータの付け替え', 'missing' => 'OSMで見つからず', 'archived' => '対象外（自動）',
     'restored' => '復帰（自動）', 'needs_review' => '要確認', 'reviewed' => '確認', 'area' => '区の更新', 'reclassify' => 'AI分類のやり直し',
     'address' => '住所', 'resolve' => '要確認を解消', 'archive' => '対象外にした', 'restore' => '掲載に戻した', 'lock' => '位置を固定',
-    'unlock' => '固定を外した', 'merged' => '重複を統合', 'merged_into' => '別の地点に統合'];
+    'unlock' => '固定を外した', 'merged' => '重複を統合', 'merged_into' => '別の地点に統合', 'practicals' => '撮影実務の更新'];
+const PERMIT_REQUIRED_LABEL = ['required' => '許可が必要', 'consult' => '事前の相談が必要', 'not_required' => '許可は不要（公道からの撮影など）',
+                               'unknown' => '不明'];
+const SOURCE_KIND_LABEL = ['official' => '公式の情報', 'news' => '報道', 'field' => '現地で確認', 'review' => '確認メモ', 'legacy' => '旧版のデータ'];
+
+// ---------- 住所（国土地理院の逆ジオコーダー。無料・キー不要）。取れなければ null（次の収集で入る） ----------
+const GSI_MUNI = ['40131' => '福岡市東区', '40132' => '福岡市博多区', '40133' => '福岡市中央区', '40134' => '福岡市南区',
+                  '40135' => '福岡市西区', '40136' => '福岡市城南区', '40137' => '福岡市早良区'];
+function gsi_address(float $lat, float $lon): ?string {
+    $ch = curl_init('https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress?'
+                    . http_build_query(['lat' => sprintf('%.6f', $lat), 'lon' => sprintf('%.6f', $lon)]));
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8,
+                            CURLOPT_HTTPHEADER => ['User-Agent: fukuoka-locadb/2.0 (location research)']]);
+    $res = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($res === false || $code !== 200) return null;
+    $r = json_decode((string)$res, true)['results'] ?? null;
+    if (!is_array($r)) return null;
+    $addr = (GSI_MUNI[$r['muniCd'] ?? ''] ?? '') . str_replace('－', '', (string)($r['lv01Nm'] ?? ''));
+    return $addr !== '' ? $addr : null;
+}
 const MODE_LABEL = ['walk' => '徒歩', 'car' => '車', 'mixed' => '徒歩＋車', 'any' => '指定なし'];
 const AREA_LABEL = ['fuk-chuo' => '中央区', 'fuk-hakata' => '博多区', 'fuk-higashi' => '東区',
                     'fuk-sawara' => '早良区', 'fuk-nishi' => '西区', 'fuk-minami' => '南区', 'fuk-jonan' => '城南区'];
 
 function page_header(string $title, string $active = ''): void {
     $nav = ['index.php' => '場所を探す', 'flow.php' => '流れで探す', 'flows.php' => 'おすすめの流れ', 'list.php' => 'ロケハンリスト'];
-    if (current_user()) $nav += ['spots.php' => '地点の確認', 'risks.php' => '変化リスク', 'runs.php' => '収集の記録'];
+    if (current_user()) $nav += ['spots.php' => '地点の確認', 'risks.php' => '変化リスク', 'runs.php' => '収集の記録',
+                                 'edit.php' => '＋地点を追加'];
     echo '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
        . '<meta name="viewport" content="width=device-width,initial-scale=1">'
        . (cfg('allow_indexing', false) ? '' : '<meta name="robots" content="noindex,nofollow">')

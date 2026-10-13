@@ -18,6 +18,14 @@
 | 住所 | 空 | 国土地理院の逆ジオコーダーで町丁目まで |
 | 画面 | 場所を探す・流れで探す・おすすめの流れ | ＋地点の詳細（共有URL・ストリートビュー・光の目安・相談先の目安）、ロケハンリスト（CSV・ルート・共有）、収集の記録 |
 
+## 地点の手入力（2026-10 タスクA）
+
+- OSMにない場所は、ログインして「＋地点を追加」（web/public/edit.php）から地図で位置を指定して追加する。手入力の地点（origin=manual、コード FUK-<区>-M0001）は自動収集では動かず、消えない
+- OSMの地点も、地点ページの「位置・名前・種別を直す」から直せる。直すと位置固定（locked）になり、自動では変わらない
+- 人が確認・修正した地点（保護された地点）は、収集が「前回見たOSMの値」（spots.osm_seen）と比べ、OSMが変わったときだけ要確認にする。要確認を解消した地点や、人が直した地点が毎週ぶり返すことはない
+- 撮影実務（許可の要否・窓口・制約・撮影実績・メモ）は地点ページで入力する（spot_practicals）。写真は未対応（保存先は heteml の予定）
+- 関数は sql/api/30_manual.sql、表の変更は sql/migrations/110_manual_spots.sql
+
 ## 構成
 
 ```
@@ -30,7 +38,7 @@ locadb/build_clusters.py, clustering.py   流れの自動生成
 locadb/classify.py     AI分類（ANTHROPIC_API_KEY があるときだけ）
 locadb/monitor_risk.py 変化リスク監視（config/watch_pages.txt）
 sql/migrations/        表の作成・変更（1回だけ。schema_migrations に記録）
-sql/api/               画面から呼ぶ関数（毎回作り直す）
+sql/api/               画面から呼ぶ関数（毎回作り直す。30_manual.sql は手入力・修正・撮影実務）
 sql/grants.sql         権限・RLS（毎回）
 sql/legacy/            旧版のSQL（参照用。実行しない）
 tools/migrate.py       DBの変更を適用
