@@ -4,7 +4,8 @@
 - 取得に失敗した回は、そもそもここまで来ない（ファイルの取得・照合に失敗したら中止）
 - 前回より件数が大きく減った種別は「異常」とみなし、その種別では消失扱いをしない
 - 人が確認した地点（ロケハン済み・確認済み・資料確認済み・現地確認済み・手入力・位置固定）は
-  自動で動かさず、変化があれば「要確認」にして履歴に残す
+  自動で動かさず、変化があれば「要確認」にして履歴に残す。比べる相手は「前回見たOSMの値」
+  （spots.osm_seen）なので、人が直した位置や、要確認を解消した地点が毎回ぶり返すことはない
 - 地点は削除しない。対象外にするときは理由と回を記録し、OSMに戻れば自動で戻す
 - すべての変化は spot_history に残る。試し実行（dry_run）では最後に全部取り消し、レポートだけ残す
 """
@@ -74,6 +75,7 @@ class Spot:
     line_key: str | None
     review_reason: str | None
     features: dict = field(default_factory=dict)   # feature_key -> role
+    osm_seen: dict | None = None                    # 保護された地点：前回見たOSMの値（比較の基準）
 
     @property
     def protected(self):
@@ -90,6 +92,7 @@ class Sync:
         self.lists = defaultdict(list)
         self.seen_spots: set[int] = set()
         self.touched_spots: dict[int, str] = {}    # クラスターの再確認用（spot_id -> 理由）
+        self._seen_updates: list = []              # osm_seen の更新（最後にまとめて書く）
 
     # ---------------------------------------------------------------- 記録
     def hist(self, spot_id, event, detail=None):
@@ -120,14 +123,14 @@ class Sync:
         rows = self.c.execute("""
             select s.id, s.code, s.name, ST_X(s.geom::geometry) lon, ST_Y(s.geom::geometry) lat, s.category,
                    s.extra_categories, s.area_code, s.data_status, s.status, s.confidence, s.origin, s.locked,
-                   s.missing_runs, s.archived_reason, s.sample_key, s.line_key, s.review_reason,
+                   s.missing_runs, s.archived_reason, s.sample_key, s.line_key, s.review_reason, s.osm_seen,
                    coalesce((select jsonb_object_agg(feature_key, role) from spot_features f where f.spot_id = s.id), '{}') feats
               from spots s""").fetchall()
         self.spots = {r["id"]: Spot(r["id"], r["code"], r["name"], (r["lon"], r["lat"]), r["category"],
                                     r["extra_categories"] or [], r["area_code"], r["data_status"], r["status"],
                                     r["confidence"], r["origin"], r["locked"], r["missing_runs"],
                                     r["archived_reason"], r["sample_key"], r["line_key"], r["review_reason"],
-                                    dict(r["feats"])) for r in rows}
+                                    dict(r["feats"]), r["osm_seen"]) for r in rows}
         self.by_feature = defaultdict(list)
         for s in self.spots.values():
             for k, role in s.features.items():
@@ -221,10 +224,10 @@ class Sync:
         s.features[key] = role
         self.by_feature[key].append(s.id)
 
-    def flag_review(self, s: Spot, reason, detail):
+    def flag_review(self, s: Spot, reason, detail, force=False):
         if s.data_status == "archived":
             return
-        if s.data_status == "needs_review" and s.review_reason == reason:
+        if s.data_status == "needs_review" and s.review_reason == reason and not force:
             return
         self.c.execute("update spots set data_status='needs_review', review_reason=%s where id=%s", (reason, s.id))
         s.data_status, s.review_reason = "needs_review", reason
@@ -240,8 +243,35 @@ class Sync:
             self.note("復帰", s, "OSMに戻ったため対象外を解除")
             s.data_status, s.archived_reason = "current", None
 
+    def seen(self, s: Spot, state: dict):
+        """保護された地点について、今回見たOSMの値を記録する（変わったときだけ書く）"""
+        if state != s.osm_seen:
+            s.osm_seen = state
+            self._seen_updates.append((json.dumps(state, ensure_ascii=False), s.id))
+
     def update(self, s: Spot, name, ll, cat, extra, area):
         """自動で更新してよい地点は更新、人が確認した地点は要確認にする"""
+        if area and area != s.area_code:
+            self.c.execute("update spots set area_code=%s where id=%s", (area, s.id))
+            self.hist(s.id, "area", {"from": s.area_code, "to": area})
+            s.area_code = area
+        if s.protected:
+            # 地点の今の値ではなく「前回見たOSMの値」と比べる（OSMが変わったときだけ要確認）
+            b = s.osm_seen if s.osm_seen and "lon" in s.osm_seen else \
+                {"name": s.name, "lon": s.ll[0], "lat": s.ll[1], "cats": [s.category] + sorted(s.extra)}
+            changes = {}
+            moved = dist_m((b["lon"], b["lat"]), ll)
+            if moved > MOVE_M:
+                changes["moved"] = {"from": (b["lon"], b["lat"]), "to": ll, "m": round(moved)}
+            if name and name != b.get("name"):
+                changes["renamed"] = {"from": b.get("name"), "to": name}
+            if [cat] + sorted(extra) != b["cats"]:
+                changes["recategorized"] = {"from": b["cats"], "to": [cat] + extra}
+            self.seen(s, {"name": name or None, "lon": round(ll[0], 7), "lat": round(ll[1], 7),
+                          "cats": [cat] + sorted(extra)} if changes or s.osm_seen else s.osm_seen)
+            if changes:
+                self.flag_review(s, "OSMの位置・名前・種別が変わった", {"proposed": changes}, force=True)
+            return
         changes = {}
         moved = dist_m(s.ll, ll)
         if moved > MOVE_M:
@@ -250,14 +280,7 @@ class Sync:
             changes["renamed"] = {"from": s.name, "to": name}
         if cat != s.category or sorted(extra) != sorted(s.extra):
             changes["recategorized"] = {"from": [s.category] + s.extra, "to": [cat] + extra}
-        if area and area != s.area_code:
-            self.c.execute("update spots set area_code=%s where id=%s", (area, s.id))
-            self.hist(s.id, "area", {"from": s.area_code, "to": area})
-            s.area_code = area
         if not changes:
-            return
-        if s.protected:
-            self.flag_review(s, "OSMの位置・名前・種別が変わった", {"proposed": changes})
             return
         if "moved" in changes:
             self.c.execute("update spots set geom=ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography where id=%s",
@@ -375,7 +398,8 @@ class Sync:
                 if s.data_status != "archived":
                     self.update(s, smp.name, ll, smp.cat, [], smp.area_code)
                     self.c.execute("""update spots set position_kind=%s,
-                                        line_geom=ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography where id=%s""",
+                                        line_geom=ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography
+                                      where id=%s and not (position_kind = 'manual' and locked)""",
                                    (smp.position_kind, smp.line_lon, smp.line_lat, sid))
                 continue
             # 名前の変更・格子のずれ：近くの「今回見つからなかった」同じ種別の点を付け替え
@@ -420,7 +444,9 @@ class Sync:
                 else:
                     why, certain = "OSMから削除された", False
             if s.protected:
-                self.flag_review(s, why, {"missing": True})
+                if (s.osm_seen or {}).get("missing") != why:      # 同じ理由は一度だけ（解消後にぶり返さない）
+                    self.seen(s, {"missing": why})
+                    self.flag_review(s, why, {"missing": True})
                 continue
             runs = s.missing_runs + 1
             self.c.execute("update spots set missing_runs=%s where id=%s", (runs, s.id))
@@ -469,6 +495,9 @@ class Sync:
             self.sync_points(missing_now)
             self.sync_lines(True)
             self.missing(present_keys, frozen, rules_changed)
+            if self._seen_updates:
+                with self.c.cursor() as cur:
+                    cur.executemany("update spots set osm_seen=%s::jsonb where id=%s", self._seen_updates)
             self.flush_history()
         clusters = self.clusters()
         n_after = self.c.execute("select count(*) n from spots where data_status <> 'archived'").fetchone()["n"]
