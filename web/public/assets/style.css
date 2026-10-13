@@ -265,11 +265,35 @@ details.run summary{cursor:pointer;list-style:none}
 details.run summary::-webkit-details-marker{display:none}
 .listtools{margin:0 0 16px}
 .printonly{display:none}
+/* 地点の追加・修正（タスクAで追加） */
+.editpage .crumb{margin:0 0 6px;display:flex;gap:8px;align-items:center}
+.editpage .crumb a{color:var(--muted);text-decoration:none}
+.editpage .crumb .code{margin-left:auto;color:var(--faint);font:400 11px/1 "Inter",sans-serif;letter-spacing:.06em}
+.editgrid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:40px;border-top:1px solid var(--ink);padding-top:24px}
+.pickmap{height:460px;border-radius:var(--r);border:1px solid var(--line);margin:0 0 6px;cursor:crosshair}
+.pickmap .leaflet-tile-pane{filter:saturate(.35) sepia(.2)}
+.satview{display:block;width:100%;height:220px;border:1px solid var(--line);border-radius:var(--r);margin:4px 0 0}
+.satview[hidden]{display:none}
+input.bad{border-color:var(--warn)}
+.nearbox{border-top:1px solid var(--line-strong);padding-top:14px;margin:6px 0 16px}
+.nearbox h2{font-size:15px;margin-bottom:6px}
+#nearlist li.similar a{color:var(--warn);font-weight:500}
+.warnbox{border-top:2px solid var(--warn);padding:14px 0 4px;margin:0 0 24px}
+.warnbox h2{color:var(--warn);font-size:15px}
+.editgrid label.tag{display:flex;gap:8px;align-items:center;color:var(--ink);font-size:13px}
+.editgrid label.tag input{width:auto;margin:0}
+.editgrid .actions{display:flex;gap:18px;align-items:center;margin:8px 0 0}
+.subhead{font-family:var(--mincho);font-size:14px;font-weight:700;margin:18px 0 8px}
+details.practical-edit{margin:6px 0 0}
+details.practical-edit summary{cursor:pointer;color:var(--muted)}
+details.practical-edit form{padding:12px 0 0;max-width:520px}
 @media (max-width:760px){
   .spot-grid{grid-template-columns:1fr;gap:8px}
   .spotpage h1{font-size:26px}
   .spotmap{height:280px}
   ul.permits li{grid-template-columns:1fr;gap:2px}
+  .editgrid{grid-template-columns:1fr;gap:8px}
+  .pickmap{height:340px}
 }
 @media print{
   header.top,footer,.noprint,.listtools,.card-foot,a.minimap .open{display:none!important}

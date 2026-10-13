@@ -114,6 +114,8 @@ select jsonb_build_object(
   'archived_reason', s.archived_reason, 'origin', s.origin, 'locked', s.locked,
   'era_feel', s.era_feel, 'shoot_scope', s.shoot_scope, 'owner_type', s.owner_type,
   'ffc_registered', s.ffc_registered, 'summary', s.summary, 'updated_at', s.updated_at,
+  'created_at', s.created_at,
+  'created_by', (select h.actor from spot_history h where h.spot_id = s.id and h.event = 'created' order by h.at limit 1),
   'osm', (select coalesce(jsonb_agg(jsonb_build_object('key', f.key, 'kind', f.kind, 'osm_type', f.osm_type,
                                                         'osm_id', f.osm_id, 'name', f.name, 'role', sf.role,
                                                         'way_ids', f.way_ids[1:5], 'tags', f.tags)
@@ -149,13 +151,13 @@ where s.id = p_id;
 $$;
 
 -- 確認待ちの地点（ログイン後の「地点の確認」）
---  p_queue: review（要確認）/ unreviewed（未確認）/ archived（対象外）/ all
+--  p_queue: review（要確認）/ unreviewed（未確認）/ manual（手入力・人が直した）/ archived（対象外）/ all
 create function review_queue(p_area text default null, p_status text default null, p_q text default null,
                              p_offset int default 0, p_limit int default 50, p_queue text default 'review')
 returns jsonb language sql stable as $$
 select coalesce(jsonb_agg(x), '[]'::jsonb) from (
   select s.id, s.code, s.name, s.area_code, s.address, sc.name category, s.era_feel, s.shoot_scope,
-         s.status, s.confidence, s.data_status, s.review_reason, s.archived_reason, s.summary, s.locked,
+         s.status, s.confidence, s.data_status, s.review_reason, s.archived_reason, s.summary, s.locked, s.origin,
          ST_Y(s.geom::geometry) lat, ST_X(s.geom::geometry) lon,
          (select jsonb_agg(jsonb_build_object('code', t.code, 'name', t.name, 'score', st.score, 'origin', st.origin)
                            order by st.score desc)
@@ -169,6 +171,7 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
      and case coalesce(p_queue, 'review')
            when 'review' then s.data_status = 'needs_review'
            when 'archived' then s.data_status = 'archived'
+           when 'manual' then s.data_status <> 'archived' and (s.origin = 'manual' or s.locked)
            when 'unreviewed' then s.data_status = 'current' and s.status in ('candidate','ai_tagged')
            else s.data_status <> 'archived' end
    order by s.code offset p_offset limit p_limit

@@ -4,7 +4,7 @@ require __DIR__ . '/bootstrap.php';
 require_login();
 
 $queue  = $_GET['queue'] ?? 'review';
-if (!in_array($queue, ['review', 'unreviewed', 'archived', 'all', 'dups'], true)) $queue = 'review';
+if (!in_array($queue, ['review', 'unreviewed', 'manual', 'archived', 'all', 'dups'], true)) $queue = 'review';
 $area   = $_GET['area'] ?? '';
 $status = $_GET['status'] ?? '';
 $q      = trim($_GET['q'] ?? '');
@@ -51,7 +51,7 @@ try {
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
 $qs = fn(array $o) => '?' . http_build_query(array_merge(['queue' => $queue, 'area' => $area, 'status' => $status, 'q' => $q], $o));
-$tabs = ['review' => '要確認', 'unreviewed' => '未確認', 'dups' => '重複の疑い', 'archived' => '対象外', 'all' => 'すべて'];
+$tabs = ['review' => '要確認', 'unreviewed' => '未確認', 'manual' => '手入力・人が直した', 'dups' => '重複の疑い', 'archived' => '対象外', 'all' => 'すべて'];
 page_header('地点の確認', 'spots.php');
 ?>
 <section class="card">
@@ -99,11 +99,12 @@ page_header('地点の確認', 'spots.php');
         <strong><?= h(nm($s['name'])) ?></strong>
         <span class="muted"><?= h($s['category']) ?>・<?= h($s['address'] ?: (AREA_LABEL[$s['area_code']] ?? '')) ?></span>
         <span class="chip dim"><?= h(STATUS_LABEL[$s['status']] ?? '') ?>／<?= h(CONF_LABEL[$s['confidence']] ?? '') ?></span>
+        <?php if (($s['origin'] ?? '') === 'manual'): ?><span class="chip">手入力</span><?php elseif (!empty($s['locked'])): ?><span class="chip">位置固定</span><?php endif; ?>
         <?php if ($s['data_status'] === 'needs_review'): ?><span class="chip warn"><?= h($s['review_reason'] ?: '要確認') ?></span><?php endif; ?>
         <?php if ($s['data_status'] === 'archived'): ?><span class="chip warn">対象外：<?= h(preg_replace('/^(auto|manual):/', '', (string)$s['archived_reason'])) ?></span><?php endif; ?>
         <?php foreach (($s['risks'] ?? []) as $r): if ($r['type'] !== 'none'): ?><span class="chip warn"><?= h(RISK_LABEL[$r['type']]) ?><?= $r['verified'] ? '' : '（要確認）' ?></span><?php endif; endforeach; ?>
       </summary>
-      <p class="small"><a href="spot.php?id=<?= (int)$s['id'] ?>">詳細・変更履歴</a>・<?= h($s['code']) ?>・時代感 <?= h($s['era_feel'] ?? '—') ?>
+      <p class="small"><a href="spot.php?id=<?= (int)$s['id'] ?>">詳細・変更履歴</a>・<a href="edit.php?id=<?= (int)$s['id'] ?>">位置・名前を直す</a>・<?= h($s['code']) ?>・時代感 <?= h($s['era_feel'] ?? '—') ?>
         ・<a target="_blank" rel="noopener" href="https://www.google.com/maps?q=<?= h($s['lat']) ?>,<?= h($s['lon']) ?>">地図</a></p>
       <?php if ($s['data_status'] === 'archived'): ?>
         <form method="post" class="row"><?= csrf_field() ?><input type="hidden" name="id" value="<?= (int)$s['id'] ?>"><input type="hidden" name="name" value="<?= h(nm($s['name'])) ?>">

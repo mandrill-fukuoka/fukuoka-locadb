@@ -17,8 +17,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $msg = ['resolve' => '要確認を解消しました', 'archive' => '対象外にしました', 'restore' => '掲載に戻しました',
                     'lock' => '位置・名前を固定しました（自動では変わりません）', 'unlock' => '固定を外しました'][$action];
         } catch (Throwable $e) { $error = $e->getMessage(); }
+    } elseif ($action === 'practicals') {
+        // 撮影実務（撮影実績は1行に1件）
+        $req = (string)($_POST['permit_required'] ?? '');
+        $past = array_values(array_filter(array_map('trim', preg_split('/\R/u', (string)($_POST['past_productions'] ?? '')))));
+        try {
+            sb_rpc('save_practicals', [
+                'p_id' => $id, 'p_permit_required' => array_key_exists($req, PERMIT_REQUIRED_LABEL) ? $req : null,
+                'p_permit_contact' => trim((string)($_POST['permit_contact'] ?? '')) ?: null,
+                'p_restrictions' => trim((string)($_POST['restrictions'] ?? '')) ?: null,
+                'p_past_productions' => $past, 'p_notes' => trim((string)($_POST['notes'] ?? '')) ?: null,
+                'p_user' => current_user(),
+            ]);
+            $msg = '撮影実務を保存しました';
+        } catch (Throwable $e) { $error = $e->getMessage(); }
     }
 }
+$msg = $msg ?: (['created' => '地点を追加しました（手入力の地点として、自動収集では変わりません）',
+                 'edited' => '保存しました'][$_GET['done'] ?? ''] ?? '');
 
 $s = null; $nearby = [];
 try {
@@ -121,13 +137,32 @@ page_header(nm($s['name']), '');
           <?php endforeach; ?>
           <li><strong>まとめて相談</strong><span>福岡市内のロケは、福岡フィルムコミッションが撮影の相談・調整の窓口になれる場合があります。<?php if (cfg('ffc_url')): ?><a href="<?= h(cfg('ffc_url')) ?>" target="_blank" rel="noopener">サイト</a><?php endif; ?></span></li>
         </ul>
-        <?php if (!empty($s['practical'])): $p = $s['practical']; ?>
+        <?php $p = $s['practical'] ?? null; $past = is_array($p['past_productions'] ?? null) ? $p['past_productions'] : []; ?>
+        <?php if ($p && ($p['permit_required'] || $p['permit_contact'] || $p['restrictions'] || $p['notes'] || $past)): ?>
+          <h3 class="subhead">この地点の撮影実務</h3>
           <dl class="practical">
-            <?php foreach (['permit_required' => '必要な許可', 'permit_contact' => '窓口', 'restrictions' => '制限', 'notes' => 'メモ'] as $k => $v): if (!empty($p[$k])): ?>
+            <?php if (!empty($p['permit_required'])): ?><dt>許可</dt><dd><?= h(PERMIT_REQUIRED_LABEL[$p['permit_required']] ?? $p['permit_required']) ?></dd><?php endif; ?>
+            <?php foreach (['permit_contact' => '窓口', 'restrictions' => '制約・注意', 'notes' => 'メモ'] as $k => $v): if (!empty($p[$k])): ?>
               <dt><?= h($v) ?></dt><dd><?= nl2br(h($p[$k])) ?></dd><?php endif; endforeach; ?>
+            <?php if ($past): ?><dt>撮影実績</dt><dd><?= implode('<br>', array_map('h', $past)) ?></dd><?php endif; ?>
           </dl>
+          <?php if (!empty($p['updated_at'])): ?><p class="small muted">更新 <?= h(substr((string)$p['updated_at'], 0, 10)) ?><?= current_user() && !empty($p['updated_by']) ? '（' . h($p['updated_by']) . '）' : '' ?></p><?php endif; ?>
         <?php endif; ?>
         <p class="small muted">一般的な目安です。撮影の可否・手続きは各管理者に必ず確認してください。</p>
+        <?php if (current_user()): ?>
+          <details class="practical-edit"<?= ($_POST['action'] ?? '') === 'practicals' && $error ? ' open' : '' ?>>
+            <summary class="small">撮影実務を<?= $p ? '直す' : '入力する' ?></summary>
+            <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="practicals">
+              <label>許可<select name="permit_required"><option value="">—</option>
+                <?php foreach (PERMIT_REQUIRED_LABEL as $k => $v): ?><option value="<?= $k ?>" <?= ($p['permit_required'] ?? '') === $k ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></label>
+              <label>窓口<input name="permit_contact" value="<?= h($p['permit_contact'] ?? '') ?>" placeholder="例：寺務所（電話で事前相談）"></label>
+              <label>制約・注意<textarea name="restrictions" rows="2" placeholder="例：法要の日は不可。境内は三脚禁止"><?= h($p['restrictions'] ?? '') ?></textarea></label>
+              <label>撮影実績（1行に1件）<textarea name="past_productions" rows="2" placeholder="例：映画「〇〇」（2024）"><?= h(implode("\n", $past)) ?></textarea></label>
+              <label>メモ<textarea name="notes" rows="2"><?= h($p['notes'] ?? '') ?></textarea></label>
+              <button class="secondary small-btn">撮影実務を保存</button>
+            </form>
+          </details>
+        <?php endif; ?>
       </section>
     </div>
 
@@ -178,8 +213,11 @@ page_header(nm($s['name']), '');
             <li>OpenStreetMap <?php if ($u): ?><a href="<?= h($u) ?>" target="_blank" rel="noopener"><?= h($f['kind'] === 'element' ? $f['osm_type'] . $f['osm_id'] : '線のデータ') ?></a><?php endif; ?>
               <?= $f['role'] === 'secondary' ? '<span class="muted">（同じ場所の別データ）</span>' : '' ?></li>
           <?php endforeach; ?>
+          <?php if (($s['origin'] ?? '') === 'manual'): ?>
+            <li>手入力（<?= h(substr((string)$s['created_at'], 0, 10)) ?><?= current_user() && !empty($s['created_by']) ? '・' . h($s['created_by']) : '' ?>）</li>
+          <?php endif; ?>
           <?php foreach ($s['sources'] ?? [] as $src): if ($src['kind'] === 'review') continue; ?>
-            <li><?= h($src['title'] ?: $src['kind']) ?><?php if (preg_match('#^https?://#', (string)$src['url'])): ?> <a href="<?= h($src['url']) ?>" target="_blank" rel="noopener">↗</a><?php endif; ?></li>
+            <li><?= h($src['title'] ?: (SOURCE_KIND_LABEL[$src['kind']] ?? $src['kind'])) ?><?php if (!empty($src['note'])): ?><span class="muted">：<?= h($src['note']) ?></span><?php endif; ?><?php if (preg_match('#^https?://#', (string)$src['url'])): ?> <a href="<?= h($src['url']) ?>" target="_blank" rel="noopener">↗</a><?php endif; ?></li>
           <?php endforeach; ?>
           <?php if ($s['address']): ?><li>住所：国土地理院 逆ジオコーダー</li><?php endif; ?>
         </ul>
@@ -198,7 +236,8 @@ page_header(nm($s['name']), '');
           <?php else: ?><button name="action" value="restore" class="secondary small-btn">掲載に戻す</button><?php endif; ?>
           <button name="action" value="<?= $s['locked'] ? 'unlock' : 'lock' ?>" class="secondary small-btn"><?= $s['locked'] ? '固定を外す' : '位置・名前を固定' ?></button>
         </form>
-        <p class="small"><a href="spots.php?<?= h(http_build_query(['q' => $s['name'], 'queue' => 'all'])) ?>">確認画面で編集</a></p>
+        <p class="small"><a href="edit.php?id=<?= (int)$s['id'] ?>">位置・名前・種別を直す</a>
+          ・<a href="spots.php?<?= h(http_build_query(['q' => $s['name'], 'queue' => 'all'])) ?>">確認画面で編集</a></p>
         <?php if (!empty($s['history'])): ?>
           <details class="history"><summary class="small">変更履歴（<?= count($s['history']) ?>）</summary>
             <ol class="compact small">
@@ -207,7 +246,8 @@ page_header(nm($s['name']), '');
                   <span class="muted"><?= h($hst['actor'] === 'pipeline' ? '自動' : $hst['actor']) ?></span>
                   <?php $d = $hst['detail'] ?? []; if (!empty($d['reason'])): ?><span class="muted">：<?= h($d['reason']) ?></span><?php endif; ?>
                   <?php if (!empty($d['m'])): ?><span class="muted">（<?= (int)$d['m'] ?>m）</span><?php endif; ?>
-                  <?php if (!empty($d['to']) && is_string($d['to'])): ?><span class="muted">→ <?= h($d['to']) ?></span><?php endif; ?></li>
+                  <?php if (!empty($d['to']) && is_string($d['to'])): ?><span class="muted">→ <?= h($d['to']) ?></span><?php endif; ?>
+                  <?php if (!empty($d['note']) && is_string($d['note'])): ?><span class="muted">「<?= h($d['note']) ?>」</span><?php endif; ?></li>
               <?php endforeach; ?>
             </ol></details>
         <?php endif; ?>
