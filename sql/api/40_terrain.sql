@@ -7,6 +7,10 @@ create view v_fukuoka_spots as
 select s.id, s.name, s.address,
        ST_Y(s.geom::geometry) as lat, ST_X(s.geom::geometry) as lng,
        s.elevation_m,
-       s.code, s.area_code, s.category, s.relief_m, s.slope_pct, s.terrain_status, s.origin, s.data_status
+       s.code, s.area_code, s.category, s.relief_m, s.slope_pct, s.terrain_status, s.origin, s.data_status,
+       s.summary,                                                       -- 公開中の説明文（人が書いた・採用したもの）
+       exists (select 1 from spot_ai_notes n where n.spot_id = s.id and n.source = 'laya' and n.status = 'draft')
+         as laya_draft,                                                 -- LAYA の採用待ちの下書きがある
+       (select max(n.created_at) from spot_ai_notes n where n.spot_id = s.id and n.source = 'laya') as laya_last_at
   from spots s
  where s.data_status <> 'archived';

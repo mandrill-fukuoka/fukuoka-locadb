@@ -70,10 +70,12 @@ begin
   v_code := v_prefix || lpad(v_n::text, 4, '0');
 
   insert into spots (code, name, area_code, geom, category, extra_categories, position_kind, origin,
-                     confidence, summary, address, address_at)
+                     confidence, summary, address, address_at, summary_by, summary_at)
   values (v_code, v_name, v_area, ST_SetSRID(ST_MakePoint(p_lon, p_lat), 4326)::geography, p_category, v_extra,
           'manual', 'manual', coalesce(p_confidence, 'unverified'), nullif(btrim(coalesce(p_summary, '')), ''),
-          nullif(p_address, ''), case when nullif(p_address, '') is null then null else now() end)
+          nullif(p_address, ''), case when nullif(p_address, '') is null then null else now() end,
+          case when nullif(btrim(coalesce(p_summary, '')), '') is null then null else coalesce(p_user, 'user') end,
+          case when nullif(btrim(coalesce(p_summary, '')), '') is null then null else now() end)
   returning id into v_id;
 
   if nullif(btrim(coalesce(p_source_url, '')), '') is not null or nullif(btrim(coalesce(p_source_note, '')), '') is not null then

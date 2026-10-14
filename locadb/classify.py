@@ -12,6 +12,7 @@ import anthropic
 from .db import connect, job
 
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")
+PROMPT_VERSION = "classify-v1"          # 下書きに残すプロンプトの版（プロンプトを変えたら上げる）
 BATCH = 20
 
 SYSTEM = """あなたは映像制作のロケーションリサーチャーです。
@@ -105,20 +106,19 @@ def run(area_code: str | None, limit: int = 200, run_id: int | None = None) -> d
                 conn.execute(
                     """update spots set
                          era_feel=%s, shoot_scope=%s,
-                         owner_type=%s, summary=%s, status='ai_tagged', confidence='ai_estimated'
+                         owner_type=%s, status='ai_tagged', confidence='ai_estimated'
                        where id=%s and status='candidate'""",
                     (pick(res.get("era_feel"), ERA, None), pick(res.get("shoot_scope"), SCOPE, "unknown"),
-                     pick(res.get("owner_type"), OWNER, "unknown"), res.get("summary"), sid),
+                     pick(res.get("owner_type"), OWNER, "unknown"), sid),
                 )
-                for t in res.get("tags", []):
-                    if t.get("code") in valid_tags:
-                        conn.execute(
-                            """insert into spot_tags (spot_id, tag_code, origin, score)
-                               values (%s,%s,'ai',%s)
-                               on conflict (spot_id, tag_code) do update
-                                 set score = excluded.score where spot_tags.origin='ai'""",
-                            (sid, t["code"], float(t.get("score", 0.5))),
-                        )
+                # 説明文は下書き、タグは出どころ claude で（DB変更130：AIは spots.summary を直接書かない）
+                item = {"spot_id": sid,
+                        "tags": [{"code": t["code"], "score": float(t.get("score", 0.5))}
+                                 for t in res.get("tags", []) if t.get("code") in valid_tags]}
+                if res.get("summary"):
+                    item["summary"] = str(res["summary"])[:800]
+                conn.execute("select ai_submit('claude', %s::jsonb, %s, %s)",
+                             (json.dumps([item], ensure_ascii=False), MODEL, PROMPT_VERSION))
                 done += 1
             conn.commit()
             print(f"  分類済み {done}/{len(ids)}")
