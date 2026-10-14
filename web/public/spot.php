@@ -124,7 +124,7 @@ page_header(nm($s['name']), '');
         <p class="small muted terrain">地形：標高データなし（海上など）</p>
       <?php endif; ?>
 
-      <?php if ($s['summary']): ?><p class="summary"><?= h($s['summary']) ?></p><?php endif; ?>
+      <?= summary_html($s, 'p', 'summary') ?>
       <?php if (!empty($s['tags'])): ?><p><?php foreach ($s['tags'] as $t): ?><span class="chip"><?= h($t['name']) ?></span><?php endforeach; ?>
         <span class="small muted"><?= ($s['tags'][0]['origin'] ?? '') === 'human' ? '（人が確認）' : '（AIの推定）' ?></span></p><?php endif; ?>
 
