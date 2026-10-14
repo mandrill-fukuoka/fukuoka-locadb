@@ -115,6 +115,14 @@ page_header(nm($s['name']), '');
       </p>
       <p class="small muted">位置：<?= h(POSITION_LABEL[$s['position_kind']] ?? '') ?>。<?= h(number_format($lat, 5)) ?>, <?= h(number_format($lon, 5)) ?>
         <?php if ($s['position_kind'] === 'standpoint'): ?>（線上の位置から近くの道に寄せています）<?php endif; ?></p>
+      <?php if (($s['terrain_status'] ?? null) === 'ok'): ?>
+        <p class="small terrain">地形：標高 <?= h(number_format((float)$s['elevation_m'], 1)) ?>m
+          <?php if ($s['relief_m'] !== null): $r = (float)$s['relief_m']; ?>・周り（半径150m）より<?= h(($r >= 0 ? '＋' : '−') . number_format(abs($r), 1)) ?>m<?php endif; ?>
+          <?php if ($s['slope_pct'] !== null): ?>・最大の傾き <?= h(number_format((float)$s['slope_pct'], 0)) ?>%<?php endif; ?>
+          <span class="muted">（建物を除いた地面の高さ。<?= h(TERRAIN_SRC_LABEL[$s['terrain_src']] ?? '') ?>）</span></p>
+      <?php elseif (($s['terrain_status'] ?? null) === 'no_data'): ?>
+        <p class="small muted terrain">地形：標高データなし（海上など）</p>
+      <?php endif; ?>
 
       <?php if ($s['summary']): ?><p class="summary"><?= h($s['summary']) ?></p><?php endif; ?>
       <?php if (!empty($s['tags'])): ?><p><?php foreach ($s['tags'] as $t): ?><span class="chip"><?= h($t['name']) ?></span><?php endforeach; ?>
@@ -220,6 +228,7 @@ page_header(nm($s['name']), '');
             <li><?= h($src['title'] ?: (SOURCE_KIND_LABEL[$src['kind']] ?? $src['kind'])) ?><?php if (!empty($src['note'])): ?><span class="muted">：<?= h($src['note']) ?></span><?php endif; ?><?php if (preg_match('#^https?://#', (string)$src['url'])): ?> <a href="<?= h($src['url']) ?>" target="_blank" rel="noopener">↗</a><?php endif; ?></li>
           <?php endforeach; ?>
           <?php if ($s['address']): ?><li>住所：国土地理院 逆ジオコーダー</li><?php endif; ?>
+          <?php if (($s['terrain_status'] ?? null) === 'ok'): ?><li>地形：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 標高タイル</a></li><?php endif; ?>
         </ul>
         <p class="small muted">更新 <?= h(substr((string)$s['updated_at'], 0, 10)) ?></p>
       </section>

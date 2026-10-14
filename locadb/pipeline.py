@@ -1,4 +1,4 @@
-"""一括実行：OSMの取得 → 地点の反映 → 住所 → 流れの生成 → AI分類 → 変化リスク監視
+"""一括実行：OSMの取得 → 地点の反映 → 住所 → 地形 → 流れの生成 → AI分類 → 変化リスク監視
 
   python -m locadb.pipeline --dry-run                 # 試し：本番を変えずに差分レポートだけ出す
   python -m locadb.pipeline --apply                   # 本番に反映
@@ -16,7 +16,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import address, build_clusters, monitor_risk, osm_source
+from . import address, build_clusters, monitor_risk, osm_source, terrain
 from .categories import RULES_VERSION
 from .db import code_version, connect
 from .sync import MAX_ARCHIVE_RATIO, Sync
@@ -108,6 +108,7 @@ def main() -> int:
     ap.add_argument("--pbf")
     ap.add_argument("--allow-large-change", action="store_true")
     ap.add_argument("--skip-address", action="store_true")
+    ap.add_argument("--skip-terrain", action="store_true", help="地形（標高・高台度・傾き）を省く")
     ap.add_argument("--skip-extras", action="store_true", help="流れの生成・AI分類・変化リスク監視を省く")
     a = ap.parse_args()
     mode = "apply" if a.apply else "dry_run"
@@ -122,6 +123,9 @@ def main() -> int:
     if not a.skip_address:
         print("[4] 住所（国土地理院）")
         address.run(run_id)
+    if not a.skip_terrain:
+        print("[4b] 地形（国土地理院 標高タイル）")
+        terrain.run(run_id)
     if not a.skip_extras:
         print("[5] 流れの自動生成")
         build_clusters.run_all(run_id)
