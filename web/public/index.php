@@ -109,7 +109,7 @@ page_header('場所を探す', 'index.php');
               <?php if (!empty($s['others'])): ?><span class="chip">ほか<?= (int)$s['others'] ?>か所</span><?php endif; ?>
             </div>
             <?php if (!empty($s['tags'])): ?><div class="small"><?php foreach ($s['tags'] as $t): ?><span class="chip"><?= h($t) ?></span><?php endforeach; ?></div><?php endif; ?>
-            <?php if (!empty($s['summary'])): ?><div class="small muted"><?= h($s['summary']) ?></div><?php endif; ?>
+            <?= summary_html($s, 'div', 'small muted') ?>
             <div class="small actions">
               <a href="#ovmap" class="showmap" data-n="<?= $i + 1 ?>">全体地図で表示</a>
               <a href="spot.php?id=<?= (int)$s['id'] ?>">詳細</a>

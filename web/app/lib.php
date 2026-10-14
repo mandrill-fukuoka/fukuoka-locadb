@@ -24,6 +24,25 @@ function nm($name): string {
     return $name;
 }
 
+// ---------- 説明文の公開 ----------
+// 説明文は、人が確認・入力したものだけをログインなしの画面に出す（AIの推定が事実のように読まれないように）。
+// 人が確認した＝確度が資料確認済み・現地確認済み、状態がロケハン済み・確認済み、または手入力の地点。
+// それ以外はログイン時だけ「未確認」と添えて出す。渡された配列に無い項目は「確認していない」とみなす（隠す側に倒す）
+function summary_checked(array $s): bool {
+    return in_array($s['confidence'] ?? '', ['desk_checked', 'field_checked'], true)
+        || in_array($s['status'] ?? '', ['scouted', 'verified'], true)
+        || ($s['origin'] ?? '') === 'manual';
+}
+// 表示する説明文の HTML（出さないときは空文字）。$tag・$class は置く場所に合わせる
+function summary_html(array $s, string $tag, string $class): string {
+    $text = trim((string)($s['summary'] ?? ''));
+    if ($text === '') return '';
+    $checked = summary_checked($s);
+    if (!$checked && !current_user()) return '';
+    return '<' . $tag . ' class="' . h($class) . '">' . h($text)
+         . ($checked ? '' : ' <span class="chip dim">未確認の説明（ログイン時のみ表示）</span>') . '</' . $tag . '>';
+}
+
 // ---------- ログイン ----------
 function current_user(): ?string { return $_SESSION['user'] ?? null; }
 
@@ -343,7 +362,7 @@ function render_route_card(array $r, int $i, array $opt = []): void {
               <span class="grp"><i class="dot" aria-hidden="true"></i><?= h($s['group'] ?? '') ?></span>
               <strong class="name"><?php if (!empty($s['id'])): ?><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h(nm($s['name'])) ?></a><?php else: ?><?= h(nm($s['name'])) ?><?php endif; ?></strong>
               <span class="flags"><?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?><?php if (($s['data_status'] ?? '') === 'archived'): ?><span class="chip warn">対象外</span><?php endif; ?><?php if (($s['confidence'] ?? '') !== 'field_checked' && !empty(CONF_LABEL[$s['confidence'] ?? ''])): ?><span class="chip dim"><?= h(CONF_LABEL[$s['confidence']]) ?></span><?php endif; ?></span>
-              <?php if (!empty($s['summary'])): ?><span class="desc"><?= h($s['summary']) ?></span><?php endif; ?>
+              <?= summary_html($s, 'span', 'desc') ?>
               <?php if (!empty($s['id'])): ?><span class="links"><a href="spot.php?id=<?= (int)$s['id'] ?>">詳細</a><a href="index.php?near=<?= (int)$s['id'] ?>">周辺の景観</a><a href="#" class="addlist" data-id="<?= (int)$s['id'] ?>">＋リスト</a></span><?php endif; ?>
             </div>
           </li>
