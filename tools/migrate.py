@@ -64,7 +64,10 @@ def main() -> int:
                 conn.execute(g.read_text(encoding="utf-8"))
         except Exception as e:  # noqa: BLE001
             conn.rollback()
-            print(f"！ 失敗したため、すべて取り消しました: {e}")
+            detail = getattr(getattr(e, "diag", None), "message_detail", None)
+            hint = getattr(getattr(e, "diag", None), "message_hint", None)
+            print(f"！ 失敗したため、すべて取り消しました: {e}" + (f"\n  詳細: {detail}" if detail else "")
+                  + (f"\n  ヒント: {hint}" if hint else ""))
             return 1
         if a.dry_run:
             conn.rollback()
