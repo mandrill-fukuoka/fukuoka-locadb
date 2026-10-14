@@ -36,6 +36,10 @@
 - 初回・臨時の取得は Actions「pipeline」の mode=terrain_only（地形だけ）
 - ビュー v_fukuoka_spots（別ラインのAI・LAYAが service_role で読む）は sql/api/40_terrain.sql で毎回作り直す。先頭6列は変えない。対象は掲載中の地点すべて
 - 表の変更は sql/migrations/160_terrain.sql（旧方式で SQL Editor から作った elevation_m を引き継ぎ、-1 は空に戻した）
+- 坂道（locadb/slopes.py）：収集の中で、OSMの道路・階段に沿って10mごとに標高を読み、50m区間の勾配が10%以上で50m以上続く区間（階段は高低差5m以上）を種別「坂道・階段坂」（景観「坂道・高低差」）の地点にする。同じ種類・名前でつながる道は1本にしてから測り、近い坂（60m以内）は1つにまとめる。キーは位置の格子（80m）。測定値は slope_len_m / slope_grade_pct / slope_rise_m / slope_bearing / slope_kind（DB変更162）
+  - 試し実行では常に検出し、候補の一覧 slopes.csv（Actions の成果物 pipeline-log）を出す。本番で登録するのは slopes.ENABLED_IN_APPLY が True のときだけ（候補の確認が済むまで False）
+  - 標高タイルが1枚でも取れなかった回は、坂道を消失扱いにしない
+- 場所を探すに「地形：高台（周りより10m以上高い）」の絞り込み（search_spots の p_relief_min）
 
 ## 構成
 
@@ -46,6 +50,7 @@ locadb/sync.py         読み取った結果をDBに反映（履歴・要確認�
 locadb/pipeline.py     一括実行（--dry-run / --apply）
 locadb/address.py      住所（国土地理院）
 locadb/terrain.py      地形（標高・高台度・傾き。国土地理院 標高タイル）
+locadb/slopes.py       坂道の検出（道路×標高）
 locadb/build_clusters.py, clustering.py   流れの自動生成
 locadb/classify.py     AI分類（ANTHROPIC_API_KEY があるときだけ）
 locadb/monitor_risk.py 変化リスク監視（config/watch_pages.txt）

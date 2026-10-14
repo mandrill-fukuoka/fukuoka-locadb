@@ -165,6 +165,7 @@ function interpret_by_keywords(string $scene): array {
         'lake' => '池|湖|ため池|溜池|貯水池|ダム湖|お堀|堀端',
         'water' => '水辺|水際',
         'green' => '公園|山|丘|森|緑', 'historic' => '神社|寺|歴史|城', 'vacant' => '廃墟|空き|廃校|閉鎖',
+        'slope' => '坂道|坂の|坂を|急な坂|上り坂|下り坂|階段|石段|高低差|高台|見下ろ|見晴らし',
     ];
     $tagWords = [
         'lonely' => '寂し|孤独|一人|ひとり', 'lively' => '賑や|活気', 'nostalgic' => '懐かし|昭和|レトロ',
@@ -252,8 +253,11 @@ const GROUP_COLOR = [
     'commercial' => '#C8423A', 'old_town' => '#D27A2C', 'urban_new' => '#7A5BA6', 'residential' => '#B9547F',
     'institution' => '#4F5DA8', 'transport' => '#2F8DA0', 'port_industrial' => '#6B6F72', 'river' => '#3478C6',
     'sea' => '#1F4E8C', 'beach' => '#C49A45', 'lake' => '#2E8C7E', 'water' => '#3478C6', 'green' => '#4F8A4E',
-    'historic' => '#8C6A4F', 'vacant' => '#9C978E',
+    'historic' => '#8C6A4F', 'vacant' => '#9C978E', 'slope' => '#8A8A2E',
 ];
+const HIGH_GROUND_M = 10;     // 「高台」：周り（半径150m）の平均より何m以上高いか（タスクF。実データの上位約5%）
+const BEARING_LABEL = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+function bearing_label(int $deg): string { return BEARING_LABEL[(int)round(($deg % 360) / 45) % 8]; }
 // 景観グループ名（表示名）→ 色。表示名しか持たないデータ（ルートの地点など）用
 function group_color(string $nameOrCode): string {
     static $byName = null;

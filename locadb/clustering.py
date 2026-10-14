@@ -48,6 +48,15 @@ HIGH_CONTRAST = {
     frozenset({"historic", "commercial"}): 0.8,
     frozenset({"institution", "green"}): 0.7,
     frozenset({"vacant", "urban_new"}): 0.9,
+    frozenset({"slope", "sea"}): 0.9,           # 坂道・高低差（タスクF）
+    frozenset({"slope", "river"}): 0.8,
+    frozenset({"slope", "urban_new"}): 0.9,
+    frozenset({"slope", "commercial"}): 0.8,
+    frozenset({"slope", "port_industrial"}): 0.8,
+    frozenset({"slope", "historic"}): 0.6,
+    frozenset({"slope", "green"}): 0.6,
+    frozenset({"slope", "old_town"}): 0.6,
+    frozenset({"slope", "residential"}): 0.4,
 }
 DEFAULT_CONTRAST = 0.5
 ERA_ORDER = {"historic": 0, "showa": 1, "heisei": 2, "mixed": 2, "reiwa": 3}

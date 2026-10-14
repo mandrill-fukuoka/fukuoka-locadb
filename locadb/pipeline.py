@@ -10,19 +10,20 @@
   止めた内容を確認して問題がなければ --allow-large-change を付けて実行する
 """
 import argparse
+import csv
 import json
 import os
 import sys
 import tempfile
 from pathlib import Path
 
-from . import address, build_clusters, monitor_risk, osm_source, terrain
+from . import address, build_clusters, monitor_risk, osm_source, slopes, terrain
 from .categories import RULES_VERSION
 from .db import code_version, connect
 from .sync import MAX_ARCHIVE_RATIO, Sync
 
 
-def get_snapshot(pbf: str | None, watch: set[str]):
+def get_snapshot(pbf: str | None, watch: set[str], detect_slopes: bool = True):
     if pbf:
         src = {"file": pbf}
         path = Path(pbf)
@@ -38,9 +39,29 @@ def get_snapshot(pbf: str | None, watch: set[str]):
     src.setdefault("osm_timestamp", osm_source.file_timestamp(path))
     print(f"    データ時点 {src.get('osm_timestamp')}")
     print("[2] 読み取り")
-    snap = osm_source.read(path, watch)
+    snap = osm_source.read(path, watch, detect_slopes)
     print("    " + json.dumps(snap.meta["by_category"], ensure_ascii=False))
+    print("    坂道 " + json.dumps(snap.meta.get("slopes", {}), ensure_ascii=False))
+    if detect_slopes:
+        write_slopes_csv(snap, Path(os.environ.get("SLOPES_CSV", "slopes.csv")))
     return snap, src
+
+
+def write_slopes_csv(snap, path: Path) -> None:
+    """坂道の候補の一覧（確認用。Actions の成果物 pipeline-log に入る）。勾配の大きい順"""
+    rows = sorted((s for s in snap.samples if s.attrs), key=lambda s: -s.attrs["slope_grade_pct"])
+    with path.open("w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(["キー", "名前", "区", "道の種類", "坂/階段", "長さm", "平均勾配%", "高低差m", "上りの方角", "緯度", "経度",
+                    "Googleマップ", "ストリートビュー（上りの方を向く）"])
+        for s in rows:
+            a = s.attrs
+            w.writerow([s.key, s.name, s.area_code, a["highway"], "階段" if a["slope_kind"] == "steps" else "坂",
+                        a["slope_len_m"], a["slope_grade_pct"], a["slope_rise_m"], a["slope_bearing"],
+                        f"{s.lat:.6f}", f"{s.lon:.6f}",
+                        f"https://www.google.com/maps/search/?api=1&query={s.lat:.6f},{s.lon:.6f}",
+                        f"https://www.google.com/maps/@?api=1&map_action=pano&viewpoint={s.lat:.6f},{s.lon:.6f}"
+                        f"&heading={a['slope_bearing']}"])
 
 
 def run_sync(conn, snap_loader, mode: str, allow_large_change: bool = False) -> dict:
@@ -114,7 +135,8 @@ def main() -> int:
     mode = "apply" if a.apply else "dry_run"
 
     with connect() as conn:
-        res = run_sync(conn, lambda watch: get_snapshot(a.pbf, watch), mode, a.allow_large_change)
+        detect = mode == "dry_run" or slopes.ENABLED_IN_APPLY       # 坂道：確認が済むまで本番では登録しない
+        res = run_sync(conn, lambda watch: get_snapshot(a.pbf, watch, detect), mode, a.allow_large_change)
     if res["status"] == "stopped":
         return 3
     if mode == "dry_run":

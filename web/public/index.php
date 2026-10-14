@@ -8,6 +8,7 @@ $area  = $_GET['area'] ?? '';
 $cat   = $_GET['cat'] ?? '';
 $grp   = $_GET['grp'] ?? '';
 $tag   = $_GET['tag'] ?? '';
+$terr  = ($_GET['terrain'] ?? '') === 'high' ? 'high' : '';      // 高台：周りより+10m以上（タスクF）
 $near  = (int)($_GET['near'] ?? 0);
 $page  = max(0, (int)($_GET['p'] ?? 0));
 $per   = 40;
@@ -20,7 +21,7 @@ try {
 } catch (Throwable $e) { $error = $e->getMessage(); $cats = $groups = $tags = []; }
 $groupNames = array_column($groups, 'name', 'code');
 
-$searched = $q !== '' || $area !== '' || $cat !== '' || $grp !== '' || $tag !== '';
+$searched = $q !== '' || $area !== '' || $cat !== '' || $grp !== '' || $tag !== '' || $terr !== '';
 try {
     if ($near) {
         $nearby = sb_rpc('spots_nearby', ['p_id' => $near, 'p_radius' => 800]) ?? [];
@@ -31,12 +32,12 @@ try {
         $rows = sb_rpc('search_spots', [
             'p_q' => $q ?: null, 'p_area' => $area ?: null, 'p_category' => $cat ?: null,
             'p_group' => $grp ?: null, 'p_tags' => $tag ? [$tag] : null,
-            'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
+            'p_offset' => $page * $per, 'p_limit' => $per, 'p_relief_min' => $terr === 'high' ? HIGH_GROUND_M : null]) ?? [];
     }
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
 $embedKey = cfg('google_maps_embed_key');
-$qs = fn(array $o) => '?' . http_build_query(array_merge(['q' => $q, 'area' => $area, 'cat' => $cat, 'grp' => $grp, 'tag' => $tag], $o));
+$qs = fn(array $o) => '?' . http_build_query(array_merge(['q' => $q, 'area' => $area, 'cat' => $cat, 'grp' => $grp, 'tag' => $tag, 'terrain' => $terr], $o));
 
 
 page_header('場所を探す', 'index.php');
@@ -53,6 +54,8 @@ page_header('場所を探す', 'index.php');
       <?php foreach ($cats as $c): ?><option value="<?= h($c['code']) ?>" <?= $cat === $c['code'] ? 'selected' : '' ?>><?= h($c['name']) ?></option><?php endforeach; ?></select></label>
     <label>雰囲気<select name="tag"><option value="">指定なし</option>
       <?php foreach ($tags as $t): ?><option value="<?= h($t['code']) ?>" <?= $tag === $t['code'] ? 'selected' : '' ?>><?= h($t['name']) ?></option><?php endforeach; ?></select></label>
+    <label>地形<select name="terrain"><option value="">指定なし</option>
+      <option value="high" <?= $terr === 'high' ? 'selected' : '' ?>>高台（周りより<?= HIGH_GROUND_M ?>m以上高い）</option></select></label>
   </div>
   <button>検索</button>
   <p class="small muted">雰囲気での絞り込みは、雰囲気のタグが付いた地点だけが対象です。</p>
@@ -61,7 +64,8 @@ page_header('場所を探す', 'index.php');
 <?php if (!$searched && !$near): ?>
   <section class="card browse">
     <h2>景観から探す</h2>
-    <p><?php foreach ($groupNames as $k => $v): if ($k === 'water') continue; ?><a class="chip" href="?grp=<?= h($k) ?>"><?= dot($k) ?><?= h($v) ?></a><?php endforeach; ?></p>
+    <p><?php foreach ($groupNames as $k => $v): if ($k === 'water') continue; ?><a class="chip" href="?grp=<?= h($k) ?>"><?= dot($k) ?><?= h($v) ?></a><?php endforeach; ?>
+      <a class="chip" href="?terrain=high">高台（周りより<?= HIGH_GROUND_M ?>m以上高い）</a></p>
     <h2>エリアから探す</h2>
     <p><?php foreach (AREA_LABEL as $k => $v): ?><a class="chip" href="?area=<?= h($k) ?>"><?= h($v) ?></a><?php endforeach; ?></p>
     <p class="small muted">シーンの流れ（例：繁華街から路地を抜けて川へ）から撮影ルートを組み立てるときは、<a href="flow.php">流れで探す</a>を使ってください。</p>
