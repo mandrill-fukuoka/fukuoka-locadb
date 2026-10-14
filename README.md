@@ -26,6 +26,17 @@
 - 撮影実務（許可の要否・窓口・制約・撮影実績・メモ）は地点ページで入力する（spot_practicals）。写真は未対応（保存先は heteml の予定）
 - 関数は sql/api/30_manual.sql、表の変更は sql/migrations/110_manual_spots.sql
 
+## 地形・標高（2026-10 タスクF）
+
+- 自動収集の一工程（locadb/terrain.py）。国土地理院の標高タイル（PNG）から、地点ごとに中心と周囲16点を読む
+  - elevation_m 標高（m）／ relief_m 高台度＝標高 − 半径150mの8方向の平均 ／ slope_pct 最大の傾き＝半径30mの8方向で最も急な勾配（%）
+  - データは 5m・レーザ（dem5a）→ 5m・写真測量（dem5b）→ 10m（dem10b）の順。中心に値がない（海上など）は terrain_status=no_data
+  - 対象は未取得の地点と、取得後に動いた地点（手入力の地点も含む）。全件の取り直しは `python -m locadb.terrain --all`
+  - 建物を除いた地面の高さ。ビルの屋上・展望台の高さは出ない。出典「国土地理院 標高タイル」を地点ページに表示
+- 初回・臨時の取得は Actions「pipeline」の mode=terrain_only（地形だけ）
+- ビュー v_fukuoka_spots（別ラインのAI・LAYAが service_role で読む）は sql/api/40_terrain.sql で毎回作り直す。先頭6列は変えない。対象は掲載中の地点すべて
+- 表の変更は sql/migrations/160_terrain.sql（旧方式で SQL Editor から作った elevation_m を引き継ぎ、-1 は空に戻した）
+
 ## 構成
 
 ```
@@ -34,11 +45,12 @@ locadb/osm_source.py   OSMファイルの取得・切り出し・読み取り（
 locadb/sync.py         読み取った結果をDBに反映（履歴・要確認・対象外・付け替え・異常検知・レポート）
 locadb/pipeline.py     一括実行（--dry-run / --apply）
 locadb/address.py      住所（国土地理院）
+locadb/terrain.py      地形（標高・高台度・傾き。国土地理院 標高タイル）
 locadb/build_clusters.py, clustering.py   流れの自動生成
 locadb/classify.py     AI分類（ANTHROPIC_API_KEY があるときだけ）
 locadb/monitor_risk.py 変化リスク監視（config/watch_pages.txt）
 sql/migrations/        表の作成・変更（1回だけ。schema_migrations に記録）
-sql/api/               画面から呼ぶ関数（毎回作り直す。30_manual.sql は手入力・修正・撮影実務）
+sql/api/               画面から呼ぶ関数（毎回作り直す。30_manual.sql は手入力・修正・撮影実務、40_terrain.sql はビュー v_fukuoka_spots）
 sql/grants.sql         権限・RLS（毎回）
 sql/legacy/            旧版のSQL（参照用。実行しない）
 tools/migrate.py       DBの変更を適用
@@ -51,7 +63,7 @@ web/                   画面（public → heteml の web/locadb/、app/lib.php 
 
 | 名前 | いつ | 何をする |
 |---|---|---|
-| pipeline | 毎週月曜6:00（本番）／手動 | 取得→反映→住所→流れ→AI分類→変化リスク。手動は mode=dry_run（試し）か apply。本番はバックアップを先に取る |
+| pipeline | 毎週月曜6:00（本番）／手動 | 取得→反映→住所→地形→流れ→AI分類→変化リスク。手動は mode=dry_run（試し）か apply、terrain_only（地形だけ）。本番・地形だけはバックアップを先に取る |
 | db-migrate | 手動 | DBの変更。status / dry_run / apply（バックアップしてから） |
 | deploy-web | 手動 | 画面を heteml へ。probe（フォルダ確認だけ）/ deploy |
 | diagnose | 手動 | データの診断（読み取りのみ） |

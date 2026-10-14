@@ -170,6 +170,8 @@ const DATA_STATUS_LABEL = ['current' => '掲載中', 'needs_review' => '要確�
 const POSITION_LABEL = ['point' => 'OSMの地点の位置', 'area' => '敷地・範囲の代表点（実際の撮影位置とは限りません）',
                         'line_sample' => '線（川・線路など）の上の位置', 'standpoint' => '線（川・線路など）に近い道の上の位置',
                         'manual' => '手入力の位置'];
+const TERRAIN_SRC_LABEL = ['dem5a' => '国土地理院 5mメッシュ・レーザ測量', 'dem5b' => '国土地理院 5mメッシュ・写真測量',
+                           'dem10b' => '国土地理院 10mメッシュ'];
 const CONF_LABEL = ['unverified' => '未確認', 'ai_estimated' => 'AI推定', 'desk_checked' => '資料確認済み',
                     'field_checked' => '現地確認済み'];
 const RISK_LABEL = ['redevelopment' => '再開発', 'demolition' => '解体', 'closure' => '閉店・閉館',

@@ -115,6 +115,8 @@ select jsonb_build_object(
   'era_feel', s.era_feel, 'shoot_scope', s.shoot_scope, 'owner_type', s.owner_type,
   'ffc_registered', s.ffc_registered, 'summary', s.summary, 'updated_at', s.updated_at,
   'created_at', s.created_at,
+  'elevation_m', s.elevation_m, 'relief_m', s.relief_m, 'slope_pct', s.slope_pct,
+  'terrain_src', s.terrain_src, 'terrain_status', s.terrain_status, 'terrain_at', s.terrain_at,
   'created_by', (select h.actor from spot_history h where h.spot_id = s.id and h.event = 'created' order by h.at limit 1),
   'osm', (select coalesce(jsonb_agg(jsonb_build_object('key', f.key, 'kind', f.kind, 'osm_type', f.osm_type,
                                                         'osm_id', f.osm_id, 'name', f.name, 'role', sf.role,
@@ -304,6 +306,10 @@ select jsonb_build_object(
   'by_category', (select jsonb_object_agg(category, n) from (select category, count(*) n from spots where data_status <> 'archived' group by 1) x),
   'by_area', (select jsonb_object_agg(coalesce(area_code, '(none)'), n) from (select area_code, count(*) n from spots where data_status <> 'archived' group by 1) x),
   'no_address', (select count(*) from spots where data_status <> 'archived' and address is null),
+  'terrain', (select jsonb_build_object('ok', count(*) filter (where terrain_status = 'ok'),
+                                        'no_data', count(*) filter (where terrain_status = 'no_data'),
+                                        'pending', count(*) filter (where terrain_status is null))
+                from spots where data_status <> 'archived'),
   'orphan_links', (select count(*) from spot_features sf where not exists (select 1 from features f where f.key = sf.feature_key)),
   'spots_without_feature', (select count(*) from spots s where s.origin = 'osm' and not exists (select 1 from spot_features sf where sf.spot_id = s.id)),
   'area_mismatch', (select count(*) from spots s join areas a on a.code = s.area_code
