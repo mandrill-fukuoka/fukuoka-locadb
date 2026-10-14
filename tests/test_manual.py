@@ -179,3 +179,39 @@ def test_review_queue_manual(db, tmp_path):
     m = rpc(db, "create_manual_spot", p_name="承天寺", p_lat=33.59, p_lon=130.41, p_category="shrine_temple")
     rows = rpc(db, "review_queue", p_queue="manual")
     assert [r["id"] for r in rows] == [m["id"]] and rows[0]["origin"] == "manual"
+
+
+def test_edited_spot_missing_then_back_is_not_flagged_again(db, tmp_path):
+    """人が直した地点：OSMから一度消えて（要確認→解消）、元のまま戻ってきても、もう一度は要確認にしない"""
+    w = World(); temple(w); w.run(db, tmp_path)
+    sid = spot(db, name="警固神社")["id"]
+    rpc(db, "edit_spot", p_id=sid, p_name="警固神社（拝殿前）", p_lat=33.5853, p_lon=130.3904, p_user="hirata")
+    w.remove("nodes", 10)
+    w.run(db, tmp_path)
+    assert spot(db, id=sid)["data_status"] == "needs_review"
+    resolve(db, sid)
+    temple(w)                                               # 消える前と同じ名前・位置で戻ってきた
+    w.run(db, tmp_path); w.run(db, tmp_path)
+    s = spot(db, id=sid)
+    assert s["data_status"] == "current" and s["name"] == "警固神社（拝殿前）"
+    assert events(db, sid).count("needs_review") == 1
+    assert "missing" not in s["osm_seen"] and s["osm_seen"]["name"] == "警固神社"
+
+
+def test_relock_after_unlock_uses_fresh_osm_values(db, tmp_path):
+    """固定を外している間はOSMに合わせて動き、比較の基準は残さない。もう一度固定しても誤って要確認にしない"""
+    w = World(); temple(w); w.run(db, tmp_path)
+    sid = spot(db, name="警固神社")["id"]
+    db.execute("select set_spot_state(%s, 'lock', 'tester')", (sid,)); db.commit()
+    temple(w, 130.3910); w.run(db, tmp_path)                # 固定中にOSMが動いた → 要確認
+    assert spot(db, id=sid)["data_status"] == "needs_review"
+    resolve(db, sid)
+    db.execute("select set_spot_state(%s, 'unlock', 'tester')", (sid,)); db.commit()
+    w.run(db, tmp_path)                                     # 固定を外した → OSMの位置へ
+    temple(w, 130.3920); w.run(db, tmp_path)                # さらに動いた → そのまま追従
+    s = spot(db, id=sid)
+    assert abs(s["lon"] - 130.3920) < 1e-9 and s["osm_seen"] is None
+    db.execute("select set_spot_state(%s, 'lock', 'tester')", (sid,)); db.commit()
+    w.run(db, tmp_path); w.run(db, tmp_path)                # OSMは変わっていない
+    assert spot(db, id=sid)["data_status"] == "current"
+    assert events(db, sid).count("needs_review") == 1
