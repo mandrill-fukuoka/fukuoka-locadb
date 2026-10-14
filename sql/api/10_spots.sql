@@ -55,7 +55,7 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
          g.relief_m, g.slope_grade_pct, g.slope_rise_m,
          g.same_line_count - 1 as others,
          (select jsonb_agg(t.name order by st.score desc) from spot_tags st join tags t on t.code = st.tag_code
-           where st.spot_id = g.id and st.score >= 0.5) as tags,
+           where st.spot_id = g.id and st.score >= 0.5 and st.origin = 'human') as tags,   -- 公開の検索結果は人のタグだけ
          exists (select 1 from change_risks rk where rk.spot_id = g.id and rk.risk_type <> 'none') as risk
     from grouped g
    where g.rn = 1
