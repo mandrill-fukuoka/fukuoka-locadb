@@ -27,8 +27,9 @@ from . import terrain
 
 CAT = "slope_street"
 # 本番の反映（apply）で坂道を登録するか。試し実行（dry_run）では常に検出して候補の一覧を出す。
-# 候補を利用者が確認して基準が決まるまで False（2026-10-14）
-ENABLED_IN_APPLY = False
+# 2026-10-14 利用者の判断で、初期の基準（道は10%以上が50m以上、階段は高低差5m以上）のまま全件を登録（1,619件）。
+# 基準を見直すときは、試し実行の slopes.csv で件数を確かめてから定数を変える
+ENABLED_IN_APPLY = True
 ROAD_TYPES = {"residential", "unclassified", "tertiary", "secondary", "primary", "living_street", "service",
               "footway", "pedestrian", "steps", "cycleway"}
 VEHICULAR = {"residential", "unclassified", "tertiary", "secondary", "primary", "living_street", "service"}

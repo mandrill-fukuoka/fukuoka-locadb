@@ -37,7 +37,7 @@
 - ビュー v_fukuoka_spots（別ラインのAI・LAYAが service_role で読む）は sql/api/40_terrain.sql で毎回作り直す。先頭6列は変えない。対象は掲載中の地点すべて
 - 表の変更は sql/migrations/160_terrain.sql（旧方式で SQL Editor から作った elevation_m を引き継ぎ、-1 は空に戻した）
 - 坂道（locadb/slopes.py）：収集の中で、OSMの道路・階段に沿って10mごとに標高を読み、50m区間の勾配が10%以上で50m以上続く区間（階段は高低差5m以上）を種別「坂道・階段坂」（景観「坂道・高低差」）の地点にする。同じ種類・名前でつながる道は1本にしてから測り、近い坂（60m以内）は1つにまとめる。キーは位置の格子（80m）。測定値は slope_len_m / slope_grade_pct / slope_rise_m / slope_bearing / slope_kind（DB変更162）
-  - 試し実行では常に検出し、候補の一覧 slopes.csv（Actions の成果物 pipeline-log）を出す。本番で登録するのは slopes.ENABLED_IN_APPLY が True のときだけ（候補の確認が済むまで False）
+  - 試し実行では常に検出し、候補の一覧 slopes.csv（Actions の成果物 pipeline-log）を出す。本番で登録するのは slopes.ENABLED_IN_APPLY が True のとき（2026-10-14 から True。初期の基準のまま全件を登録）
   - 標高タイルが1枚でも取れなかった回は、坂道を消失扱いにしない
 - 場所を探すに「地形：高台（周りより10m以上高い）」の絞り込み（search_spots の p_relief_min）
 
