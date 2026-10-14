@@ -4,7 +4,7 @@ require __DIR__ . '/bootstrap.php';
 require_login();
 
 $queue  = $_GET['queue'] ?? 'review';
-if (!in_array($queue, ['review', 'unreviewed', 'manual', 'archived', 'all', 'dups'], true)) $queue = 'review';
+if (!in_array($queue, ['review', 'unreviewed', 'manual', 'drafts', 'archived', 'all', 'dups'], true)) $queue = 'review';
 $area   = $_GET['area'] ?? '';
 $status = $_GET['status'] ?? '';
 $q      = trim($_GET['q'] ?? '');
@@ -15,7 +15,12 @@ $msg = ''; $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();
     try {
-        if (($_POST['action'] ?? '') === 'merge') {
+        if (in_array($_POST['action'] ?? '', ['ai_accept', 'ai_reject'], true)) {
+            // AIの説明文の下書き：採用（そのまま／直して）・却下
+            sb_rpc('ai_review', ['p_note_id' => (int)$_POST['note_id'], 'p_action' => $_POST['action'] === 'ai_accept' ? 'accept' : 'reject',
+                                 'p_user' => current_user(), 'p_text' => trim((string)($_POST['text'] ?? '')) ?: null]);
+            $msg = '「' . ($_POST['name'] ?? '') . '」の下書きを' . ($_POST['action'] === 'ai_accept' ? '採用しました（公開されます）' : '却下しました');
+        } elseif (($_POST['action'] ?? '') === 'merge') {
             sb_rpc('merge_spots', ['p_keep' => (int)$_POST['keep'], 'p_drop' => (int)$_POST['drop'], 'p_user' => current_user()]);
             $msg = '2つの地点を1つにまとめました';
         } elseif (in_array($_POST['action'] ?? '', ['archive', 'restore'], true)) {
@@ -37,9 +42,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Throwable $e) { $error = $e->getMessage(); }
 }
 
-$rows = []; $dups = []; $tags = [];
+$rows = []; $dups = []; $tags = []; $drafts = [];
 try {
-    if ($queue === 'dups') {
+    if ($queue === 'drafts') {
+        $drafts = sb_rpc('ai_drafts', ['p_area' => $area ?: null, 'p_q' => $q ?: null,
+                                       'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
+    } elseif ($queue === 'dups') {
         $dups = sb_rpc('duplicate_candidates', ['p_limit' => 100, 'p_meters' => 150]) ?? [];
     } else {
         $tags = sb_get('tags?select=code,name,facet&order=facet,code') ?? [];
@@ -51,7 +59,8 @@ try {
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
 $qs = fn(array $o) => '?' . http_build_query(array_merge(['queue' => $queue, 'area' => $area, 'status' => $status, 'q' => $q], $o));
-$tabs = ['review' => '要確認', 'unreviewed' => '未確認', 'manual' => '手入力・人が直した', 'dups' => '重複の疑い', 'archived' => '対象外', 'all' => 'すべて'];
+$tabs = ['review' => '要確認', 'unreviewed' => '未確認', 'manual' => '手入力・人が直した', 'drafts' => '説明文の下書き',
+         'dups' => '重複の疑い', 'archived' => '対象外', 'all' => 'すべて'];
 page_header('地点の確認', 'spots.php');
 ?>
 <section class="card">
@@ -76,7 +85,28 @@ page_header('地点の確認', 'spots.php');
 <?php if ($msg): ?><p class="ok"><?= h($msg) ?></p><?php endif; ?>
 <?php if ($error): ?><p class="error"><?= h($error) ?></p><?php endif; ?>
 
-<?php if ($queue === 'dups'): ?>
+<?php if ($queue === 'drafts'): ?>
+  <p class="small muted">AI（LAYA など）が作った説明文の下書きです。採用すると、その地点の説明文としてログインなしの画面にも出ます。直してから採用することもできます。却下した下書きは使われません。</p>
+  <?php if (!$drafts && !$error): ?><p class="card">採用待ちの下書きはありません。</p><?php endif; ?>
+  <?php foreach ($drafts as $d): ?>
+    <article class="card draft">
+      <h3><a href="spot.php?id=<?= (int)$d['spot_id'] ?>"><?= h(nm($d['name'])) ?></a>
+        <span class="muted small"><?= h($d['category']) ?>・<?= h($d['address'] ?: (AREA_LABEL[$d['area_code']] ?? '')) ?>・<?= h($d['code']) ?></span></h3>
+      <?php if (!empty($d['current_summary'])): ?><p class="small">いま公開中の説明文：<?= h($d['current_summary']) ?></p><?php endif; ?>
+      <form method="post" action="<?= h($qs(['p' => $page])) ?>"><?= csrf_field() ?>
+        <input type="hidden" name="note_id" value="<?= (int)$d['id'] ?>"><input type="hidden" name="name" value="<?= h(nm($d['name'])) ?>">
+        <p class="small muted">下書き（<?= h(AI_SOURCE_LABEL[$d['source']] ?? $d['source']) ?><?= $d['model'] ? '・' . h($d['model']) : '' ?>・<?= h(substr((string)$d['created_at'], 0, 10)) ?>）</p>
+        <textarea name="text" rows="3"><?= h($d['body']) ?></textarea>
+        <p class="actions"><button name="action" value="ai_accept" class="small-btn">採用する（直した内容で）</button>
+          <button name="action" value="ai_reject" class="secondary small-btn">却下</button></p>
+      </form>
+    </article>
+  <?php endforeach; ?>
+  <nav class="pager">
+    <?php if ($page > 0): ?><a href="<?= h($qs(['p' => $page - 1])) ?>">← 前へ</a><?php endif; ?>
+    <?php if (count($drafts) === $per): ?><a href="<?= h($qs(['p' => $page + 1])) ?>">次へ →</a><?php endif; ?>
+  </nav>
+<?php elseif ($queue === 'dups'): ?>
   <?php if (!$dups && !$error): ?><p class="card">重複の疑いはありません。</p><?php endif; ?>
   <p class="small muted">同じ名前・同じ景観で150m以内にある別々の地点です。同じ場所なら、残す方を選んでまとめてください（もう一方は対象外になり、履歴に残ります）。別の場所なら何もしなくて構いません。</p>
   <?php foreach ($dups as $d): ?>

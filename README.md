@@ -41,6 +41,13 @@
   - 標高タイルが1枚でも取れなかった回は、坂道を消失扱いにしない
 - 場所を探すに「地形：高台（周りより10m以上高い）」の絞り込み（search_spots の p_relief_min）
 
+## AIの下書き（2026-10 DB変更130）
+
+- AI（別ラインの LAYA＝ローカル/Ollama、タスクCの Claude）は下書きまで。説明文は spot_ai_notes に下書きとして入り、人が確認画面（「説明文の下書き」タブ・地点ページ）で採用したときだけ spots.summary に入って公開される
+- spots.summary は summary_by（書いた・採用した人）が必須（DBの制約）。AIが直接書こうとしても入らない
+- 書き込みは関数 ai_submit、採用・却下は ai_review（sql/api/50_ai.sql）。LAYA の呼び方は docs/laya_api.md
+- タグは決まった語彙（tags 表）だけ。AIのタグは spot_tags.source に出どころ。人のタグ（origin=human）は上書きしない
+
 ## 構成
 
 ```
@@ -55,7 +62,8 @@ locadb/build_clusters.py, clustering.py   流れの自動生成
 locadb/classify.py     AI分類（ANTHROPIC_API_KEY があるときだけ）
 locadb/monitor_risk.py 変化リスク監視（config/watch_pages.txt）
 sql/migrations/        表の作成・変更（1回だけ。schema_migrations に記録）
-sql/api/               画面から呼ぶ関数（毎回作り直す。30_manual.sql は手入力・修正・撮影実務、40_terrain.sql はビュー v_fukuoka_spots）
+sql/api/               画面から呼ぶ関数（毎回作り直す。30_manual.sql は手入力・修正・撮影実務、40_terrain.sql はビュー v_fukuoka_spots、50_ai.sql はAIの下書き）
+docs/laya_api.md       別ラインのAI（LAYA）の読み書きの仕様
 sql/grants.sql         権限・RLS（毎回）
 sql/legacy/            旧版のSQL（参照用。実行しない）
 tools/migrate.py       DBの変更を適用

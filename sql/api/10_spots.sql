@@ -152,7 +152,13 @@ select jsonb_build_object(
   'elevation_m', s.elevation_m, 'relief_m', s.relief_m, 'slope_pct', s.slope_pct,
   'terrain_src', s.terrain_src, 'terrain_status', s.terrain_status, 'terrain_at', s.terrain_at,
   'slope_len_m', s.slope_len_m, 'slope_grade_pct', s.slope_grade_pct, 'slope_rise_m', s.slope_rise_m,
-  'slope_bearing', s.slope_bearing, 'slope_kind', s.slope_kind)
+  'slope_bearing', s.slope_bearing, 'slope_kind', s.slope_kind,
+  'summary_by', case when p_with_history then s.summary_by end, 'summary_at', s.summary_at,
+  'drafts', case when p_with_history then
+     (select coalesce(jsonb_agg(jsonb_build_object('id', n.id, 'source', n.source, 'body', n.body, 'model', n.model,
+                                                   'prompt_version', n.prompt_version, 'at', n.created_at)
+                                order by n.created_at desc), '[]')
+        from spot_ai_notes n where n.spot_id = s.id and n.status = 'draft') end)
 from spots s
 join spot_categories sc on sc.code = s.category
 join landscape_groups lg on lg.code = sc.landscape_group
@@ -194,7 +200,10 @@ returns void language plpgsql as $$
 declare old record;
 begin
   select status, confidence, data_status into old from spots where id = p_id;
+  -- 説明文を保存した人が summary_by（公開してよい説明文＝人が書いた・採用したもの。130の制約）
   update spots set status = p_status, confidence = p_confidence, summary = coalesce(p_summary, summary),
+                   summary_by = case when p_summary is not null then coalesce(p_reviewer, 'user') else summary_by end,
+                   summary_at = case when p_summary is not null and p_summary is distinct from summary then now() else summary_at end,
                    data_status = case when p_resolve and data_status = 'needs_review' then 'current' else data_status end,
                    review_reason = case when p_resolve then null else review_reason end
    where id = p_id;
@@ -313,6 +322,9 @@ select jsonb_build_object(
   'by_category', (select jsonb_object_agg(category, n) from (select category, count(*) n from spots where data_status <> 'archived' group by 1) x),
   'by_area', (select jsonb_object_agg(coalesce(area_code, '(none)'), n) from (select area_code, count(*) n from spots where data_status <> 'archived' group by 1) x),
   'no_address', (select count(*) from spots where data_status <> 'archived' and address is null),
+  'ai_notes', (select coalesce(jsonb_object_agg(k, n), '{}') from
+                 (select source || ':' || status k, count(*) n from spot_ai_notes group by 1) x),
+  'public_summaries', (select count(*) from spots where summary is not null and data_status <> 'archived'),
   'terrain', (select jsonb_build_object('ok', count(*) filter (where terrain_status = 'ok'),
                                         'no_data', count(*) filter (where terrain_status = 'no_data'),
                                         'pending', count(*) filter (where terrain_status is null))

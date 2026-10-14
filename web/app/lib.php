@@ -25,23 +25,14 @@ function nm($name): string {
 }
 
 // ---------- 説明文の公開 ----------
-// 説明文は、人が確認・入力したものだけをログインなしの画面に出す（AIの推定が事実のように読まれないように）。
-// 人が確認した＝確度が資料確認済み・現地確認済み、状態がロケハン済み・確認済み、または手入力の地点。
-// それ以外はログイン時だけ「未確認」と添えて出す。渡された配列に無い項目は「確認していない」とみなす（隠す側に倒す）
-function summary_checked(array $s): bool {
-    return in_array($s['confidence'] ?? '', ['desk_checked', 'field_checked'], true)
-        || in_array($s['status'] ?? '', ['scouted', 'verified'], true)
-        || ($s['origin'] ?? '') === 'manual';
-}
-// 表示する説明文の HTML（出さないときは空文字）。$tag・$class は置く場所に合わせる
+// spots.summary には人が書いた・採用した説明文しか入らない（DB変更130の制約：summary_by が必須）。
+// AIの文章は spot_ai_notes の下書きにあり、確認画面で人が採用したときだけ spots.summary に入る。だから説明文はそのまま出す
 function summary_html(array $s, string $tag, string $class): string {
     $text = trim((string)($s['summary'] ?? ''));
     if ($text === '') return '';
-    $checked = summary_checked($s);
-    if (!$checked && !current_user()) return '';
-    return '<' . $tag . ' class="' . h($class) . '">' . h($text)
-         . ($checked ? '' : ' <span class="chip dim">未確認の説明（ログイン時のみ表示）</span>') . '</' . $tag . '>';
+    return '<' . $tag . ' class="' . h($class) . '">' . h($text) . '</' . $tag . '>';
 }
+const AI_SOURCE_LABEL = ['laya' => 'LAYA', 'claude' => 'Claude'];
 
 // ---------- ログイン ----------
 function current_user(): ?string { return $_SESSION['user'] ?? null; }
@@ -200,7 +191,8 @@ const HISTORY_LABEL = ['created' => '新規登録', 'moved' => '位置の更新'
     'linked' => '同じ場所のデータを統合', 'relinked' => 'OSMデータの付け替え', 'missing' => 'OSMで見つからず', 'archived' => '対象外（自動）',
     'restored' => '復帰（自動）', 'needs_review' => '要確認', 'reviewed' => '確認', 'area' => '区の更新', 'reclassify' => 'AI分類のやり直し',
     'address' => '住所', 'resolve' => '要確認を解消', 'archive' => '対象外にした', 'restore' => '掲載に戻した', 'lock' => '位置を固定',
-    'unlock' => '固定を外した', 'merged' => '重複を統合', 'merged_into' => '別の地点に統合', 'practicals' => '撮影実務の更新'];
+    'unlock' => '固定を外した', 'merged' => '重複を統合', 'merged_into' => '別の地点に統合',
+    'summary_to_draft' => '説明文を下書きへ移した', 'summary_accepted' => '説明文の下書きを採用', 'summary_rejected' => '説明文の下書きを却下', 'practicals' => '撮影実務の更新'];
 const PERMIT_REQUIRED_LABEL = ['required' => '許可が必要', 'consult' => '事前の相談が必要', 'not_required' => '許可は不要（公道からの撮影など）',
                                'unknown' => '不明'];
 const SOURCE_KIND_LABEL = ['official' => '公式の情報', 'news' => '報道', 'field' => '現地で確認', 'review' => '確認メモ', 'legacy' => '旧版のデータ'];

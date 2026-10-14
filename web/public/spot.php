@@ -17,6 +17,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $msg = ['resolve' => '要確認を解消しました', 'archive' => '対象外にしました', 'restore' => '掲載に戻しました',
                     'lock' => '位置・名前を固定しました（自動では変わりません）', 'unlock' => '固定を外しました'][$action];
         } catch (Throwable $e) { $error = $e->getMessage(); }
+    } elseif (in_array($action, ['ai_accept', 'ai_reject'], true)) {
+        // AIの説明文の下書き：採用（そのまま／直して）・却下
+        try {
+            sb_rpc('ai_review', ['p_note_id' => (int)($_POST['note_id'] ?? 0), 'p_action' => $action === 'ai_accept' ? 'accept' : 'reject',
+                                 'p_user' => current_user(), 'p_text' => trim((string)($_POST['text'] ?? '')) ?: null]);
+            $msg = $action === 'ai_accept' ? '説明文を採用しました（公開されます）' : '下書きを却下しました';
+        } catch (Throwable $e) { $error = preg_replace('/^.*?ERROR:\s*/su', '', $e->getMessage()); }
     } elseif ($action === 'practicals') {
         // 撮影実務（撮影実績は1行に1件）
         $req = (string)($_POST['permit_required'] ?? '');
@@ -131,6 +138,20 @@ page_header(nm($s['name']), '');
       <?php endif; ?>
 
       <?= summary_html($s, 'p', 'summary') ?>
+      <?php if (current_user() && !empty($s['drafts'])): ?>
+        <section class="drafts">
+          <?php foreach ($s['drafts'] as $d): ?>
+            <form method="post" class="draft"><?= csrf_field() ?><input type="hidden" name="note_id" value="<?= (int)$d['id'] ?>">
+              <p class="small muted">説明文の下書き（<?= h(AI_SOURCE_LABEL[$d['source']] ?? $d['source']) ?><?= $d['model'] ? '・' . h($d['model']) : '' ?>・<?= h(substr((string)$d['at'], 0, 10)) ?>）
+                <span class="chip dim">未採用・ログイン時のみ表示</span></p>
+              <textarea name="text" rows="3"><?= h($d['body']) ?></textarea>
+              <p class="actions"><button name="action" value="ai_accept" class="small-btn">採用する（直した内容で）</button>
+                <button name="action" value="ai_reject" class="secondary small-btn">却下</button>
+                <span class="small muted">採用すると、この説明文がログインなしの画面にも出ます。</span></p>
+            </form>
+          <?php endforeach; ?>
+        </section>
+      <?php endif; ?>
       <?php if (!empty($s['tags'])): ?><p><?php foreach ($s['tags'] as $t): ?><span class="chip"><?= h($t['name']) ?></span><?php endforeach; ?>
         <span class="small muted"><?= ($s['tags'][0]['origin'] ?? '') === 'human' ? '（人が確認）' : '（AIの推定）' ?></span></p><?php endif; ?>
 

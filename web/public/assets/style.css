@@ -303,3 +303,7 @@ details.practical-edit form{padding:12px 0 0;max-width:520px}
   .map.tall{height:360px}
   li.place-item{break-inside:avoid}
 }
+/* 説明文の下書き（AI。DB変更130）：ログイン時だけ。地点ページと確認画面 */
+.draft textarea { width: 100%; }
+.drafts { border-top: 1px solid var(--line); margin-top: .8rem; padding-top: .6rem; }
+.draft .actions { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }

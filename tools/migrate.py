@@ -32,6 +32,7 @@ def main() -> int:
     url = os.environ.get("DATABASE_URL") or sys.exit("DATABASE_URL が未設定です")
 
     with psycopg.connect(url, autocommit=False) as conn:
+        conn.add_notice_handler(lambda d: print("  ・" + d.message_primary))   # DB変更が出す件数などを表示
         conn.execute("""create table if not exists public.schema_migrations (
                           version text primary key, checksum text not null,
                           applied_at timestamptz not null default now())""")
