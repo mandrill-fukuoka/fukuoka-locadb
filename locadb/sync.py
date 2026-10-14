@@ -243,11 +243,11 @@ class Sync:
             self.note("復帰", s, "OSMに戻ったため対象外を解除")
             s.data_status, s.archived_reason = "current", None
 
-    def seen(self, s: Spot, state: dict):
-        """保護された地点について、今回見たOSMの値を記録する（変わったときだけ書く）"""
+    def seen(self, s: Spot, state: dict | None):
+        """保護された地点について、今回見たOSMの値を記録する（変わったときだけ書く。None で消す）"""
         if state != s.osm_seen:
             s.osm_seen = state
-            self._seen_updates.append((json.dumps(state, ensure_ascii=False), s.id))
+            self._seen_updates.append((None if state is None else json.dumps(state, ensure_ascii=False), s.id))
 
     def update(self, s: Spot, name, ll, cat, extra, area):
         """自動で更新してよい地点は更新、人が確認した地点は要確認にする"""
@@ -272,6 +272,9 @@ class Sync:
             if changes:
                 self.flag_review(s, "OSMの位置・名前・種別が変わった", {"proposed": changes}, force=True)
             return
+        if s.osm_seen is not None:
+            # 保護が外れた（固定を外した等）：以後はOSMに合わせるので比較の基準は残さない（再び固定したときに古い基準を使わない）
+            self.seen(s, None)
         changes = {}
         moved = dist_m(s.ll, ll)
         if moved > MOVE_M:
@@ -445,7 +448,8 @@ class Sync:
                     why, certain = "OSMから削除された", False
             if s.protected:
                 if (s.osm_seen or {}).get("missing") != why:      # 同じ理由は一度だけ（解消後にぶり返さない）
-                    self.seen(s, {"missing": why})
+                    # 前回見た名前・位置は残す（戻ってきたとき、人が直した値ではなく前回のOSMの値と比べる）
+                    self.seen(s, {**{k: v for k, v in (s.osm_seen or {}).items() if k != "missing"}, "missing": why})
                     self.flag_review(s, why, {"missing": True})
                 continue
             runs = s.missing_runs + 1
