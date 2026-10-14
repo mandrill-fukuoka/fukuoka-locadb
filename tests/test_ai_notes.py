@@ -124,3 +124,11 @@ def test_view_detail_drafts_list_and_diag(db, two):
     lst = rpc(db, "ai_drafts()")
     assert [(x["spot_id"], x["source"]) for x in lst] == [(a, "laya")]
     assert rpc(db, "diag_summary()")["ai_notes"] == {"laya:draft": 1}
+
+
+def test_ai_tags_not_in_public_search(db, two):
+    a, _, _ = two
+    submit(db, "laya", [{"spot_id": a, "tags": [{"code": "nostalgic", "score": 0.9}]}])
+    assert rpc(db, "search_spots(p_q => '寺A')")[0]["tags"] is None             # AIのタグは公開の検索結果に出ない
+    db.execute("select review_spot(%s, 'candidate', 'desk_checked', null, array['lively'], 'hirata')", (a,)); db.commit()
+    assert rpc(db, "search_spots(p_q => '寺A')")[0]["tags"] == ["活気"]

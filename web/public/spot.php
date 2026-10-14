@@ -152,8 +152,13 @@ page_header(nm($s['name']), '');
           <?php endforeach; ?>
         </section>
       <?php endif; ?>
-      <?php if (!empty($s['tags'])): ?><p><?php foreach ($s['tags'] as $t): ?><span class="chip"><?= h($t['name']) ?></span><?php endforeach; ?>
-        <span class="small muted"><?= ($s['tags'][0]['origin'] ?? '') === 'human' ? '（人が確認）' : '（AIの推定）' ?></span></p><?php endif; ?>
+      <?php // タグ：人が付けたものは誰にでも、AIの推定はログイン時だけ（説明文と同じく、人が確認するまで公開しない）
+        $humanTags = array_values(array_filter($s['tags'] ?? [], fn($t) => ($t['origin'] ?? '') === 'human'));
+        $aiTags = current_user() ? array_values(array_filter($s['tags'] ?? [], fn($t) => ($t['origin'] ?? '') !== 'human')) : []; ?>
+      <?php if ($humanTags): ?><p><?php foreach ($humanTags as $t): ?><span class="chip"><?= h($t['name']) ?></span><?php endforeach; ?>
+        <span class="small muted">（人が確認）</span></p><?php endif; ?>
+      <?php if ($aiTags): ?><p><?php foreach ($aiTags as $t): ?><span class="chip dim"><?= h($t['name']) ?></span><?php endforeach; ?>
+        <span class="small muted">（AIの推定・ログイン時のみ表示）</span></p><?php endif; ?>
 
       <section class="block">
         <h2>光の目安</h2>
