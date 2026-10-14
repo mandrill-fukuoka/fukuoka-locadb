@@ -29,6 +29,7 @@ from shapely.prepared import prep
 from shapely.strtree import STRtree
 
 from .categories import CATEGORIES, WALKABLE, categories_of, display_name
+from . import slopes
 
 GEOFABRIK_URL = "https://download.geofabrik.de/asia/japan/kyushu-latest.osm.pbf"
 
@@ -138,6 +139,7 @@ class LineSample:
     position_kind: str       # line_sample / standpoint
     way_ids: list[int] = field(default_factory=list)
     area_code: str | None = None
+    attrs: dict | None = None    # 坂道：長さ・勾配・高低差・上りの方角
 
 
 @dataclass
@@ -158,6 +160,7 @@ class _Reader(osmium.SimpleHandler):
         self.points: list[PointFeature] = []
         self.lines: dict[tuple[str, str], list] = defaultdict(list)   # (cat, 名前) -> [(way_id, [(lon,lat)...])]
         self.walk: list = []                                           # 立てる場所の候補（歩ける道・橋）
+        self.roads: list = []                                          # 坂道の検出に使う道（slopes.Road）
         self.wkb = osmium.geom.WKBFactory()
         self.n_nodes = self.n_ways = self.n_rels = 0
 
@@ -195,6 +198,9 @@ class _Reader(osmium.SimpleHandler):
         hw = t.get("highway")
         if hw in WALKABLE or (t.get("bridge") and hw):
             self.walk.append(LineString([to_m(*c) for c in coords]))
+        road = slopes.road_of(w.id, t, coords)
+        if road:
+            self.roads.append(road)
         cats = categories_of(t, "w", w.is_closed())
         if not cats:
             return
@@ -275,7 +281,7 @@ def _grid_samples(line_m, spacing: float):
 STANDPOINT_MAX_M = {"river": 80, "coast": 100, "railway": 60}
 
 
-def read(pbf: Path, watch: set[str] | None = None) -> Snapshot:
+def read(pbf: Path, watch: set[str] | None = None, detect_slopes: bool = True) -> Snapshot:
     """watch: DBにある要素のキー。ファイルに存在したかどうか（削除か、条件から外れただけか）を記録する"""
     ward_ids = {rel for _, rel in AREAS.values()}
     r = _Reader(ward_ids, watch or set())
@@ -341,6 +347,30 @@ def read(pbf: Path, watch: set[str] | None = None) -> Snapshot:
             samples.append(LineSample(f"{line_key}#{int(spacing)}:{cx}_{cy}", line_key, cat, name or "",
                                       lon, lat, llon, llat, kind, way_ids, ac))
 
+    # 坂道：市内の道に沿って標高を読み、急な区間を線の地点として置く（キーは位置の格子で固定）
+    city_prep = prep(unary_union(list(ward_ll.values())))
+    roads = [rd for rd in r.roads
+             if any(city_prep.covers(Point(*rd.coords[i])) for i in (0, len(rd.coords) // 2, -1))]
+    found, slope_stats = slopes.detect(roads) if detect_slopes else ([], {"skipped": True, "incomplete": False})
+    used = set()
+    for sl in found:
+        ac = area_of(sl.lon, sl.lat)
+        if not ac:
+            continue
+        x, y = to_m(sl.lon, sl.lat)
+        cell = f"{math.floor(x / slopes.GRID)}_{math.floor(y / slopes.GRID)}"
+        key = f"{slopes.CAT}#{slopes.GRID}:{cell}"
+        n = 2
+        while key in used:                         # 同じ格子に2つ（60m以上離れた別の坂）→ 番号を付ける
+            key = f"{slopes.CAT}#{slopes.GRID}:{cell}:{n}"; n += 1
+        used.add(key)
+        line_key = f"{slopes.CAT}:{norm_name(sl.name)}" if sl.name else f"{slopes.CAT}:{cell}"
+        samples.append(LineSample(key, line_key, slopes.CAT, sl.name, sl.lon, sl.lat, sl.lon, sl.lat, "line_sample",
+                                  sl.way_ids or [sl.way_id], ac,
+                                  {"slope_len_m": sl.length_m, "slope_grade_pct": sl.grade_pct,
+                                   "slope_rise_m": sl.rise_m, "slope_bearing": sl.bearing, "slope_kind": sl.kind,
+                                   "highway": sl.hw}))
+
     counts = defaultdict(int)
     for f in points:
         for c in f.cats:
@@ -348,7 +378,9 @@ def read(pbf: Path, watch: set[str] | None = None) -> Snapshot:
     for s in samples:
         counts[s.cat] += 1
     meta = {"nodes": r.n_nodes, "ways": r.n_ways, "points": len(points), "samples": len(samples),
-            "by_category": dict(sorted(counts.items()))}
+            "by_category": dict(sorted(counts.items())), "slopes": slope_stats}
+    if slope_stats["incomplete"]:
+        meta["incomplete_categories"] = [slopes.CAT]       # 標高タイルが取れなかった回：坂道は消失扱いしない
     areas = {code: {"name": AREAS[code][0], "wkt": ward_ll[code].wkt} for code in AREAS}
     return Snapshot(areas, points, samples, meta, r.present)
 

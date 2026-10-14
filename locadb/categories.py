@@ -42,6 +42,7 @@ CATEGORIES = {
     "river":               ("河川・運河", "river", "line", 400),
     "coast":               ("海岸・護岸・干潟", "sea", "line", 400),
     "railway":             ("線路沿い", "transport", "line", 600),
+    "slope_street":        ("坂道・階段坂", "slope", "line", 80),      # 道路×標高から検出（locadb/slopes.py）
 }
 PRIORITY = {code: i for i, code in enumerate(CATEGORIES)}
 
@@ -49,7 +50,7 @@ LANDSCAPE_GROUPS = {
     "urban_new": "新しい都市景観", "old_town": "古い街並み・路地", "commercial": "繁華街・商業",
     "residential": "住宅地・団地", "institution": "学校・病院・公共施設", "transport": "交通インフラ・駅",
     "port_industrial": "港湾・工業・倉庫", "river": "川・河川", "sea": "海・海辺", "beach": "砂浜",
-    "lake": "池・湖", "green": "公園・丘陵・自然", "historic": "歴史・寺社", "vacant": "空き施設・再開発地",
+    "lake": "池・湖", "green": "公園・丘陵・自然", "historic": "歴史・寺社", "vacant": "空き施設・再開発地", "slope": "坂道・高低差",
     "water": "水辺（川・海・砂浜・池のどれでも）",
 }
 

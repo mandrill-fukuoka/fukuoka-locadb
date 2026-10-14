@@ -55,3 +55,12 @@ def db(template_db, monkeypatch):
     conn.close()
     with _admin() as a:
         a.execute(f"drop database if exists {name} with (force)")
+
+
+@pytest.fixture(autouse=True)
+def no_real_dem(monkeypatch):
+    """収集の中の坂道の検出が本物の国土地理院に問い合わせないよう、既定では標高タイルが無いことにする
+    （坂道のテストは slopes.make_tiles を架空の地形に差し替える）"""
+    from demworld import NullTiles
+    from locadb import slopes
+    monkeypatch.setattr(slopes, "make_tiles", NullTiles)

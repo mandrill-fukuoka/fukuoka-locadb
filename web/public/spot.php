@@ -72,7 +72,8 @@ $permits = PERMIT_BY_CATEGORY[$s['category']] ?? ['private', 'road'];
 
 $lat = (float)$s['lat']; $lon = (float)$s['lon'];
 $embedKey = cfg('google_maps_embed_key');
-$streetView = 'https://www.google.com/maps/@?' . http_build_query(['api' => 1, 'map_action' => 'pano', 'viewpoint' => "$lat,$lon"]);
+$streetView = 'https://www.google.com/maps/@?' . http_build_query(['api' => 1, 'map_action' => 'pano', 'viewpoint' => "$lat,$lon"]
+    + (isset($s['slope_bearing']) && $s['slope_bearing'] !== null ? ['heading' => (int)$s['slope_bearing']] : []));   // 坂は上りの方を向く
 $gmaps = place_link_url($s);
 $osmUrl = fn($f) => $f['kind'] === 'element'
     ? 'https://www.openstreetmap.org/' . ['n' => 'node', 'w' => 'way', 'r' => 'relation'][$f['osm_type']] . '/' . $f['osm_id']
@@ -122,6 +123,11 @@ page_header(nm($s['name']), '');
           <span class="muted">（建物を除いた地面の高さ。<?= h(TERRAIN_SRC_LABEL[$s['terrain_src']] ?? '') ?>）</span></p>
       <?php elseif (($s['terrain_status'] ?? null) === 'no_data'): ?>
         <p class="small muted terrain">地形：標高データなし（海上など）</p>
+      <?php endif; ?>
+      <?php if (!empty($s['slope_kind'])): ?>
+        <p class="small terrain">坂：<?= $s['slope_kind'] === 'steps' ? '階段' : '道' ?>
+          長さ<?= h(number_format((float)$s['slope_len_m'], 0)) ?>m・平均<?= h(number_format((float)$s['slope_grade_pct'], 0)) ?>%・高低差<?= h(number_format((float)$s['slope_rise_m'], 0)) ?>m・<?= h(bearing_label((int)$s['slope_bearing'])) ?>へ上る
+          <span class="muted">（OpenStreetMapの道と国土地理院の標高から計算した目安）</span></p>
       <?php endif; ?>
 
       <?= summary_html($s, 'p', 'summary') ?>

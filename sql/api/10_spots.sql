@@ -18,12 +18,14 @@ $$;
 -- （名前が同じでも別の施設＝点の地点はまとめない）
 create function search_spots(
   p_q text default null, p_area text default null, p_category text default null,
-  p_group text default null, p_tags text[] default null, p_offset int default 0, p_limit int default 40
+  p_group text default null, p_tags text[] default null, p_offset int default 0, p_limit int default 40,
+  p_relief_min real default null
 ) returns jsonb language sql stable as $$
 with hits as (
   select s.id, s.code, s.name, s.area_code, s.address, s.category as cat, sc.name as category,
          sc.landscape_group as grp_code, lg.name as grp, s.era_feel, s.shoot_scope, s.status, s.confidence,
          s.data_status, s.summary, s.ffc_registered, s.geom, s.line_key, s.position_kind,
+         s.relief_m, s.slope_grade_pct, s.slope_rise_m,
          (s.name like '（無名）%') as unnamed
     from spots s
     join spot_categories sc on sc.code = s.category
@@ -34,6 +36,7 @@ with hits as (
      and (p_area is null or s.area_code = p_area)
      and (p_category is null or s.category = p_category or p_category = any (s.extra_categories))
      and (p_group is null or grp_match(p_group, sc.landscape_group))
+     and (p_relief_min is null or s.relief_m >= p_relief_min)      -- 高台（周りより p_relief_min m 以上高い）
      and (p_tags is null or cardinality(p_tags) = 0 or exists (
             select 1 from spot_tags st where st.spot_id = s.id and st.tag_code = any (p_tags)))
 ),
@@ -49,6 +52,7 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
   select g.id, g.code, g.name, g.area_code, g.address, g.category, g.grp_code, g.grp,
          g.era_feel, g.shoot_scope, g.status, g.confidence, g.data_status, g.summary, g.ffc_registered,
          g.position_kind, ST_Y(g.geom::geometry) as lat, ST_X(g.geom::geometry) as lon,
+         g.relief_m, g.slope_grade_pct, g.slope_rise_m,
          g.same_line_count - 1 as others,
          (select jsonb_agg(t.name order by st.score desc) from spot_tags st join tags t on t.code = st.tag_code
            where st.spot_id = g.id and st.score >= 0.5) as tags,
@@ -57,6 +61,7 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
    where g.rn = 1
    order by g.unnamed,
             case when p_q is null then 0 else similarity(g.name, p_q) end desc,
+            case when p_relief_min is null then 0 else g.relief_m end desc,
             (g.confidence in ('desk_checked','field_checked')) desc,
             g.code
    offset p_offset limit p_limit
@@ -115,8 +120,6 @@ select jsonb_build_object(
   'era_feel', s.era_feel, 'shoot_scope', s.shoot_scope, 'owner_type', s.owner_type,
   'ffc_registered', s.ffc_registered, 'summary', s.summary, 'updated_at', s.updated_at,
   'created_at', s.created_at,
-  'elevation_m', s.elevation_m, 'relief_m', s.relief_m, 'slope_pct', s.slope_pct,
-  'terrain_src', s.terrain_src, 'terrain_status', s.terrain_status, 'terrain_at', s.terrain_at,
   'created_by', (select h.actor from spot_history h where h.spot_id = s.id and h.event = 'created' order by h.at limit 1),
   'osm', (select coalesce(jsonb_agg(jsonb_build_object('key', f.key, 'kind', f.kind, 'osm_type', f.osm_type,
                                                         'osm_id', f.osm_id, 'name', f.name, 'role', sf.role,
@@ -145,7 +148,11 @@ select jsonb_build_object(
                                                               'detail', h.detail) order by h.at desc), '[]')
                   from (select * from spot_history where spot_id = s.id order by at desc limit 30) h)
              else null end
-)
+) || jsonb_build_object(        -- 地形・坂道（1つの jsonb_build_object の引数は100まで）
+  'elevation_m', s.elevation_m, 'relief_m', s.relief_m, 'slope_pct', s.slope_pct,
+  'terrain_src', s.terrain_src, 'terrain_status', s.terrain_status, 'terrain_at', s.terrain_at,
+  'slope_len_m', s.slope_len_m, 'slope_grade_pct', s.slope_grade_pct, 'slope_rise_m', s.slope_rise_m,
+  'slope_bearing', s.slope_bearing, 'slope_kind', s.slope_kind)
 from spots s
 join spot_categories sc on sc.code = s.category
 join landscape_groups lg on lg.code = sc.landscape_group

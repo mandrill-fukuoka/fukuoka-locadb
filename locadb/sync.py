@@ -185,6 +185,10 @@ class Sync:
             if ref and ref >= 10 and n < ref * (1 - DROP_ANOMALY) and not self.allow_large_change:
                 bad.add(cat); flag = "！異常な減少（この種別は消失扱いしない）"
             rows.append((cat, ref, n, flag))
+        for cat in self.snap.meta.get("incomplete_categories") or []:      # 元データの取得が不完全（標高タイルなど）
+            bad.add(cat)
+            rows = [(c, r, n, "！元データの取得が不完全（この種別は消失扱いしない）" if c == cat else f)
+                    for c, r, n, f in rows]
         return bad, rows, bool(runs)
 
     # ---------------------------------------------------------------- 地点の更新
@@ -427,6 +431,14 @@ class Sync:
                 continue
             s = self.create(smp.name, ll, smp.cat, [], smp.area_code, smp.position_kind, smp.line_key, smp)
             self.by_sample[smp.key] = s.id
+        # 坂道の測定値（長さ・勾配・高低差・上りの方角）。人が直した地点でも測定値は最新にする
+        attrs = [(a["slope_len_m"], a["slope_grade_pct"], a["slope_rise_m"], a["slope_bearing"], a["slope_kind"],
+                  self.by_sample[smp.key])
+                 for smp in self.snap.samples if (a := smp.attrs) and smp.key in self.by_sample]
+        if attrs:
+            with self.c.cursor() as cur:
+                cur.executemany("""update spots set slope_len_m=%s, slope_grade_pct=%s, slope_rise_m=%s,
+                                          slope_bearing=%s, slope_kind=%s where id=%s""", attrs)
 
     # ---------------------------------------------------------------- 見つからなかった地点
     def missing(self, present_keys: dict, frozen: set[str], rules_changed: bool):
