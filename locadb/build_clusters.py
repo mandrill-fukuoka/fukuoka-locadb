@@ -20,7 +20,7 @@ def load_spots(conn) -> list[tuple[Spot, str]]:
            join landscape_groups lg on lg.code = sc.landscape_group
            where s.data_status <> 'archived'
              and (s.name not like '（無名）%%'
-                  or sc.landscape_group in ('port_industrial','vacant','river','sea','beach','lake','old_town'))""",
+                  or sc.landscape_group in ('port_industrial','vacant','river','sea','beach','lake','old_town','slope'))""",
     ).fetchall()
     return [(Spot(r["id"], r["name"], r["lat"], r["lon"], r["grp"], r["grp_name"], r["era_feel"]), r["area_code"])
             for r in rows]
