@@ -218,15 +218,22 @@ DIST_AFTER = re.compile(r"^(?P<gap>[^、。,]{0,12}?)(?:約|およそ)?\s*(?P<n>
 NOT_DISTANCE = re.compile(r"標高|高さ|幅|長さ|勾配|高低差|深さ|面積|広さ|全長|直径")
 
 
+GENERIC_NAME = re.compile(r"駐車場|駐輪場|公民館|集会所|児童公園|ポケットパーク|広場|商店街|バス停|公衆トイレ")
+
+
 class PlaceIndex:
     """地点の名前（3字以上・無名以外）→ 位置と広がり。本文に出てくる地点名を最長一致で探す"""
 
     def __init__(self, rows):
         self.pos: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
+        self.line: set[str] = set()          # 川・線路など：地点は線上の一部にしかないので距離を比べない
         for r in rows:
             n = r["name"] or ""
-            if len(n) >= 3 and not n.startswith(UNNAMED) and not re.fullmatch(r"[A-Za-z0-9 .\-]+", n):
+            if len(n) >= 3 and not n.startswith(UNNAMED) and not re.fullmatch(r"[A-Za-z0-9 .\-]+", n) \
+                    and not GENERIC_NAME.fullmatch(nfkc(n)):
                 self.pos[nfkc(n)].append((r["lat"], r["lon"], float(r.get("extent_m") or 0)))
+                if r.get("shape") == "line":
+                    self.line.add(nfkc(n))
         names = sorted(self.pos, key=len, reverse=True)
         self.rx = re.compile("|".join(map(re.escape, names))) if names else None
 
@@ -298,6 +305,8 @@ def check_summary(s, note, places: PlaceIndex) -> list[Finding]:
         if nm in seen or nm == own or nm in own or own in nm or nm in nfkc(s["address"] or ""):
             continue
         seen.add(nm)
+        if nm in places.line:
+            continue
         d = places.nearest(nm, s["lat"], s["lon"])
         dm = DIST_AFTER.match(body[m.end():])
         gap = dm and (dm.group("gap") if dm.group("n") else dm.group("gap2")) or ""

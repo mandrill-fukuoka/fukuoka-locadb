@@ -149,3 +149,12 @@ def test_summary_false_positive_guards():
     assert checks(check_address(b)) == ["address_ward_edge"]
     assert checks(check_category(S(name="福岡保養院", category="hospital"))) == []
     assert checks(check_category(S(name="マリゾン桟橋", category="port"))) == []
+
+
+def test_line_places_and_generic_names_are_not_measured():
+    p = PlaceIndex([S(id=10, name="九州新幹線", category="railway", shape="line", lat=33.62, lon=130.45),
+                    S(id=11, name="駐車場", lat=33.70, lon=130.50)])
+    s = S(name="営業所", lat=33.5600, lon=130.4300)
+    base = "営業所は南区の幹線道路沿いにある。周りは倉庫と住宅が混じる。"
+    found = checks(check_summary(s, note(base + "九州新幹線が251m先を通る。駐車場が隣にある。"), p))
+    assert "sum_distance" not in found and "sum_far_place" not in found
