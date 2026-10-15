@@ -1,6 +1,8 @@
 """登録地の自動チェック：種別・住所・説明文の下書きの正確さを機械的に照合する（AIは使わない）
 
-- 本番のデータは書き換えない。指摘（Finding）を一覧にして CSV と要約を出すだけ（--dry-run）
+- 地点・下書きは書き換えない。指摘（Finding）を一覧にして CSV と要約を出す（--dry-run は読み取りのみ）。
+  --apply のときだけ、指摘を表 spot_checks に保存する（DB変更170）。見つからなくなった指摘は resolved、
+  人が「問題なし」とした指摘（dismissed）は開き直さない
 - 種別：名前と種別の食い違い、英語のままの名前、坂道の誤りの疑い、同じ名前の近い地点、海辺なのに標高が高い など
 - 住所：住所の区と地点の区の食い違い、区の境界との食い違い、OSMの住所タグとの食い違い、
         国土地理院の逆ジオコーダーで引き直した住所との食い違い（--geocode のとき）
@@ -8,7 +10,7 @@
         離れた場所の名前、距離・標高・勾配などの数値とDBの値の食い違い、書いてはいけない話題、
         出典が必要な記述、定型の書き出し、同じ文の使い回し、短すぎる文
 
-使い方：python -m locadb.verify --dry-run --out verify-out [--geocode]
+使い方：python -m locadb.verify (--dry-run | --apply) --out verify-out [--geocode]
 """
 from __future__ import annotations
 
@@ -470,7 +472,7 @@ def write_outputs(found, spots, notes, out_dir: Path, web_base: str) -> str:
     spots_hit = Counter()
     for t in ("category", "address", "summary"):
         spots_hit[t] = len({x.spot_id for x in found if x.target == t})
-    lines = ["## 自動チェック（試し実行・読み取りのみ）", "",
+    lines = ["## 自動チェック", "",
              f"掲載中の地点 {len(spots):,} ／ 採用待ちの下書き {len(notes):,} ／ 指摘 {len(found):,} 件", "",
              (f"住所の引き直し：比べた {REGEO_STATS['compared']:,} ／ 取れなかった {REGEO_STATS['failed']:,}\n"
               if REGEO_STATS else "住所の引き直し：今回はしていない\n"),
@@ -495,21 +497,68 @@ def write_outputs(found, spots, notes, out_dir: Path, web_base: str) -> str:
     return md
 
 
+UPSERT_SQL = """
+insert into spot_checks (spot_id, check_code, target, severity, label, detail, note_id, fkey, last_job)
+values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+on conflict (spot_id, fkey) do update
+   set last_seen = now(), last_job = excluded.last_job, severity = excluded.severity, label = excluded.label,
+       status    = case when spot_checks.status = 'resolved' then 'open' else spot_checks.status end,
+       closed_by = case when spot_checks.status = 'resolved' then null else spot_checks.closed_by end,
+       closed_at = case when spot_checks.status = 'resolved' then null else spot_checks.closed_at end
+"""
+
+
+def fkey(x: Finding) -> str:
+    return f"{x.check}|{x.note_id or ''}|{x.detail}"[:1000]
+
+
+def store(conn, found: list[Finding], ran: set[str], job_id: int) -> dict:
+    """指摘を保存する（1つのトランザクション）。今回調べたチェックで見つからなくなった未対応の指摘は resolved"""
+    rows = [(x.spot_id, x.check, x.target, x.severity, CHECKS[x.check][2], x.detail, x.note_id, fkey(x), job_id)
+            for x in found]
+    with conn.cursor() as cur:
+        cur.executemany(UPSERT_SQL, rows)
+        cur.execute("""update spot_checks set status = 'resolved', closed_by = 'verify', closed_at = now()
+                        where status = 'open' and check_code = any(%s) and last_job is distinct from %s""",
+                    (sorted(ran), job_id))
+        resolved = cur.rowcount
+        n = {r["status"]: r["n"] for r in cur.execute("select status, count(*) n from spot_checks group by status").fetchall()}
+    return {"saved": len(rows), "resolved_now": resolved, "open": n.get("open", 0), "dismissed": n.get("dismissed", 0)}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--dry-run", action="store_true", required=True, help="読み取りのみ（今はこれだけ）")
+    g = ap.add_mutually_exclusive_group(required=True)
+    g.add_argument("--dry-run", action="store_true", help="読み取りのみ")
+    g.add_argument("--apply", action="store_true", help="指摘を spot_checks に保存する")
     ap.add_argument("--out", default="verify-out")
     ap.add_argument("--geocode", action="store_true", help="国土地理院で住所を引き直して比べる（数分かかる）")
     ap.add_argument("--web-base", default="https://fukanim.heteml.net/locadb/")
     a = ap.parse_args(argv)
 
     from . import address
-    from .db import connect
-    with connect() as conn:
-        conn.read_only = True                     # このチェックはDBに書かない
-        spots, notes, pairs = load(conn)
+    from .db import connect, job
     regeo = (lambda rows: check_regeo(rows, address.lookup)) if a.geocode else None
-    found = run_checks(spots, notes, pairs, regeo)
+    REGEO_STATS.clear()
+    with connect() as conn:
+        if a.dry_run:
+            conn.read_only = True                     # 試し実行はDBに書かない
+            spots, notes, pairs = load(conn)
+            found = run_checks(spots, notes, pairs, regeo)
+        else:
+            with job(conn, "verify") as stats:
+                spots, notes, pairs = load(conn)
+                if not spots:
+                    raise SystemExit("掲載中の地点が0件のため止めました")
+                found = run_checks(spots, notes, pairs, regeo)
+                ran = set(CHECKS)
+                # 住所を引き直していない回、または一部が取れなかった回は、引き直しの指摘を閉じない
+                if not a.geocode or REGEO_STATS.get("failed"):
+                    ran.discard("address_regeo")
+                jid = conn.execute("select max(id) i from job_runs where job = 'verify' and finished_at is null").fetchone()["i"]
+                stats.update(store(conn, found, ran, jid), spots=len(spots), drafts=len(notes), geocode=a.geocode,
+                             by_check=dict(Counter(x.check for x in found)))
+            print(json.dumps(stats, ensure_ascii=False))
     md = write_outputs(found, spots, notes, Path(a.out), a.web_base)
     print(md)
 

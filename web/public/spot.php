@@ -138,12 +138,27 @@ page_header(nm($s['name']), '');
       <?php endif; ?>
 
       <?= summary_html($s, 'p', 'summary') ?>
+      <?php // 自動チェックの未対応の指摘（ログイン時だけ。DB変更170）
+        $openChecks = [];
+        if (current_user()) {
+            try { $openChecks = sb_get('spot_checks?select=id,target,severity,label,detail,note_id&status=eq.open&spot_id=eq.' . (int)$s['id']
+                                       . '&order=severity.desc,id') ?? []; } catch (Throwable $e) { $openChecks = []; }
+        }
+        $spotChecks = array_values(array_filter($openChecks, fn($c) => empty($c['note_id'])));
+        $noteChecks = [];
+        foreach ($openChecks as $c) if (!empty($c['note_id'])) $noteChecks[(int)$c['note_id']][] = $c; ?>
+      <?php if ($spotChecks): ?>
+        <p class="checks small">自動チェック：<?php foreach ($spotChecks as $c): ?>
+          <span class="chip <?= $c['severity'] === 'warn' ? 'warn' : 'dim' ?>"><?= h($c['label']) ?>：<?= h($c['detail']) ?></span><?php endforeach; ?>
+          <a href="spots.php?queue=checks&amp;q=<?= h(urlencode((string)$s['code'])) ?>">一覧で閉じる</a></p>
+      <?php endif; ?>
       <?php if (current_user() && !empty($s['drafts'])): ?>
         <section class="drafts">
           <?php foreach ($s['drafts'] as $d): ?>
             <form method="post" class="draft"><?= csrf_field() ?><input type="hidden" name="note_id" value="<?= (int)$d['id'] ?>">
               <p class="small muted">説明文の下書き（<?= h(AI_SOURCE_LABEL[$d['source']] ?? $d['source']) ?><?= $d['model'] ? '・' . h($d['model']) : '' ?>・<?= h(substr((string)$d['at'], 0, 10)) ?>）
                 <span class="chip dim">未採用・ログイン時のみ表示</span></p>
+              <?php foreach (($noteChecks[(int)$d['id']] ?? []) as $c): ?><span class="chip <?= $c['severity'] === 'warn' ? 'warn' : 'dim' ?>"><?= h($c['label']) ?>：<?= h($c['detail']) ?></span><?php endforeach; ?>
               <textarea name="text" rows="3"><?= h($d['body']) ?></textarea>
               <p class="actions"><button name="action" value="ai_accept" class="small-btn">採用する（直した内容で）</button>
                 <button name="action" value="ai_reject" class="secondary small-btn">却下</button>

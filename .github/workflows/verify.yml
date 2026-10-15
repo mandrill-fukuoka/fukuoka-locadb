@@ -1,14 +1,33 @@
-# 登録地の自動チェック：種別・住所・説明文の下書きを照合し、指摘の一覧を成果物に出す（読み取りのみ。DBに書かない）
+# 登録地の自動チェック：種別・住所・説明文の下書きを照合する（AIは使わない。地点・下書きは書き換えない）
+#  - 毎週：月曜の自動収集（pipeline）が成功した後に apply（指摘を spot_checks に保存。確認画面の「自動チェック」タブ）
+#  - 手動：dry_run（読み取りのみ。一覧を成果物に出すだけ）/ apply
 name: verify
 on:
+  workflow_run:
+    workflows: [pipeline]
+    types: [completed]
   workflow_dispatch:
     inputs:
+      mode:
+        description: "dry_run（読み取りのみ）/ apply（指摘を保存して画面に出す）"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
       geocode:
         description: "国土地理院で住所を引き直して比べる（数分かかる）"
         type: boolean
         default: true
+env:
+  # 自動の回（月曜の本番の収集が成功した後）は apply・住所の引き直しあり
+  MODE: ${{ github.event_name == 'workflow_run' && 'apply' || inputs.mode }}
+  GEOCODE: ${{ github.event_name == 'workflow_run' && 'true' || inputs.geocode }}
+concurrency:
+  group: ${{ (github.event_name == 'workflow_run' || inputs.mode == 'apply') && 'database' || format('verify-{0}', github.run_id) }}
+  cancel-in-progress: false
 jobs:
   verify:
+    # 自動の回は、スケジュールで動いた pipeline が成功したときだけ
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'schedule')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -16,9 +35,11 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -r requirements.txt
-      - name: チェック（読み取りのみ）
+      - name: チェック
         run: |
-          python -m locadb.verify --dry-run --out verify-out ${{ inputs.geocode && '--geocode' || '' }} > /dev/null
+          python -m locadb.verify --${MODE//_/-} --out verify-out $([ "$GEOCODE" = "true" ] && echo --geocode) > verify-out.log
+          head -1 verify-out.log | grep -q '^{' && { echo '```json'; head -1 verify-out.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
+          echo "モード：$MODE" >> "$GITHUB_STEP_SUMMARY"
           cat verify-out/summary.md >> "$GITHUB_STEP_SUMMARY"
         env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
       - uses: actions/upload-artifact@v4

@@ -96,21 +96,29 @@ begin
 end $$;
 
 -- 採用待ちの下書き（確認画面の「説明文の下書き」タブ）
+--  自動チェック（DB変更170）の未対応の指摘を checks に付け、「要確認」の指摘がある下書きを先に並べる。
+--  p_flagged：true＝指摘のある下書きだけ、false＝指摘のないものだけ、null＝すべて
 create function ai_drafts(p_area text default null, p_q text default null, p_source text default null,
-                          p_offset int default 0, p_limit int default 30)
+                          p_offset int default 0, p_limit int default 30, p_flagged boolean default null)
 returns jsonb language sql stable as $$
 select coalesce(jsonb_agg(x), '[]'::jsonb) from (
   select n.id, n.source, n.body, n.model, n.prompt_version, n.created_at,
          s.id as spot_id, s.code, s.name, s.area_code, s.address, sc.name as category, s.summary as current_summary,
-         s.confidence, s.status
+         s.confidence, s.status, ck.checks
     from spot_ai_notes n
     join spots s on s.id = n.spot_id
     left join spot_categories sc on sc.code = s.category
+    left join lateral (
+      select jsonb_agg(jsonb_build_object('id', c.id, 'label', c.label, 'severity', c.severity, 'detail', c.detail)
+                       order by (c.severity = 'warn') desc, c.check_code) as checks,
+             bool_or(c.severity = 'warn') as has_warn
+        from spot_checks c where c.note_id = n.id and c.status = 'open') ck on true
    where n.status = 'draft' and s.data_status <> 'archived'
      and (p_area is null or s.area_code = p_area)
      and (p_source is null or n.source = p_source)
      and (p_q is null or s.name ilike '%' || p_q || '%' or s.address ilike '%' || p_q || '%' or n.body ilike '%' || p_q || '%')
-   order by s.code, n.created_at desc
+     and (p_flagged is null or (ck.checks is not null) = p_flagged)
+   order by coalesce(ck.has_warn, false) desc, (ck.checks is not null) desc, s.code, n.created_at desc
    offset p_offset limit p_limit
 ) x;
 $$;
