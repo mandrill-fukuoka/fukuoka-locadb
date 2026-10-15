@@ -1,0 +1,25 @@
+# 登録地の自動チェック：種別・住所・説明文の下書きを照合し、指摘の一覧を成果物に出す（読み取りのみ。DBに書かない）
+name: verify
+on:
+  workflow_dispatch:
+    inputs:
+      geocode:
+        description: "国土地理院で住所を引き直して比べる（数分かかる）"
+        type: boolean
+        default: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: チェック（読み取りのみ）
+        run: |
+          python -m locadb.verify --dry-run --out verify-out ${{ inputs.geocode && '--geocode' || '' }} > /dev/null
+          cat verify-out/summary.md >> "$GITHUB_STEP_SUMMARY"
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - uses: actions/upload-artifact@v4
+        with: { name: verify-findings, path: verify-out/, retention-days: 30 }

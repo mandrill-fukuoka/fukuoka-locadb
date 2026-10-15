@@ -1,0 +1,127 @@
+"""回帰テスト：登録地の自動チェック（locadb/verify.py。読み取りのみ）"""
+import json
+
+from locadb import verify
+from locadb.verify import PlaceIndex, check_address, check_category, check_summary, check_summary_corpus, run_checks
+from osmworld import World
+
+
+def S(**kw):
+    base = dict(id=1, code="FUK-CHU-S0001", name="地点", category="park", extra_categories=[], area_code="fuk-chuo",
+                area_name="中央区", address="福岡市中央区天神一丁目", origin="osm", position_kind="point", line_key=None,
+                catname="公園・庭園・緑地", shape="point", lat=33.5900, lon=130.4000, elevation_m=5.0, relief_m=0.0,
+                terrain_status="ok", slope_kind=None, slope_grade_pct=None, slope_rise_m=None, slope_len_m=None,
+                geo_area="fuk-chuo", geo_area_name="中央区", tags={})
+    base.update(kw)
+    return base
+
+
+def checks(found):
+    return sorted(f.check for f in found)
+
+
+def test_category_rules():
+    assert checks(check_category(S(name="警固神社", category="park"))) == ["name_category"]
+    assert checks(check_category(S(name="警固神社", category="shrine_temple", catname="寺社"))) == []
+    assert checks(check_category(S(name="九州大学病院", category="hospital"))) == []           # 「院」でも病院は寺社にしない
+    assert checks(check_category(S(name="今泉公園", category="park"))) == []
+    assert checks(check_category(S(name="福岡カトリック教会", category="shrine_temple", catname="寺社"))) == ["worship_not_temple"]
+    assert checks(check_category(S(name="Shinto Shrine", category="shrine_temple", catname="寺社"))) == ["english_name"]
+    assert checks(check_category(S(name="（無名）公園（天神一丁目）"))) == []
+    assert checks(check_category(S(name="A;B橋", category="bridge_overpass"))) == ["multi_name"]
+    # 線の地点（川の点など）には名前の規則を使わない
+    assert checks(check_category(S(name="承天寺", category="alley", shape="line"))) == []
+    # 坂道：車道で25%以上は誤りの疑い、階段は対象外
+    assert checks(check_category(S(category="slope_street", slope_kind="road", slope_grade_pct=27.0, slope_len_m=60))) == ["slope_road_steep"]
+    assert checks(check_category(S(category="slope_street", slope_kind="steps", slope_grade_pct=60.0))) == []
+    assert checks(check_category(S(name="地点", category="beach", elevation_m=45.0))) == ["seaside_high"]
+
+
+def test_address_rules():
+    assert checks(check_address(S())) == []
+    assert checks(check_address(S(address="福岡市博多区中洲一丁目"))) == ["address_ward"]
+    assert checks(check_address(S(address=None))) == ["address_missing"]
+    assert checks(check_address(S(address=None, terrain_status="no_data"))) == []             # 海上は住所なしでよい
+    assert checks(check_address(S(geo_area="fuk-hakata", geo_area_name="博多区"))) == ["area_outside"]
+    assert checks(check_address(S(geo_area=None))) == []                                      # 境界の外（海など）は比べない
+    assert checks(check_address(S(tags={"addr:city": "福岡市博多区"}))) == ["osm_addr_ward"]
+    assert checks(check_address(S(tags={"addr:city": "福岡市中央区"}))) == []
+
+
+def test_regeo_compares_town(monkeypatch):
+    rows = [S(id=1), S(id=2, address="福岡市中央区大名二丁目"), S(id=3, address="福岡市中央区赤坂1丁目")]
+    answers = {1: "福岡市中央区天神二丁目", 2: "福岡市中央区今泉一丁目", 3: "福岡市中央区赤坂一丁目"}
+    it = iter(answers.values())
+    found = verify.check_regeo(rows, lambda lon, lat, sess: next(it), workers=1)
+    assert [(f.spot_id, f.check) for f in found] == [(2, "address_regeo")]                    # 丁目の違い・表記ゆれは指摘しない
+
+
+def _places():
+    return PlaceIndex([S(id=10, name="博多駅", lat=33.5897, lon=130.4207),
+                       S(id=11, name="姪浜駅", lat=33.5833, lon=130.3260),
+                       S(id=12, name="天神中央公園", lat=33.5920, lon=130.4030)])
+
+
+def note(body, nid=100):
+    return {"note_id": nid, "body": body, "source": "laya", "prompt_version": "laya-summary-v3"}
+
+
+def test_summary_rules():
+    s = S(name="今泉公園", lat=33.5880, lon=130.3990)
+    p = _places()
+    ok = "今泉公園は中央区の住宅地にある小さな公園。天神中央公園まで約450m。ベンチと植え込みがあり、周りは中低層の建物に囲まれている。"
+    assert checks(check_summary(s, note(ok), p)) == []
+    assert "sum_distance" in checks(check_summary(s, note(ok.replace("約450m", "約50m")), p))
+    assert "sum_far_place" in checks(check_summary(s, note(ok + "姪浜駅の近くでもある。"), p))
+    assert "sum_other_ward" in checks(check_summary(s, note(ok.replace("中央区", "博多区")), p))
+    assert "sum_foreign" in checks(check_summary(s, note(ok + "这里很安静。"), p))
+    assert "sum_unnamed" in checks(check_summary(s, note("（無名）公園（今泉一丁目）は" + ok), p))
+    assert "sum_short" in checks(check_summary(s, note("小さな公園。"), p))
+    assert "sum_forbidden" in checks(check_summary(s, note(ok + "治安がよく夜も安心。"), p))
+    assert "sum_needs_source" in checks(check_summary(s, note(ok + "明治時代から有名な公園。"), p))
+    # 城南区は「南区」と取り違えない
+    j = S(name="地点", area_name="城南区")
+    assert "sum_other_ward" not in checks(check_summary(j, note("城南区の住宅地にある。" + ok.replace("中央区", "城南区")), p))
+
+
+def test_summary_numbers():
+    s = S(name="浄水通りの坂", category="slope_street", slope_kind="road", slope_grade_pct=12.0, slope_rise_m=8.0,
+          slope_len_m=70.0, elevation_m=20.0)
+    p = _places()
+    good = "浄水通りの坂は長さ約70m、平均勾配12%、高低差約8mの坂道。標高は約20mで、周りの住宅地を見下ろす。上りは南へ向かう。"
+    assert checks(check_summary(s, note(good), p)) == []
+    bad = good.replace("勾配12%", "勾配25%").replace("標高は約20m", "標高は約80m")
+    assert checks(check_summary(s, note(bad), p)) == ["sum_number", "sum_number"]
+
+
+def test_summary_corpus():
+    rows = [S(id=i, name=f"公園{i}号", lat=33.59 + i * 0.001) for i in range(30)]
+    pairs = [(s, note(f"{s['name']}は中央区にある緑の多い公園です。ベンチが{i}基ある。", 100 + i)) for i, s in enumerate(rows)]
+    pairs.append((S(id=99, name="X"), note("同じ文章。" * 20, 999)))
+    pairs.append((S(id=98, name="Y"), note("同じ文章。" * 20, 998)))
+    found = check_summary_corpus(pairs, min_template=25)
+    c = checks(found)
+    assert c.count("sum_template") == 30 and c.count("sum_duplicate") == 2
+
+
+def test_dry_run_reads_db_and_writes_nothing(db, tmp_path, monkeypatch):
+    """本物のDB（架空の地図）で全チェックを流す。DBは変わらない"""
+    w = World()
+    w.point(10, 130.385, 33.585, amenity="place_of_worship", name="寺A")
+    w.point(11, 130.3851, 33.5851, leisure="park", name="寺A")                                # 同じ名前が近い
+    w.area(20, 130.390, 33.586, leisure="park", name="春吉神社")                               # 名前と種別が合わない
+    w.run(db, tmp_path)
+    a = db.execute("select id from spots where name='寺A' and category='shrine_temple'").fetchone()["id"]
+    db.execute("select ai_submit('laya', %s::jsonb, 'm', 'laya-summary-v3')",
+               (json.dumps([{"spot_id": a, "summary": "寺Aは東区の寺。这里很安静。"}], ensure_ascii=False),))
+    db.commit()
+    before = db.execute("select count(*) n, max(updated_at) u from spots").fetchone()
+    verify.main(["--dry-run", "--out", str(tmp_path / "out")])
+    after = db.execute("select count(*) n, max(updated_at) u from spots").fetchone()
+    assert before == after
+    rows = json.loads((tmp_path / "out" / "findings.json").read_text(encoding="utf-8"))
+    got = {r["check"] for r in rows}
+    assert {"same_name_near", "name_category", "sum_foreign", "sum_short"} <= got
+    assert (tmp_path / "out" / "findings.csv").exists() and "自動チェック" in (tmp_path / "out" / "summary.md").read_text(encoding="utf-8")
+    # 本番と同じく run_checks は読み取ったデータだけで動く
+    assert run_checks([], [], []) == []
