@@ -48,3 +48,17 @@ jobs:
               print(f"\n同じ地点・同じ出どころで下書きが2件以上：{dup}（0 が正常）")
           PY
         env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - name: v4の品質（件数のみ）
+        run: |
+          python - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import os, psycopg
+          with psycopg.connect(os.environ["DATABASE_URL"]) as c:
+              q=lambda sql: c.execute(sql).fetchall()
+              base="from spot_ai_notes n join spots s on s.id=n.spot_id where n.prompt_version='laya-summary-v4' and n.status='draft'"
+              print("total/distinct body/distinct first20/min/avg/max len:", q(f"select count(*),count(distinct n.body),count(distinct left(n.body,20)),min(length(n.body)),round(avg(length(n.body))),max(length(n.body)) {base}"))
+              print("most repeated first20 counts:", [r[0] for r in q(f"select count(*) {base} group by left(n.body,20) order by 1 desc limit 5")])
+              print("by category (n, distinct first20):", q(f"select s.category,count(*),count(distinct left(n.body,20)) {base} group by 1 order by 2 desc limit 8"))
+              print("spots without any laya draft by category:", q("select s.category,count(*) from spots s where s.data_status='current' and not exists(select 1 from spot_ai_notes n where n.spot_id=s.id and n.status in ('draft','accepted')) group by 1 order by 2 desc"))
+              print("v3 superseded by v4:", q("select count(*) from spot_ai_notes a where a.prompt_version='laya-summary-v3' and a.status='superseded' and exists(select 1 from spot_ai_notes b where b.spot_id=a.spot_id and b.prompt_version='laya-summary-v4')"))
+          PY
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
