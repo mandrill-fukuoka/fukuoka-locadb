@@ -37,10 +37,12 @@ CHECKS = {
     "seaside_high":      ("category", WARN, "海辺の種別なのに標高が30m超"),
     "address_missing":   ("address", WARN, "住所が空（陸上の地点）"),
     "address_ward":      ("address", WARN, "住所の区と地点の区が違う"),
+    "address_ward_edge": ("address", INFO, "区の境の橋・川などで、住所の区と地点の区が違う"),
     "area_outside":      ("address", WARN, "地点が自分の区の境界の外にある"),
     "osm_addr_ward":     ("address", WARN, "OSMの住所タグの区と違う"),
     "address_regeo":     ("address", WARN, "座標から引き直した住所と違う"),
     "sum_foreign":       ("summary", WARN, "中国語・ハングルの混入"),
+    "sum_garbled":       ("summary", WARN, "文字化け"),
     "sum_unnamed":       ("summary", WARN, "「（無名）」の書き残し"),
     "sum_short":         ("summary", WARN, "50字未満"),
     "sum_other_ward":    ("summary", WARN, "別の区の名前だけが出てくる"),
@@ -102,10 +104,10 @@ def cats(s) -> set[str]:
 # ---------------------------------------------------------------------------
 # 名前の末尾 → 当てはまるはずの種別（どれか1つに入っていればよい）。点の地点だけに使う
 NAME_RULES = [
-    (re.compile(r"(神社|神宮|八幡宮|天満宮|大社|稲荷社?|寺|(?<![病医学容骨療])院)$"), {"shrine_temple", "heritage"}, "寺社"),
+    (re.compile(r"(神社|神宮|八幡宮|天満宮|大社|稲荷社?|寺|(?<![病医学容骨療養議究])院)$"), {"shrine_temple", "heritage"}, "寺社"),
     (re.compile(r"駅$"), {"station"}, "駅"),
     (re.compile(r"(公園|緑地|庭園)$"), {"park", "heritage", "hill"}, "公園"),
-    (re.compile(r"橋$"), {"bridge_overpass", "heritage"}, "橋"),
+    (re.compile(r"(?<!桟)橋$"), {"bridge_overpass", "heritage"}, "橋"),
     (re.compile(r"(小学校|中学校|高等学校|高校|大学|学園)$"), {"school"}, "学校"),
     (re.compile(r"(病院|医院|クリニック)$"), {"hospital"}, "病院"),
     (re.compile(r"(池|湖|ため池|堀)$"), {"pond", "park"}, "池"),
@@ -141,6 +143,9 @@ def check_category(s) -> list[Finding]:
 # ---------------------------------------------------------------------------
 # 住所
 # ---------------------------------------------------------------------------
+EDGE_PRONE = {"bridge_overpass", "river", "railway", "coast", "slope_street", "alley", "hill"}   # 区の境にまたがりやすい
+
+
 def check_address(s) -> list[Finding]:
     out = []
     if not s["address"]:
@@ -149,7 +154,8 @@ def check_address(s) -> list[Finding]:
         return out
     w = ward_of_address(s["address"])
     if w and w != s["area_name"]:
-        out.append(Finding(s["id"], "address_ward", f"住所は{w}、地点の区は{s['area_name']}（{s['address']}）"))
+        edge = cats(s) & EDGE_PRONE
+        out.append(Finding(s["id"], "address_ward_edge" if edge else "address_ward", f"住所は{w}、地点の区は{s['area_name']}（{s['address']}）"))
     if s.get("geo_area") is not None and s["geo_area"] != s["area_code"]:
         out.append(Finding(s["id"], "area_outside", f"位置は{s['geo_area_name'] or '市外'}、地点の区は{s['area_name']}"))
     tags = s.get("tags") or {}
@@ -168,13 +174,18 @@ def town_key(addr: str | None) -> str:
     return re.split(r"[0-9一二三四五六七八九十]+丁目", a)[0]
 
 
+REGEO_STATS: dict = {}
+
+
 def check_regeo(rows, lookup, workers=4) -> list[Finding]:
     """国土地理院の逆ジオコーダーで引き直し、保存した住所と町名まで比べる（取れなかった地点は比べない）"""
     import requests
     out = []
     targets = [r for r in rows if r["address"]]
+    REGEO_STATS.update(target=len(targets), compared=0, failed=0)
     with requests.Session() as sess, ThreadPoolExecutor(max_workers=workers) as pool:
         for r, now in zip(targets, pool.map(lambda r: lookup(r["lon"], r["lat"], sess), targets)):
+            REGEO_STATS["compared" if now else "failed"] += 1
             if now and town_key(now) != town_key(r["address"]):
                 out.append(Finding(r["id"], "address_regeo", f"保存：{r['address']} ／ 現在：{now}"))
     return out
@@ -186,6 +197,7 @@ def check_regeo(rows, lookup, workers=4) -> list[Finding]:
 # 日本語ではまず使わない簡体字（日本語と同じ字は入れない）、中国語の句読点、ハングル
 SIMPLIFIED = set("这们个说时为发对现实经动进车东门问间关开长马鸟鱼见贝页头买卖两乐书认识让话谈请读语记样么吗呢啊过还没给从并应该业产术际计设历岁华丽众优这边轻场处网电视风饭")
 FOREIGN_RE = re.compile(r"[，；]|[가-힣]")          # 「，」は中国語の読点（日本語は「、」）
+GARBLED = re.compile(r"\ufffd|\?{2,}|[\u0080-\u009f]")          # 文字化け（置換文字・「??」・制御文字）
 FORBIDDEN = re.compile(r"治安|営業時間|定休日|混雑|撮影許可|撮影可能|撮影でき|許可不要|許可は不要|自由に撮影|口コミ|評判")
 NEEDS_SOURCE = re.compile(r"[0-9０-９]{3,4}年|明治|大正|昭和[0-9０-９一二三四五六七八九十]+年|江戸時代|室町|鎌倉時代|"
                           r"創建|建立|開山|開業|竣工|築[0-9０-９]+年|創業|日本一|最古|最大|唯一|有名|人気の|名所|絶景|"
@@ -199,24 +211,28 @@ NUM_CLAIMS = [
     (re.compile(r"高低差" + NUM + UNIT_M), "slope_rise_m", lambda v: max(3.0, abs(v) * 0.3), "高低差"),
     (re.compile(r"(?:長さ|全長)" + NUM + UNIT_M), "slope_len_m", lambda v: max(15.0, abs(v) * 0.3), "長さ"),
 ]
-DIST_AFTER = re.compile(r"^[^。]{0,14}?(?:約|およそ)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(km|キロメートル|キロ|m|メートル)|"
-                        r"^[^。]{0,14}?徒歩\s*(?:約)?\s*([0-9]+)\s*分")
+# 地点名のすぐ後ろの距離（「〜まで約300m」「〜から徒歩5分」）。間に読点・句点・別の数値の話（標高・幅など）を挟むものは数えない
+DIST_AFTER = re.compile(r"^(?P<gap>[^、。,]{0,12}?)(?:約|およそ)?\s*(?P<n>[0-9][0-9,]*(?:\.[0-9]+)?)\s*"
+                        r"(?P<u>km|キロメートル|キロ|m|メートル)(?P<within>以内|圏内|の範囲|ほどの範囲)?|"
+                        r"^(?P<gap2>[^、。,]{0,12}?)徒歩\s*(?:約)?\s*(?P<min>[0-9]+)\s*分")
+NOT_DISTANCE = re.compile(r"標高|高さ|幅|長さ|勾配|高低差|深さ|面積|広さ|全長|直径")
 
 
 class PlaceIndex:
-    """地点の名前（3字以上・無名以外）→ 位置。本文に出てくる地点名を最長一致で探す"""
+    """地点の名前（3字以上・無名以外）→ 位置と広がり。本文に出てくる地点名を最長一致で探す"""
 
     def __init__(self, rows):
-        self.pos: dict[str, list[tuple[float, float]]] = defaultdict(list)
+        self.pos: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
         for r in rows:
             n = r["name"] or ""
             if len(n) >= 3 and not n.startswith(UNNAMED) and not re.fullmatch(r"[A-Za-z0-9 .\-]+", n):
-                self.pos[n].append((r["lat"], r["lon"]))
+                self.pos[nfkc(n)].append((r["lat"], r["lon"], float(r.get("extent_m") or 0)))
         names = sorted(self.pos, key=len, reverse=True)
         self.rx = re.compile("|".join(map(re.escape, names))) if names else None
 
     def nearest(self, name, lat, lon) -> float:
-        return min(dist_m(lat, lon, a, o) for a, o in self.pos[name])
+        """いちばん近い同名の地点までの距離。公園など広い場所は、代表点から広がりの半分を引く"""
+        return min(max(0.0, dist_m(lat, lon, a, o) - e / 2) for a, o, e in self.pos[name])
 
     def mentions(self, text):
         return list(self.rx.finditer(text)) if self.rx else []
@@ -230,6 +246,7 @@ def check_summary(s, note, places: PlaceIndex) -> list[Finding]:
     sid, nid = s["id"], note["note_id"]
     raw = note["body"] or ""
     body = nfkc(raw)
+    own = nfkc(s["name"] or "")
     out = []
 
     def f(check, detail):
@@ -238,21 +255,30 @@ def check_summary(s, note, places: PlaceIndex) -> list[Finding]:
     zh = sorted({ch for ch in raw if ch in SIMPLIFIED} | set(FOREIGN_RE.findall(raw)))
     if zh:
         f("sum_foreign", "「" + "".join(zh)[:20] + "」")
+    g = GARBLED.search(raw)
+    if g:
+        f("sum_garbled", _around(raw, g))
     if UNNAMED in raw or "無名" in raw:
         f("sum_unnamed", "本文に「無名」")
     if len(raw.strip()) < 50:
         f("sum_short", f"{len(raw.strip())}字")
 
+    # 住所の区（境界の橋など）に合わせて書いた場合は、別の区とはしない
     wards = {m.group(0) for m in WARD_RE.finditer(body)}
-    if wards and s["area_name"] not in wards:
+    if wards and not wards & {s["area_name"], ward_of_address(s["address"])}:
         f("sum_other_ward", f"本文：{'・'.join(sorted(wards))}／地点：{s['area_name']}")
 
-    m = FORBIDDEN.search(body)
+    mentions = places.mentions(body)
+    # 話題・出典のチェックは地点名の中の語（「〜創業の地」「〜治安…」など）を除いてから
+    plain = body.replace(own, "＠") if own else body
+    for m in mentions:
+        plain = plain.replace(m.group(0), "＠")
+    m = FORBIDDEN.search(plain)
     if m:
-        f("sum_forbidden", _around(body, m))
-    m = NEEDS_SOURCE.search(body)
+        f("sum_forbidden", _around(plain, m))
+    m = NEEDS_SOURCE.search(plain)
     if m:
-        f("sum_needs_source", _around(body, m))
+        f("sum_needs_source", _around(plain, m))
 
     for rx, col, tol, label in NUM_CLAIMS:
         for m in rx.finditer(body):
@@ -266,31 +292,34 @@ def check_summary(s, note, places: PlaceIndex) -> list[Finding]:
                 f("sum_number", f"{label}：本文 {m.group(1)}／DB {real:.0f}")
             break
 
-    own = s["name"] or ""
     seen = set()
-    for m in places.mentions(body):
+    for m in mentions:
         nm = m.group(0)
-        if nm in seen or nm == own or nm in own or own in nm or nm in (s["address"] or ""):
+        if nm in seen or nm == own or nm in own or own in nm or nm in nfkc(s["address"] or ""):
             continue
         seen.add(nm)
         d = places.nearest(nm, s["lat"], s["lon"])
         dm = DIST_AFTER.match(body[m.end():])
-        if dm:
-            if dm.group(3):
-                claim = int(dm.group(3)) * 80.0
-                label = f"徒歩{dm.group(3)}分"
+        gap = dm and (dm.group("gap") if dm.group("n") else dm.group("gap2")) or ""
+        if dm and not NOT_DISTANCE.search(gap) and not places.rx.search(gap):
+            ctx = _around(body, m, 2)[:40]
+            if dm.group("min"):
+                claim = int(dm.group("min")) * 80.0
+                wrong = d > claim * 2 + 150 or d < claim / 2 - 150
             else:
-                claim = _num(dm.group(1)) * (1000 if dm.group(2).startswith("k") or dm.group(2).startswith("キロ") else 1)
-                label = dm.group(1) + dm.group(2)
-            if d > claim * 2 + 150 or d < claim / 2 - 150:
-                f("sum_distance", f"「{nm}」{label}／実際は直線で約{_fmt(d)}")
+                claim = _num(dm.group("n")) * (1000 if dm.group("u")[0] in "kキ" else 1)
+                # 「〜m以内」は上限として読む
+                wrong = d > claim * 1.5 + 150 if dm.group("within") else (d > claim * 2 + 150 or d < claim / 2 - 150)
+            if wrong:
+                f("sum_distance", f"「{nm}」本文 {ctx}／実際は直線で約{_fmt(d)}")
         elif d >= 2000:
             f("sum_far_place", f"「{nm}」（約{_fmt(d)}先）")
     return out
 
 
 def _around(text, m, w=12):
-    return "…" + text[max(0, m.start() - w): m.end() + w] + "…"
+    e = m.end() + (w if w > 2 else 22)
+    return "…" + text[max(0, m.start() - w): e] + "…"
 
 
 def _fmt(d):
@@ -333,6 +362,8 @@ select s.id, s.code, s.name, s.category, s.extra_categories, s.area_code, a.name
        s.elevation_m::float8 elevation_m, s.relief_m, s.terrain_status,
        s.slope_kind, s.slope_grade_pct, s.slope_rise_m, s.slope_len_m,
        ga.code geo_area, ga.name geo_area_name,
+       (select max(f.extent_m) from spot_features sf join features f on f.key = sf.feature_key
+         where sf.spot_id = s.id and sf.role = 'primary') extent_m,
        (select f.tags from spot_features sf join features f on f.key = sf.feature_key
          where sf.spot_id = s.id and sf.role = 'primary' and f.tags is not null limit 1) tags
   from spots s
@@ -413,15 +444,16 @@ def write_outputs(found, spots, notes, out_dir: Path, web_base: str) -> str:
     out_dir.mkdir(parents=True, exist_ok=True)
     by_id = {s["id"]: s for s in spots}
     note_ver = {n["note_id"]: f"{n['source']}:{n['prompt_version'] or '-'}" for n in notes}
+    note_body = {n["note_id"]: (n["body"] or "").replace("\n", " ")[:200] for n in notes}
     order = {c: i for i, c in enumerate(CHECKS)}
     found = sorted(found, key=lambda x: (order[x.check], by_id[x.spot_id]["code"] or ""))
     with open(out_dir / "findings.csv", "w", newline="", encoding="utf-8-sig") as fp:
         w = csv.writer(fp)
-        w.writerow(["対象", "重さ", "チェック", "地点コード", "地点名", "区", "種別", "住所", "内容", "下書きの版", "地点ページ"])
+        w.writerow(["対象", "重さ", "チェック", "地点コード", "地点名", "区", "種別", "住所", "内容", "下書きの版", "下書き（先頭200字）", "地点ページ"])
         for x in found:
             s = by_id[x.spot_id]
             w.writerow([x.target, x.severity, CHECKS[x.check][2], s["code"], s["name"], s["area_name"], s["catname"],
-                        s["address"] or "", x.detail, note_ver.get(x.note_id, ""), f"{web_base}spot.php?id={x.spot_id}"])
+                        s["address"] or "", x.detail, note_ver.get(x.note_id, ""), note_body.get(x.note_id, ""), f"{web_base}spot.php?id={x.spot_id}"])
     with open(out_dir / "findings.json", "w", encoding="utf-8") as fp:
         json.dump([asdict(x) | {"severity": x.severity, "target": x.target} for x in found], fp, ensure_ascii=False)
 
@@ -431,6 +463,8 @@ def write_outputs(found, spots, notes, out_dir: Path, web_base: str) -> str:
         spots_hit[t] = len({x.spot_id for x in found if x.target == t})
     lines = ["## 自動チェック（試し実行・読み取りのみ）", "",
              f"掲載中の地点 {len(spots):,} ／ 採用待ちの下書き {len(notes):,} ／ 指摘 {len(found):,} 件", "",
+             (f"住所の引き直し：比べた {REGEO_STATS['compared']:,} ／ 取れなかった {REGEO_STATS['failed']:,}\n"
+              if REGEO_STATS else "住所の引き直し：今回はしていない\n"),
              f"指摘のある地点：種別 {spots_hit['category']:,} ／ 住所 {spots_hit['address']:,} ／ 説明文 {spots_hit['summary']:,}", "",
              "| 対象 | 重さ | チェック | 件数 | 例 |", "|---|---|---|---:|---|"]
     tname = {"category": "種別", "address": "住所", "summary": "説明文"}

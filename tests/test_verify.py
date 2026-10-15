@@ -125,3 +125,27 @@ def test_dry_run_reads_db_and_writes_nothing(db, tmp_path, monkeypatch):
     assert (tmp_path / "out" / "findings.csv").exists() and "自動チェック" in (tmp_path / "out" / "summary.md").read_text(encoding="utf-8")
     # 本番と同じく run_checks は読み取ったデータだけで動く
     assert run_checks([], [], []) == []
+
+
+def test_summary_false_positive_guards():
+    p = PlaceIndex([S(id=10, name="荒木田稲荷", lat=33.5880, lon=130.3992),
+                    S(id=11, name="大濠公園", lat=33.5860, lon=130.3770, extent_m=900),
+                    S(id=12, name="ヤクルト事業創業の地", lat=33.5881, lon=130.3991)])
+    s = S(name="秋葉社", lat=33.5880, lon=130.3990)
+    base = "秋葉社は中央区の住宅地にある小さな社。境内は狭く、周りは低い家並みが続く。"
+    # 「半径400m以内に〜」の400は上限。近くにあれば正しい
+    assert "sum_distance" not in checks(check_summary(s, note(base + "荒木田稲荷が400m以内にある。"), p))
+    # 読点をはさんだ数値は別の話
+    assert "sum_distance" not in checks(check_summary(s, note(base + "荒木田稲荷、標高12mの高台。"), p))
+    # 広い公園は代表点からの距離から広がりの半分を引く（端までは近い）
+    t = S(name="店", lat=33.5860, lon=130.3830)
+    assert "sum_distance" not in checks(check_summary(t, note(base + "大濠公園から約150m。"), p))
+    # 地点名の中の「創業」は出典の指摘にしない
+    assert "sum_needs_source" not in checks(check_summary(s, note(base + "ヤクルト事業創業の地がすぐ隣にある。"), p))
+    assert "sum_garbled" in checks(check_summary(s, note(base + "福�aga市にある。"), p))
+    # 境界の橋：本文が住所の区に合わせていれば「別の区」にしない
+    b = S(name="箕島橋", category="bridge_overpass", address="福岡市博多区美野島一丁目")
+    assert "sum_other_ward" not in checks(check_summary(b, note("箕島橋は博多区と中央区を結ぶ橋。" + base), p))
+    assert checks(check_address(b)) == ["address_ward_edge"]
+    assert checks(check_category(S(name="福岡保養院", category="hospital"))) == []
+    assert checks(check_category(S(name="マリゾン桟橋", category="port"))) == []
