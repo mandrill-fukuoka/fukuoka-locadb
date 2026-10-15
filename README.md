@@ -80,6 +80,7 @@ web/                   画面（public → heteml の web/locadb/、app/lib.php 
 | db-migrate | 手動 | DBの変更。status / dry_run / apply（バックアップしてから） |
 | deploy-web | 手動 | 画面を heteml へ。probe（フォルダ確認だけ）/ deploy |
 | diagnose | 手動 | データの診断（読み取りのみ） |
+| verify | 手動 | 登録地の自動チェック（種別・住所・説明文の下書き。読み取りのみ。指摘の一覧 findings.csv を成果物に） |
 | ci | push のたび | 回帰テストとPHPの構文チェック |
 | keepalive | 木・土 | Supabase 無料枠の休止防止 |
 
