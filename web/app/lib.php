@@ -192,7 +192,7 @@ const HISTORY_LABEL = ['created' => '新規登録', 'moved' => '位置の更新'
     'restored' => '復帰（自動）', 'needs_review' => '要確認', 'reviewed' => '確認', 'area' => '区の更新', 'reclassify' => 'AI分類のやり直し',
     'address' => '住所', 'resolve' => '要確認を解消', 'archive' => '対象外にした', 'restore' => '掲載に戻した', 'lock' => '位置を固定',
     'unlock' => '固定を外した', 'merged' => '重複を統合', 'merged_into' => '別の地点に統合',
-    'summary_to_draft' => '説明文を下書きへ移した', 'summary_accepted' => '説明文の下書きを採用', 'summary_rejected' => '説明文の下書きを却下', 'practicals' => '撮影実務の更新'];
+    'summary_to_draft' => '説明文を下書きへ移した', 'summary_accepted' => '説明文の下書きを採用', 'summary_rejected' => '説明文の下書きを却下', 'practicals' => '撮影実務の更新', 'check_dismissed' => '自動チェックの指摘を「問題なし」で閉じた'];
 const PERMIT_REQUIRED_LABEL = ['required' => '許可が必要', 'consult' => '事前の相談が必要', 'not_required' => '許可は不要（公道からの撮影など）',
                                'unknown' => '不明'];
 const SOURCE_KIND_LABEL = ['official' => '公式の情報', 'news' => '報道', 'field' => '現地で確認', 'review' => '確認メモ', 'legacy' => '旧版のデータ'];

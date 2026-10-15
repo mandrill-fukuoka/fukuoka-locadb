@@ -158,3 +158,63 @@ def test_line_places_and_generic_names_are_not_measured():
     base = "営業所は南区の幹線道路沿いにある。周りは倉庫と住宅が混じる。"
     found = checks(check_summary(s, note(base + "九州新幹線が251m先を通る。駐車場が隣にある。"), p))
     assert "sum_distance" not in found and "sum_far_place" not in found
+
+
+def _world_with_findings(db, tmp_path):
+    w = World()
+    w.point(10, 130.385, 33.585, amenity="place_of_worship", name="寺A")
+    w.area(20, 130.390, 33.586, leisure="park", name="春吉神社")                               # 名前と種別が合わない
+    w.run(db, tmp_path)
+    a = db.execute("select id from spots where name='寺A'").fetchone()["id"]
+    db.execute("select ai_submit('laya', %s::jsonb, 'm', 'laya-summary-v4')",
+               (json.dumps([{"spot_id": a, "summary": "寺Aは中央区の寺。治安がよい。这里很安静。"}], ensure_ascii=False),))
+    db.commit()
+    return a
+
+
+def open_checks(db):
+    return sorted((r["check_code"], r["status"]) for r in db.execute("select * from spot_checks"))
+
+
+def test_apply_stores_resolves_and_keeps_dismissed(db, tmp_path):
+    a = _world_with_findings(db, tmp_path)
+    verify.main(["--apply", "--out", str(tmp_path / "o1")])
+    st = {r["check_code"]: r for r in db.execute("select * from spot_checks")}
+    assert {"name_category", "sum_foreign", "sum_forbidden", "sum_short"} <= set(st)
+    assert all(r["status"] == "open" for r in st.values())
+    assert st["sum_foreign"]["label"] == "中国語・ハングルの混入" and st["sum_foreign"]["note_id"] is not None
+    job = db.execute("select * from job_runs where job='verify'").fetchone()
+    n_rows = db.execute("select count(*) n from spot_checks").fetchone()["n"]
+    assert job["finished_at"] is not None and job["stats"]["saved"] == n_rows
+
+    # 画面：件数・一覧・「問題なし」で閉じる
+    counts = db.execute("select checks_counts() r").fetchone()["r"]
+    assert any(i["check_code"] == "sum_foreign" and i["n"] == 1 for i in counts["items"])
+    lst = db.execute("select checks_list('summary') r").fetchone()["r"]
+    assert lst[0]["severity"] == "warn" and "这" in lst[0]["note_body"]
+    nc = st["name_category"]["id"]
+    db.execute("select check_close(%s, 'hirata', '神社の境内の公園')", (nc,)); db.commit()
+    assert db.execute("select event from spot_history where event='check_dismissed'").fetchone()
+    # 下書きのタブ：指摘が付き、指摘のあるものが先
+    d = db.execute("select ai_drafts() r").fetchone()["r"]
+    assert d[0]["spot_id"] == a and {c["label"] for c in d[0]["checks"]} >= {"中国語・ハングルの混入"}
+    assert db.execute("select ai_drafts(p_flagged => false) r").fetchone()["r"] == []
+
+    # 2回目：直した下書きの指摘は resolved、閉じた指摘は開き直さない
+    db.execute("select ai_submit('laya', %s::jsonb, 'm', 'laya-summary-v5')",
+               (json.dumps([{"spot_id": a, "summary": "寺Aは中央区の住宅地にある寺。石畳の参道と古い山門があり、周りは低い家並みが続く。"}],
+                           ensure_ascii=False),))
+    db.commit()
+    verify.main(["--apply", "--out", str(tmp_path / "o2")])
+    rows = {(r["check_code"], r["note_id"] is not None): r["status"] for r in db.execute("select * from spot_checks")}
+    assert rows[("sum_foreign", True)] == "resolved"
+    assert rows[("name_category", False)] == "dismissed"
+    assert not any(c == "sum_foreign" for c, s in open_checks(db) if s == "open")
+
+
+def test_apply_reopens_resolved_when_seen_again(db, tmp_path):
+    _world_with_findings(db, tmp_path)
+    verify.main(["--apply", "--out", str(tmp_path / "o1")])
+    db.execute("update spot_checks set status='resolved' where check_code='name_category'"); db.commit()
+    verify.main(["--apply", "--out", str(tmp_path / "o2")])
+    assert db.execute("select status from spot_checks where check_code='name_category'").fetchone()["status"] == "open"

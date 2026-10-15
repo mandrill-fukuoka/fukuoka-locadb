@@ -1,13 +1,18 @@
 <?php
-// 地点の確認（ログイン必須）：要確認・未確認・対象外・重複の疑い
+// 地点の確認（ログイン必須）：要確認・未確認・対象外・重複の疑い・説明文の下書き・自動チェック
 require __DIR__ . '/bootstrap.php';
 require_login();
 
 $queue  = $_GET['queue'] ?? 'review';
-if (!in_array($queue, ['review', 'unreviewed', 'manual', 'drafts', 'archived', 'all', 'dups'], true)) $queue = 'review';
+if (!in_array($queue, ['review', 'unreviewed', 'manual', 'drafts', 'checks', 'archived', 'all', 'dups'], true)) $queue = 'review';
 $area   = $_GET['area'] ?? '';
 $status = $_GET['status'] ?? '';
 $q      = trim($_GET['q'] ?? '');
+$target = $_GET['target'] ?? '';                       // 自動チェック：category / address / summary
+if (!in_array($target, ['', 'category', 'address', 'summary'], true)) $target = '';
+$check  = preg_replace('/[^a-z_]/', '', (string)($_GET['check'] ?? ''));
+$flag   = $_GET['flag'] ?? '';                         // 説明文の下書き：指摘あり（1）・なし（0）
+if (!in_array($flag, ['', '0', '1'], true)) $flag = '';
 $page   = max(0, (int)($_GET['p'] ?? 0));
 $per    = 30;
 $msg = ''; $error = '';
@@ -15,7 +20,12 @@ $msg = ''; $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();
     try {
-        if (in_array($_POST['action'] ?? '', ['ai_accept', 'ai_reject'], true)) {
+        if (($_POST['action'] ?? '') === 'check_close') {
+            // 自動チェックの指摘を「問題なし」で閉じる（同じ指摘は次の実行でも開き直さない）
+            sb_rpc('check_close', ['p_id' => (int)$_POST['check_id'], 'p_user' => current_user(),
+                                   'p_note' => trim((string)($_POST['note'] ?? '')) ?: null]);
+            $msg = '「' . ($_POST['name'] ?? '') . '」の指摘を閉じました';
+        } elseif (in_array($_POST['action'] ?? '', ['ai_accept', 'ai_reject'], true)) {
             // AIの説明文の下書き：採用（そのまま／直して）・却下
             sb_rpc('ai_review', ['p_note_id' => (int)$_POST['note_id'], 'p_action' => $_POST['action'] === 'ai_accept' ? 'accept' : 'reject',
                                  'p_user' => current_user(), 'p_text' => trim((string)($_POST['text'] ?? '')) ?: null]);
@@ -42,11 +52,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Throwable $e) { $error = $e->getMessage(); }
 }
 
-$rows = []; $dups = []; $tags = []; $drafts = [];
+$rows = []; $dups = []; $tags = []; $drafts = []; $checks = []; $ccount = ['items' => [], 'last_run' => null];
 try {
     if ($queue === 'drafts') {
         $drafts = sb_rpc('ai_drafts', ['p_area' => $area ?: null, 'p_q' => $q ?: null,
-                                       'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
+                                       'p_offset' => $page * $per, 'p_limit' => $per,
+                                       'p_flagged' => $flag === '' ? null : $flag === '1']) ?? [];
+    } elseif ($queue === 'checks') {
+        $ccount = sb_rpc('checks_counts') ?? $ccount;
+        $checks = sb_rpc('checks_list', ['p_target' => $target ?: null, 'p_check' => $check ?: null, 'p_area' => $area ?: null,
+                                         'p_q' => $q ?: null, 'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
     } elseif ($queue === 'dups') {
         $dups = sb_rpc('duplicate_candidates', ['p_limit' => 100, 'p_meters' => 150]) ?? [];
     } else {
@@ -58,24 +73,35 @@ try {
     }
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
-$qs = fn(array $o) => '?' . http_build_query(array_merge(['queue' => $queue, 'area' => $area, 'status' => $status, 'q' => $q], $o));
+$qs = fn(array $o) => '?' . http_build_query(array_merge(['queue' => $queue, 'area' => $area, 'status' => $status, 'q' => $q,
+                                                          'target' => $target, 'check' => $check, 'flag' => $flag], $o));
 $tabs = ['review' => '要確認', 'unreviewed' => '未確認', 'manual' => '手入力・人が直した', 'drafts' => '説明文の下書き',
-         'dups' => '重複の疑い', 'archived' => '対象外', 'all' => 'すべて'];
+         'checks' => '自動チェック', 'dups' => '重複の疑い', 'archived' => '対象外', 'all' => 'すべて'];
+$TARGET_LABEL = ['category' => '種別', 'address' => '住所', 'summary' => '説明文'];
 page_header('地点の確認', 'spots.php');
 ?>
 <section class="card">
   <h1>地点の確認</h1>
   <p class="small muted">「要確認」は、人が確認した地点でOSMの位置・名前・種別が変わったもの、OSMから見つからなくなったものです。自動では変更せず、ここで判断します。</p>
   <nav class="tabs">
-    <?php foreach ($tabs as $k => $v): ?><a href="<?= h($qs(['queue' => $k, 'p' => 0])) ?>" class="<?= $queue === $k ? 'on' : '' ?>"><?= $v ?></a><?php endforeach; ?>
+    <?php foreach ($tabs as $k => $v): ?><a href="<?= h($qs(['queue' => $k, 'p' => 0, 'target' => '', 'check' => '', 'flag' => ''])) ?>" class="<?= $queue === $k ? 'on' : '' ?>"><?= $v ?></a><?php endforeach; ?>
   </nav>
   <?php if ($queue !== 'dups'): ?>
   <form class="row filters" method="get">
     <input type="hidden" name="queue" value="<?= h($queue) ?>">
     <label>エリア<select name="area"><option value="">すべて</option>
       <?php foreach (AREA_LABEL as $k => $v): ?><option value="<?= $k ?>" <?= $area === $k ? 'selected' : '' ?>><?= $v ?></option><?php endforeach; ?></select></label>
+    <?php if ($queue === 'checks'): ?>
+    <label>対象<select name="target"><option value="">すべて</option>
+      <?php foreach ($TARGET_LABEL as $k => $v): ?><option value="<?= $k ?>" <?= $target === $k ? 'selected' : '' ?>><?= $v ?></option><?php endforeach; ?></select></label>
+    <input type="hidden" name="check" value="<?= h($check) ?>">
+    <?php elseif ($queue === 'drafts'): ?>
+    <label>自動チェック<select name="flag"><option value="">すべて（指摘のあるものが先）</option>
+      <option value="1" <?= $flag === '1' ? 'selected' : '' ?>>指摘あり</option><option value="0" <?= $flag === '0' ? 'selected' : '' ?>>指摘なし</option></select></label>
+    <?php else: ?>
     <label>確認の状態<select name="status"><option value="">すべて</option>
       <?php foreach (STATUS_LABEL as $k => $v): ?><option value="<?= $k ?>" <?= $status === $k ? 'selected' : '' ?>><?= $v ?></option><?php endforeach; ?></select></label>
+    <?php endif; ?>
     <label>名称・住所<input name="q" value="<?= h($q) ?>" placeholder="部分一致"></label>
     <button>絞り込み</button>
   </form>
@@ -92,6 +118,9 @@ page_header('地点の確認', 'spots.php');
     <article class="card draft">
       <h3><a href="spot.php?id=<?= (int)$d['spot_id'] ?>"><?= h(nm($d['name'])) ?></a>
         <span class="muted small"><?= h($d['category']) ?>・<?= h($d['address'] ?: (AREA_LABEL[$d['area_code']] ?? '')) ?>・<?= h($d['code']) ?></span></h3>
+      <?php if (!empty($d['checks'])): ?><p class="checks"><?php foreach ($d['checks'] as $c): ?>
+        <span class="chip <?= $c['severity'] === 'warn' ? 'warn' : 'dim' ?>" title="<?= h($c['detail']) ?>"><?= h($c['label']) ?>：<?= h(mb_strimwidth($c['detail'], 0, 60, '…')) ?></span>
+      <?php endforeach; ?></p><?php endif; ?>
       <?php if (!empty($d['current_summary'])): ?><p class="small">いま公開中の説明文：<?= h($d['current_summary']) ?></p><?php endif; ?>
       <form method="post" action="<?= h($qs(['p' => $page])) ?>"><?= csrf_field() ?>
         <input type="hidden" name="note_id" value="<?= (int)$d['id'] ?>"><input type="hidden" name="name" value="<?= h(nm($d['name'])) ?>">
@@ -105,6 +134,40 @@ page_header('地点の確認', 'spots.php');
   <nav class="pager">
     <?php if ($page > 0): ?><a href="<?= h($qs(['p' => $page - 1])) ?>">← 前へ</a><?php endif; ?>
     <?php if (count($drafts) === $per): ?><a href="<?= h($qs(['p' => $page + 1])) ?>">次へ →</a><?php endif; ?>
+  </nav>
+<?php elseif ($queue === 'checks'): ?>
+  <section class="card">
+    <p class="small muted">種別・住所・説明文の下書きを機械的に照合した結果です（毎週、自動収集の後に更新。AIは使っていません）。地点や下書きは自動では変えません。
+      直すときは地点ページ・「説明文の下書き」タブで直してください。直ったものは次の実行で自動的に消えます。誤りでなければ「問題なし」で閉じると、次から出ません。
+      <?php if (!empty($ccount['last_run'])): ?>最後の確認：<?= h(str_replace("T", " ", substr((string)$ccount["last_run"], 0, 16))) ?><?php endif; ?></p>
+    <?php if (!$ccount['items']): ?><p>未対応の指摘はありません。</p><?php else: ?>
+    <table class="checks-summary"><tr><th>対象</th><th>チェック</th><th class="cnt">件数</th></tr>
+      <?php foreach ($ccount['items'] as $it): ?>
+      <tr class="<?= $check === $it['check_code'] ? 'on' : '' ?>"><td><?= h($TARGET_LABEL[$it['target']] ?? $it['target']) ?></td>
+        <td><a href="<?= h($qs(['check' => $it['check_code'], 'target' => '', 'p' => 0])) ?>"><?= h($it['label']) ?></a>
+          <?php if ($it['severity'] === 'warn'): ?><span class="chip warn">要確認</span><?php else: ?><span class="chip dim">参考</span><?php endif; ?></td>
+        <td class="cnt"><?= number_format((int)$it['n']) ?></td></tr>
+      <?php endforeach; ?></table>
+    <?php if ($check): ?><p class="small"><a href="<?= h($qs(['check' => '', 'p' => 0])) ?>">すべてのチェックを表示</a></p><?php endif; ?>
+    <?php endif; ?>
+  </section>
+  <?php foreach ($checks as $c): ?>
+    <article class="card check">
+      <h3><a href="spot.php?id=<?= (int)$c['spot_id'] ?>"><?= h(nm($c['name'])) ?></a>
+        <span class="muted small"><?= h($c['category']) ?>・<?= h($c['address'] ?: (AREA_LABEL[$c['area_code']] ?? '')) ?>・<?= h($c['code']) ?></span></h3>
+      <p><span class="chip <?= $c['severity'] === 'warn' ? 'warn' : 'dim' ?>"><?= h($TARGET_LABEL[$c['target']] ?? '') ?>：<?= h($c['label']) ?></span> <?= h($c['detail']) ?></p>
+      <?php if (!empty($c['note_body'])): ?><p class="small muted">下書き：<?= h($c['note_body']) ?>…（<a href="spot.php?id=<?= (int)$c['spot_id'] ?>">地点ページで下書きを直す・却下する</a>）</p><?php endif; ?>
+      <form method="post" action="<?= h($qs(['p' => $page])) ?>" class="row"><?= csrf_field() ?>
+        <input type="hidden" name="check_id" value="<?= (int)$c['id'] ?>"><input type="hidden" name="name" value="<?= h(nm($c['name'])) ?>">
+        <input name="note" placeholder="メモ（任意）"><button name="action" value="check_close" class="secondary small-btn">問題なし（閉じる）</button>
+        <a class="small" href="edit.php?id=<?= (int)$c['spot_id'] ?>">位置・名前・種別を直す</a>
+      </form>
+    </article>
+  <?php endforeach; ?>
+  <?php if (!$checks && !$error && $ccount['items']): ?><p class="card">該当する指摘はありません。</p><?php endif; ?>
+  <nav class="pager">
+    <?php if ($page > 0): ?><a href="<?= h($qs(['p' => $page - 1])) ?>">← 前へ</a><?php endif; ?>
+    <?php if (count($checks) === $per): ?><a href="<?= h($qs(['p' => $page + 1])) ?>">次へ →</a><?php endif; ?>
   </nav>
 <?php elseif ($queue === 'dups'): ?>
   <?php if (!$dups && !$error): ?><p class="card">重複の疑いはありません。</p><?php endif; ?>

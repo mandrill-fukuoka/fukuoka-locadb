@@ -307,3 +307,12 @@ details.practical-edit form{padding:12px 0 0;max-width:520px}
 .draft textarea { width: 100%; }
 .drafts { border-top: 1px solid var(--line); margin-top: .8rem; padding-top: .6rem; }
 .draft .actions { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+
+/* ---------- 自動チェック（確認画面のタブ。2026-10-15 追加。トークンは既存のまま） ---------- */
+.checks-summary{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.checks-summary th,.checks-summary td{padding:5px 6px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
+.checks-summary th{color:var(--muted);font-weight:500}
+.checks-summary .cnt{text-align:right;white-space:nowrap}
+.checks-summary td:first-child{white-space:nowrap}
+.checks-summary tr.on td{background:var(--sunk)}
+.checks .chip,.check .chip{white-space:normal}
