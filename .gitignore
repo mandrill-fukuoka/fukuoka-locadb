@@ -5,3 +5,5 @@ __pycache__/
 *.pbf
 *.dump
 web/app/config.php
+tools/laya/laya_batch/
+laya_batch/
