@@ -215,8 +215,22 @@ def place_hint(text, address):
     return bool(parts) and all(norm(p) in t for p in parts)
 
 
-def verify(fact, text):
-    """引用が本文に実在し、値の数字が引用に含まれ、除外語・評判語・撮影可否がないものだけ通す。"""
+NEAR_SHORT, NEAR_LONG, NEAR_BACK = 200, 800, 60
+
+
+def near_name(text, name, q):
+    """引用が地点名の出現位置の近く（名前の後ろ NEAR 字以内）にあるか。表では隣の行の値を取り違えやすいため。
+    短い引用（年・数字だけ等）は他の行と偶然一致しやすいので厳しく、長い文は緩くする。"""
+    t, qq = norm(text), norm(q)
+    lim = NEAR_SHORT if len(qq) < 10 else NEAR_LONG
+    ks = [m.start() for k in name_keys(name) for m in re.finditer(re.escape(norm(k)), t)]
+    qs = [m.start() for m in re.finditer(re.escape(qq), t)]
+    return any(-NEAR_BACK <= a - b <= lim for a in qs for b in ks)
+
+
+def verify(fact, text, name=None):
+    """引用が本文に実在し、値の数字が引用に含まれ、除外語・評判語・撮影可否がないものだけ通す。
+    name があれば、引用が地点名の近くにあることも確かめる。"""
     q, v = fact.get("quote", ""), fact.get("value", "")
     if fact.get("attr") not in ATTRS or not q or not v:
         return "項目不正"
@@ -229,12 +243,14 @@ def verify(fact, text):
         return "除外語"
     if REPUTE.search(v) or PERMIT.search(v + q):
         return "評判・撮影可否の語"
-    if norm(v) not in norm(q):
-        return "値が引用の語でない"      # 引用が主張を支えていない（言い換え・補足・別の文の引用）
+    if not set(norm(v)) <= set(norm(q)):
+        return "値が引用の語でない"      # 引用が主張を支えていない（言い換え・補足・別の文の引用）。語順は問わない（「351戸」⇔「戸数 351」）
     if len(norm(q)) < MIN_QUOTE:
         return "引用が短すぎる"
     if fact["attr"] == "owner" and not (OWNER_STRONG.search(q) or OWNER_WEAK.search(q)):
         return "引用に管理者を示す語がない"
+    if name and not near_name(text, name, q):
+        return "引用が地点名から離れている（隣の行の値の疑い）"
     return ""
 
 
@@ -256,8 +272,7 @@ PROMPT = """次の本文から、「{name}」（{address}）についての事�
 規則：
 - 本文に書いてあることだけ。推測しない。別の場所の話は抜かない。
 - quote は本文からそのままの一文（改変しない）。value は quote の中にある語句をそのまま抜く（言い換え・補足・要約をしない）。
-  例：quote「管理戸数は194戸」→ value「194戸」／quote「昭和61年に建設」→ value「昭和61年」／quote「福岡県が管理」→ value「福岡県」。
-- 数値は、項目名や単位も quote から抜く（例：「戸数 351」「敷地面積 120,400㎡」）。
+- 数値は、項目名や単位も quote に含める（項目名＋数値＋単位）。
 - 表の行は、団地名と値が別の行に分かれていることがある。その地点の行の値だけを使い、隣の地点の値を使わない。
 - 管理者(owner)は、「管理」「所有」「運営」「設置」などの語を含む文を quote にする。見出し・メニュー・地名だけの文は quote にしない。
 - 評判・おすすめ・口コミ、撮影できるかどうか、事故・死亡の話は抜かない。
@@ -322,7 +337,7 @@ def run(spots, urls, doms, out, fetcher=None, extract=ollama_facts, search=tavil
                 print(f"{sid}\t{name}\t{u}\t地点名が本文にない", file=log)
                 continue
             dom = urllib.parse.urlparse(u).hostname
-            hint = place_hint(text, address)
+            hint = place_hint(text, address) if address else None   # 住所なしは判定不能（None）
             got = extract(name, address, w)
             if got is None:
                 print(f"{sid}\t{name}\t{u}\t抽出の出力が読めない（JSONでない）", file=log)
@@ -330,7 +345,7 @@ def run(spots, urls, doms, out, fetcher=None, extract=ollama_facts, search=tavil
             elif not got:
                 print(f"{sid}\t{name}\t{u}\t事実なし（抽出が空）", file=log)
             for f in got:
-                bad = verify(f, text)
+                bad = verify(f, text, name)
                 if bad:
                     print(f"{sid}\t{name}\t{u}\t捨てた：{bad}\t{f.get('attr')}\t値={f.get('value')}\t引用={str(f.get('quote'))[:60]}", file=log)
                     continue
@@ -341,8 +356,9 @@ def run(spots, urls, doms, out, fetcher=None, extract=ollama_facts, search=tavil
     for sid, name, u, f, dom, hint in rows:
         no[sid] += 1
         n = conf[(sid, f["attr"], norm(f["value"]))]
-        note = ([] if hint else ["住所の区・町が本文にない（同名の別の場所の疑い）"]) + fact_notes(name, f)
-        mark = "" if hint else "保留"
+        note = (["住所なし。同名の別の場所でないか人が確認"] if hint is None else
+                [] if hint else ["住所の区・町が本文にない（同名の別の場所の疑い）"]) + fact_notes(name, f)
+        mark = "保留" if hint is False else ""
         out_rows.append([sid, name, str(no[sid]), f["attr"], f"{ATTRS[f['attr']]}：{f['value']}", u, mark,
                          "；".join(note), "-", "web:" + dom, f["quote"].replace("\n", " "),
                          "確度高" if n >= 2 else "要確認", today])

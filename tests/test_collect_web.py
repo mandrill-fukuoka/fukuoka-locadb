@@ -1,4 +1,5 @@
 """collect_web.py の照合・許可リスト・確度・robots のテスト（外部アクセスなし）"""
+import os
 import sys
 from pathlib import Path
 
@@ -185,3 +186,30 @@ def test_unreadable_extractor_output_is_logged(tmp_path):
     cw.run([("1", "鳥飼団地", "福岡市城南区", "団地")], {"1": [u]}, DOMS, str(tmp_path / "o.tsv"),
            fetcher=cw.Fetcher(interval=0, opener=FakeOpener({u: PAGE}, None)), extract=lambda *a: None, log=open(log, "w"))
     assert "JSONでない" in log.read_text(encoding="utf-8")
+
+
+def test_neighbor_row_value_is_rejected_and_value_order_free():
+    # 表で隣の団地の年を取り違えた事故（東箱崎: 平成28年が正、昭和61年は別の団地の行）の再発防止
+    row = "位置 福岡市 東区 東箱崎 45 3LDK 平成28年 " + "別の団地 " * 80 + "位置 福岡市 西区 内野 17 昭和61年 3LDK"
+    good = {"attr": "built", "value": "平成28年", "quote": "平成28年"}
+    bad = {"attr": "built", "value": "昭和61年", "quote": "昭和61年"}
+    assert cw.verify(good, row, "県営東箱崎住宅") == ""
+    assert cw.verify(bad, row, "県営東箱崎住宅").startswith("引用が地点名から離れている")
+    # 語順が違っても、引用が値を支えていれば通る。無関係な語は通らない
+    t = "団地 箱崎三丁目 戸数\n351 管理"
+    assert cw.verify({"attr": "scale", "value": "351戸", "quote": "戸数\n351"}, t, "箱崎三丁目") == ""
+    assert cw.verify({"attr": "owner", "value": "福岡県", "quote": "UR賃貸住宅TOP 管理"}, "箱崎三丁目 UR賃貸住宅TOP 管理", "箱崎三丁目") == "値が引用の語でない"
+    # 長い文は離れていても通る（散文のページ）
+    prose = "箱崎三丁目団地 " + "あ" * 500 + " 昭和51年から管理がスタートした歴史のある建物"
+    assert cw.verify({"attr": "built", "value": "昭和51年", "quote": "昭和51年から管理がスタートした歴史のある建物"}, prose, "箱崎三丁目団地") == ""
+
+
+def test_no_address_is_note_not_hold(tmp_path):
+    spots = [("1", "小呂島漁港", "", "fishing_port")]
+    text = "小呂島漁港 管理者 福岡県"
+    class F:
+        def text(self, u): return text, ""
+    out = tmp_path / "o.tsv"
+    rows = cw.run(spots, {"1": ["https://www.pref.fukuoka.lg.jp/a.html"]}, ["pref.fukuoka.lg.jp"], str(out), fetcher=F(),
+                  extract=lambda *a, **k: [{"attr": "owner", "value": "福岡県", "quote": "管理者 福岡県"}], log=open(os.devnull, "w"))
+    assert rows[0][6] == "" and "住所なし" in rows[0][7]
