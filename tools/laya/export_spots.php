@@ -14,7 +14,7 @@ foreach (explode(',', $spec) as $p) {
     $ch = curl_init($q);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30,
         CURLOPT_HTTPHEADER => ["apikey: $key", "Authorization: Bearer $key"]]);
-    $resp = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
+    $resp = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);   // curl_close は PHP 8.0 から効果がなく、8.5 で非推奨
     $rows = json_decode((string)$resp, true);
     if ($code !== 200 || !is_array($rows)) { fwrite(STDERR, "$cat: 取得失敗 HTTP $code\n"); continue; }
     foreach ($rows as $r) {
