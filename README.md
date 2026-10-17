@@ -64,6 +64,7 @@ locadb/monitor_risk.py 変化リスク監視（config/watch_pages.txt）
 sql/migrations/        表の作成・変更（1回だけ。schema_migrations に記録）
 sql/api/               画面から呼ぶ関数（毎回作り直す。30_manual.sql は手入力・修正・撮影実務、40_terrain.sql はビュー v_fukuoka_spots、50_ai.sql はAIの下書き）
 docs/laya_api.md       別ラインのAI（LAYA）の読み書きの仕様
+tools/laya/            LAYA の説明文の下書きを作る・送る道具と、承認済みの材料（利用者のPCで実行）
 sql/grants.sql         権限・RLS（毎回）
 sql/legacy/            旧版のSQL（参照用。実行しない）
 tools/migrate.py       DBの変更を適用
