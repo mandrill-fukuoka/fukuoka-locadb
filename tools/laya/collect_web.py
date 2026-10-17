@@ -23,7 +23,12 @@ import time, unicodedata, urllib.parse, urllib.request, urllib.robotparser
 
 UA = "FukuokaLocaDB/1.0 (https://github.com/mandrillfuk-dev/fukuoka-locadb)"
 MAX_BYTES = 2_000_000
-WINDOW = 3000          # LLM に渡す本文の長さ（地点名の周辺）
+WINDOW = 1500          # LLM に渡す本文の長さ（地点名の周辺）。表では隣の行が混ざらないよう短くする
+PRE = 40               # 地点名の手前から取る長さ（表では前の行が混ざらないよう短くする）
+MIN_QUOTE = 4          # 引用の最低字数（「574」のような短い引用はどこにでもあるので認めない）
+FACTWORDS = re.compile(r"敷地面積|延べ?面積|延床面積|面積|戸数|階|構造|開設|開場|開業|竣工|建設|建築|築|設立|創立|管理|所有|運営|設置|事業主体|実施主体|施設")
+OWNER_STRONG = re.compile(r"管理|所有|運営|設置|開設者|経営")
+OWNER_WEAK = re.compile(r"実施主体|事業主体|主体")
 ATTRS = {              # 集める属性（ロケハンで知りたいもの）
     "owner": "管理者・所有者",
     "built": "建築年・竣工年・開設年",
@@ -95,8 +100,13 @@ class Fetcher:
             if not shutil.which("pdftotext"):
                 return None, "PDF（pdftotext なし）"
             p = subprocess.run(["pdftotext", "-layout", "-", "-"], input=body, capture_output=True)
-            return p.stdout.decode("utf-8", "replace"), ""
+            return squeeze(p.stdout.decode("utf-8", "replace")), ""
         return html_to_text(body.decode(guess_charset(body, ctype), "replace")), ""
+
+
+def squeeze(t):
+    """PDFの -layout 出力は余白が多く、窓の字数を無駄にする。空白と空行をつめる。"""
+    return re.sub(r"\n\s*\n+", "\n", re.sub(r"[ \t\u3000]+", " ", t)).strip()
 
 
 def guess_charset(body, ctype):
@@ -180,14 +190,21 @@ def name_keys(name):
 
 
 def window(text, name):
-    """地点名（のいずれかの表記）が出てくる周辺だけをLLMに渡す。なければ None（無関係なページ）。"""
+    """地点名（のいずれかの表記）が出てくる周辺だけをLLMに渡す。なければ None（無関係なページ）。
+    地点名が何か所にも出るとき（問い合わせ先・目次・本文）は、事実らしい語（面積・開設・戸数など）が
+    いちばん多い周辺を選ぶ。最初の1か所を取ると、問い合わせ先の欄だけを読んでしまう。"""
     t = unicodedata.normalize("NFKC", text)
+    best, score = None, -1
     for k in name_keys(name):
-        i = t.find(k)
-        if i >= 0:
-            s = max(0, i - 300)
-            return t[s:s + WINDOW]
-    return None
+        pos = t.find(k)
+        n = 0
+        while pos >= 0 and n < 40:
+            seg = t[max(0, pos - PRE):max(0, pos - PRE) + WINDOW]
+            sc = len(FACTWORDS.findall(seg))
+            if sc > score:
+                best, score = seg, sc
+            pos, n = t.find(k, pos + len(k)), n + 1
+    return best
 
 
 def place_hint(text, address):
@@ -214,7 +231,24 @@ def verify(fact, text):
         return "評判・撮影可否の語"
     if norm(v) not in norm(q):
         return "値が引用の語でない"      # 引用が主張を支えていない（言い換え・補足・別の文の引用）
+    if len(norm(q)) < MIN_QUOTE:
+        return "引用が短すぎる"
+    if fact["attr"] == "owner" and not (OWNER_STRONG.search(q) or OWNER_WEAK.search(q)):
+        return "引用に管理者を示す語がない"
     return ""
+
+
+def fact_notes(name, f):
+    """承認のときに人が気をつける点を備考に書く。"""
+    n = []
+    q = f.get("quote", "")
+    if f["attr"] == "owner" and not OWNER_STRONG.search(q):
+        n.append("引用は『実施主体』などの語のみ。管理者かは要確認")
+    if f["attr"] == "built" and "管理" in q:
+        n.append("管理開始年。建築年とは限らない")
+    if re.search(r"\d+号棟|\d+棟", name) and f["attr"] in ("scale", "built", "status"):
+        n.append("地点は棟、記載は団地全体の可能性")
+    return n
 
 
 PROMPT = """次の本文から、「{name}」（{address}）についての事実だけを抜いてください。
@@ -223,6 +257,8 @@ PROMPT = """次の本文から、「{name}」（{address}）についての事�
 - 本文に書いてあることだけ。推測しない。別の場所の話は抜かない。
 - quote は本文からそのままの一文（改変しない）。value は quote の中にある語句をそのまま抜く（言い換え・補足・要約をしない）。
   例：quote「管理戸数は194戸」→ value「194戸」／quote「昭和61年に建設」→ value「昭和61年」／quote「福岡県が管理」→ value「福岡県」。
+- 数値は、項目名や単位も quote から抜く（例：「戸数 351」「敷地面積 120,400㎡」）。
+- 表の行は、団地名と値が別の行に分かれていることがある。その地点の行の値だけを使い、隣の地点の値を使わない。
 - 管理者(owner)は、「管理」「所有」「運営」「設置」などの語を含む文を quote にする。見出し・メニュー・地名だけの文は quote にしない。
 - 評判・おすすめ・口コミ、撮影できるかどうか、事故・死亡の話は抜かない。
 - 該当がなければ空の配列。
@@ -243,7 +279,7 @@ def ollama_facts(name, address, text, url=None, model=None, post=None):
     try:
         return json.loads(c).get("facts", [])
     except Exception:
-        return []
+        return None                    # 出力がJSONでない（空とは区別して記録する）
 
 
 def confidence(items):
@@ -288,7 +324,10 @@ def run(spots, urls, doms, out, fetcher=None, extract=ollama_facts, search=tavil
             dom = urllib.parse.urlparse(u).hostname
             hint = place_hint(text, address)
             got = extract(name, address, w)
-            if not got:
+            if got is None:
+                print(f"{sid}\t{name}\t{u}\t抽出の出力が読めない（JSONでない）", file=log)
+                got = []
+            elif not got:
                 print(f"{sid}\t{name}\t{u}\t事実なし（抽出が空）", file=log)
             for f in got:
                 bad = verify(f, text)
@@ -302,7 +341,7 @@ def run(spots, urls, doms, out, fetcher=None, extract=ollama_facts, search=tavil
     for sid, name, u, f, dom, hint in rows:
         no[sid] += 1
         n = conf[(sid, f["attr"], norm(f["value"]))]
-        note = [] if hint else ["住所の区・町が本文にない（同名の別の場所の疑い）"]
+        note = ([] if hint else ["住所の区・町が本文にない（同名の別の場所の疑い）"]) + fact_notes(name, f)
         mark = "" if hint else "保留"
         out_rows.append([sid, name, str(no[sid]), f["attr"], f"{ATTRS[f['attr']]}：{f['value']}", u, mark,
                          "；".join(note), "-", "web:" + dom, f["quote"].replace("\n", " "),

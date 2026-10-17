@@ -154,3 +154,34 @@ def test_log_keeps_discarded_value_and_empty_extraction(tmp_path):
     cw.run([("1", "鳥飼団地", "福岡市城南区", "団地")], {"1": [u]}, DOMS, str(tmp_path / "o.tsv"), fetcher=cw.Fetcher(interval=0, opener=op),
            extract=lambda *a: [], log=open(log, "w"))
     assert "事実なし" in log.read_text(encoding="utf-8")
+
+
+def test_window_picks_the_fact_dense_occurrence_not_the_first():
+    text = ("お問い合わせ 福岡市中央卸売市場 鮮魚市場 TEL 092-711-6414 " + "。" * 2000 +
+            " 福岡市中央卸売市場鮮魚市場の概要 開設許可 昭和30年2月22日 敷地面積 120,400m2 冷蔵庫 卸売場")
+    w = cw.window(text, "福岡市中央卸売市場 鮮魚市場")
+    assert "敷地面積" in w and "お問い合わせ" not in w
+
+
+def test_window_for_table_rows_starts_at_the_spot_row():
+    text = "位置 福岡市 東区 高須磨 574 2DK 昭和57年~59年 位置 福岡市 東区 東箱崎 45 3LDK 平成28年 位置 福岡市 早良区 内野 17"
+    w = cw.window(text, "県営東箱崎住宅")
+    assert w.startswith("福岡市 東区 東箱崎") or "高須磨" not in w[:10]
+    assert "平成28年" in w
+
+
+def test_notes_and_minimum_quote():
+    assert cw.verify({"attr": "scale", "value": "574", "quote": "574"}, "高須磨 574") == "引用が短すぎる"
+    assert cw.verify({"attr": "owner", "value": "UR", "quote": "UR賃貸住宅TOP"}, "UR賃貸住宅TOP") == "引用に管理者を示す語がない"
+    assert "実施主体" in "".join(cw.fact_notes("小呂島漁港", {"attr": "owner", "quote": "事業実施主体:福岡県"}))
+    assert "管理開始年" in "".join(cw.fact_notes("箱崎三丁目団地", {"attr": "built", "quote": "昭和51年から管理がスタート"}))
+    assert "団地全体" in "".join(cw.fact_notes("箱崎三丁目団地31号棟", {"attr": "scale", "quote": "戸数 351"}))
+    assert cw.fact_notes("箱崎三丁目団地31号棟", {"attr": "owner", "quote": "UR都市機構が管理"}) == []
+
+
+def test_unreadable_extractor_output_is_logged(tmp_path):
+    u = "https://www.city.fukuoka.lg.jp/a.html"
+    log = tmp_path / "l"
+    cw.run([("1", "鳥飼団地", "福岡市城南区", "団地")], {"1": [u]}, DOMS, str(tmp_path / "o.tsv"),
+           fetcher=cw.Fetcher(interval=0, opener=FakeOpener({u: PAGE}, None)), extract=lambda *a: None, log=open(log, "w"))
+    assert "JSONでない" in log.read_text(encoding="utf-8")
