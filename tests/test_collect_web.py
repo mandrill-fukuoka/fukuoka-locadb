@@ -123,3 +123,8 @@ def test_name_keys_absorb_prefix_and_suffix():
     assert "志賀島" in cw.name_keys("志賀島漁港")
     assert cw.window("福岡地区 東箱崎 45 3LDK 平成28年", "県営東箱崎住宅") is not None
     assert cw.window("福岡地区 高須磨 574", "県営東箱崎住宅") is None
+
+
+def test_name_keys_handle_futo_variants():
+    assert "博多ふ頭" in cw.name_keys("博多埠頭")
+    assert cw.window("博多ふ頭 係留施設 野積場", "博多埠頭") is not None

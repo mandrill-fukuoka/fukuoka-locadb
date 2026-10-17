@@ -172,6 +172,8 @@ def name_keys(name):
         k2 = re.sub(r"(住宅|団地|漁港)$", "", k2)
         k2 = re.sub(r"\d+号棟$", "", k2)
         keys.add(k2.strip())
+    for k in list(keys):
+        keys.add(k.replace("埠頭", "ふ頭"))      # 博多埠頭 ⇔ 博多ふ頭（表記ゆれ）
     return sorted((k for k in keys if len(k) >= 2), key=len, reverse=True)
 
 

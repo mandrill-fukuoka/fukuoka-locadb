@@ -30,7 +30,7 @@ foreach (explode(',', $spec) as $p) {
     $resp = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $rows = json_decode((string)$resp, true);
     if ($code !== 200 || !is_array($rows)) { fwrite(STDERR, "$cat: 取得失敗 HTTP $code\n"); continue; }
-    if (!$rows) fwrite(STDERR, "$cat" . ($word !== '' ? "（$word）" : '') . ": 該当なし\n");
+    if (!$rows) fwrite(STDERR, "{$cat}" . ($word !== '' ? "（{$word}）" : '') . ": 該当なし\n");
     foreach ($rows as $r) {
         echo implode("\t", [$r['id'], str_replace("\t", ' ', (string)$r['name']), str_replace("\t", ' ', (string)($r['address'] ?? '')), $cat]) . "\n";
     }
