@@ -113,3 +113,13 @@ def test_read_spots_skips_php_warnings_and_blank_lines(tmp_path):
                  "8075\t筥松二丁目住宅\t福岡市東区筥松二丁目\thousing_estate\n7170\t志賀島漁港\t\tfishing_port\n", encoding="utf-8")
     assert cw.read_spots(str(f)) == [("8075", "筥松二丁目住宅", "福岡市東区筥松二丁目", "housing_estate"),
                                      ("7170", "志賀島漁港", "", "fishing_port")]
+
+
+def test_name_keys_absorb_prefix_and_suffix():
+    assert "東箱崎" in cw.name_keys("県営東箱崎住宅")
+    assert "箱崎三丁目" in cw.name_keys("UR都市機構箱崎三丁目団地31号棟")
+    assert "筥松" in cw.name_keys("UR都市機構筥松団地1")
+    assert "鮮魚市場" in cw.name_keys("福岡市中央卸売市場 鮮魚市場")
+    assert "志賀島" in cw.name_keys("志賀島漁港")
+    assert cw.window("福岡地区 東箱崎 45 3LDK 平成28年", "県営東箱崎住宅") is not None
+    assert cw.window("福岡地区 高須磨 574", "県営東箱崎住宅") is None

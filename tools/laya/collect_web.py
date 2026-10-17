@@ -159,14 +159,31 @@ def core(n):
     return re.sub(r"^(福岡市立|福岡県立|市立|県立|私立|公立)", "", n).strip()
 
 
+def name_keys(name):
+    """本文で地点名を探すときの候補（長い順）。DBの名前と公式ページの表記の差（県営・UR都市機構などの接頭辞、
+    住宅・団地・号棟などの接尾辞、空白で区切られた名前）を吸収する。2字未満は誤一致が多いので使わない。"""
+    base = unicodedata.normalize("NFKC", core(name))
+    keys = {base}
+    for tok in base.split():
+        keys.add(tok)
+    for k in list(keys):
+        k2 = re.sub(r"^(県営|市営|UR都市機構|都市再生機構|福岡市|福岡県)", "", k)
+        k2 = re.sub(r"(\d+号棟|\d+棟|\d+)$", "", k2)
+        k2 = re.sub(r"(住宅|団地|漁港)$", "", k2)
+        k2 = re.sub(r"\d+号棟$", "", k2)
+        keys.add(k2.strip())
+    return sorted((k for k in keys if len(k) >= 2), key=len, reverse=True)
+
+
 def window(text, name):
-    """地点名が出てくる周辺だけをLLMに渡す。なければ None（無関係なページ）。"""
+    """地点名（のいずれかの表記）が出てくる周辺だけをLLMに渡す。なければ None（無関係なページ）。"""
     t = unicodedata.normalize("NFKC", text)
-    i = t.find(unicodedata.normalize("NFKC", core(name))[:6])
-    if i < 0:
-        return None
-    s = max(0, i - 300)
-    return t[s:s + WINDOW]
+    for k in name_keys(name):
+        i = t.find(k)
+        if i >= 0:
+            s = max(0, i - 300)
+            return t[s:s + WINDOW]
+    return None
 
 
 def place_hint(text, address):
