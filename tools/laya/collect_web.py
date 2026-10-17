@@ -119,6 +119,8 @@ class _Text(html.parser.HTMLParser):
             self.depth += 1
         elif t in ("br", "p", "tr", "li", "h1", "h2", "h3", "div"):
             self.out.append("\n")
+        elif t in ("td", "th"):
+            self.out.append(" ")
 
     def handle_endtag(self, t):
         if t in self.SKIP and self.depth:
@@ -190,7 +192,7 @@ def window(text, name):
 
 def place_hint(text, address):
     """住所の区・町が本文にあるか（同名の別の場所の目印）。"""
-    m = re.search(r"(?:福岡県)?(?:福岡市|北九州市)?([^\s\d]{1,4}区)([^\s\d]{1,6}?)(?:\d|丁目|$)", address or "")
+    m = re.search(r"(?:福岡県)?(?:福岡市|北九州市)?([^\s\d]{1,4}区)([^\s\d一二三四五六七八九十]{1,6}?)(?:[\d一二三四五六七八九十]|丁目|$)", address or "")
     t = norm(text)
     parts = [x for x in (m.group(1), m.group(2)) if x] if m else []
     return bool(parts) and all(norm(p) in t for p in parts)
@@ -210,6 +212,8 @@ def verify(fact, text):
         return "除外語"
     if REPUTE.search(v) or PERMIT.search(v + q):
         return "評判・撮影可否の語"
+    if norm(v) not in norm(q):
+        return "値が引用の語でない"      # 引用が主張を支えていない（言い換え・補足・別の文の引用）
     return ""
 
 
@@ -217,7 +221,9 @@ PROMPT = """次の本文から、「{name}」（{address}）についての事�
 抜く項目：owner=管理者・所有者／built=建築年・竣工年・開設年／scale=規模（面積・階数・戸数・延長）／status=現況（稼働・閉鎖・改修・解体予定）。
 規則：
 - 本文に書いてあることだけ。推測しない。別の場所の話は抜かない。
-- value は20字前後の短い言い換え。quote は本文からそのままの一文（改変しない）。
+- quote は本文からそのままの一文（改変しない）。value は quote の中にある語句をそのまま抜く（言い換え・補足・要約をしない）。
+  例：quote「管理戸数は194戸」→ value「194戸」／quote「昭和61年に建設」→ value「昭和61年」／quote「福岡県が管理」→ value「福岡県」。
+- 管理者(owner)は、「管理」「所有」「運営」「設置」などの語を含む文を quote にする。見出し・メニュー・地名だけの文は quote にしない。
 - 評判・おすすめ・口コミ、撮影できるかどうか、事故・死亡の話は抜かない。
 - 該当がなければ空の配列。
 JSONだけを返す：{{"facts":[{{"attr":"owner","value":"…","quote":"…"}}]}}
@@ -281,10 +287,13 @@ def run(spots, urls, doms, out, fetcher=None, extract=ollama_facts, search=tavil
                 continue
             dom = urllib.parse.urlparse(u).hostname
             hint = place_hint(text, address)
-            for f in extract(name, address, w):
+            got = extract(name, address, w)
+            if not got:
+                print(f"{sid}\t{name}\t{u}\t事実なし（抽出が空）", file=log)
+            for f in got:
                 bad = verify(f, text)
                 if bad:
-                    print(f"{sid}\t{name}\t{u}\t捨てた：{bad}", file=log)
+                    print(f"{sid}\t{name}\t{u}\t捨てた：{bad}\t{f.get('attr')}\t値={f.get('value')}\t引用={str(f.get('quote'))[:60]}", file=log)
                     continue
                 items.append((sid, f["attr"], f["value"], dom))
                 rows.append([sid, name, u, f, dom, hint])

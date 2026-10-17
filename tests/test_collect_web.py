@@ -23,10 +23,10 @@ def test_html_to_text_drops_script_and_nav():
 
 def test_verify_quote_must_exist_and_numbers_match():
     text = cw.html_to_text(PAGE)
-    ok = {"attr": "scale", "value": "管理戸数194戸", "quote": "管理戸数は194戸"}
+    ok = {"attr": "scale", "value": "194戸", "quote": "管理戸数は194戸"}
     assert cw.verify(ok, text) == ""
     assert cw.verify({**ok, "quote": "管理戸数は200戸"}, text) == "引用が本文にない"
-    assert cw.verify({**ok, "value": "管理戸数200戸"}, text) == "数字が引用にない"
+    assert cw.verify({**ok, "value": "200戸"}, text) == "数字が引用にない"
     assert cw.verify({**ok, "attr": "rumor"}, text) == "項目不正"
 
 
@@ -86,7 +86,7 @@ def test_run_end_to_end_with_fakes(tmp_path):
     u1, u2 = "https://www.city.fukuoka.lg.jp/a.html", "https://www.ur-net.go.jp/b.html"
     page2 = PAGE.replace("県営住宅", "住宅")
     op = FakeOpener({u1: PAGE, u2: page2}, None)
-    facts = lambda name, addr, w: [{"attr": "built", "value": "昭和61年から63年に建設", "quote": "昭和61年から昭和63年に建設"},
+    facts = lambda name, addr, w: [{"attr": "built", "value": "昭和61年から昭和63年", "quote": "昭和61年から昭和63年に建設"},
                                     {"attr": "owner", "value": "福岡県", "quote": "福岡県が管理"}]       # 2件目は引用が本文にない
     out = tmp_path / "o.tsv"
     rows = cw.run([("7001", "鳥飼団地", "福岡県福岡市城南区鳥飼", "団地")], {"7001": [u1, u2, "https://blog.example.com/x"]},
@@ -128,3 +128,29 @@ def test_name_keys_absorb_prefix_and_suffix():
 def test_name_keys_handle_futo_variants():
     assert "博多ふ頭" in cw.name_keys("博多埠頭")
     assert cw.window("博多ふ頭 係留施設 野積場", "博多埠頭") is not None
+
+
+def test_value_must_be_words_from_the_quote():
+    text = "UR賃貸住宅TOP 箱崎三丁目 各所でリフォームが進んでいる 福岡県が管理"
+    # 実際の試作で出た失敗：引用が主張を支えていない
+    assert cw.verify({"attr": "owner", "value": "UR都市機構が管理", "quote": "UR賃貸住宅TOP"}, text) == "値が引用の語でない"
+    assert cw.verify({"attr": "status", "value": "稼働中でリフォーム中", "quote": "各所でリフォームが進んでいる"}, text) == "値が引用の語でない"
+    assert cw.verify({"attr": "owner", "value": "福岡県", "quote": "福岡県が管理"}, text) == ""
+
+
+def test_table_cells_are_separated_and_kanji_chome_does_not_break_place_hint():
+    assert cw.html_to_text("<table><tr><td>高須磨</td><td>574</td><td>2DK</td></tr></table>") == "高須磨 574 2DK"
+    assert cw.place_hint("福岡市 東区 東箱崎 45 3LDK", "福岡市東区箱崎五丁目") is True
+    assert cw.place_hint("福岡市 東区 東箱崎 45 3LDK", "福岡市東区香椎一丁目") is False
+
+
+def test_log_keeps_discarded_value_and_empty_extraction(tmp_path):
+    u = "https://www.city.fukuoka.lg.jp/a.html"
+    op = FakeOpener({u: PAGE}, None)
+    log = tmp_path / "l"
+    cw.run([("1", "鳥飼団地", "福岡市城南区", "団地")], {"1": [u]}, DOMS, str(tmp_path / "o.tsv"), fetcher=cw.Fetcher(interval=0, opener=op),
+           extract=lambda *a: [{"attr": "owner", "value": "福岡県", "quote": "福岡市城南区にある"}], log=open(log, "w"))
+    assert "値が引用の語でない" in log.read_text(encoding="utf-8") and "値=福岡県" in log.read_text(encoding="utf-8")
+    cw.run([("1", "鳥飼団地", "福岡市城南区", "団地")], {"1": [u]}, DOMS, str(tmp_path / "o.tsv"), fetcher=cw.Fetcher(interval=0, opener=op),
+           extract=lambda *a: [], log=open(log, "w"))
+    assert "事実なし" in log.read_text(encoding="utf-8")
