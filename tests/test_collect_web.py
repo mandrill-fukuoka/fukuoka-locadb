@@ -105,3 +105,11 @@ def test_wrong_place_is_held(tmp_path):
     rows = cw.run([("7002", "鳥飼団地", "福岡県福岡市東区香椎", "団地")], {"7002": [u]}, DOMS, str(tmp_path / "o.tsv"),
                   fetcher=cw.Fetcher(interval=0, opener=op), extract=facts, log=open(tmp_path / "l", "w"))
     assert rows[0][6] == "保留" and "同名" in rows[0][7]
+
+
+def test_read_spots_skips_php_warnings_and_blank_lines(tmp_path):
+    f = tmp_path / "spots.tsv"
+    f.write_text("地点ID\t地点名\t住所\t種別\n\nDeprecated: Function curl_close() is deprecated since 8.5\n"
+                 "8075\t筥松二丁目住宅\t福岡市東区筥松二丁目\thousing_estate\n7170\t志賀島漁港\t\tfishing_port\n", encoding="utf-8")
+    assert cw.read_spots(str(f)) == [("8075", "筥松二丁目住宅", "福岡市東区筥松二丁目", "housing_estate"),
+                                     ("7170", "志賀島漁港", "", "fishing_port")]
