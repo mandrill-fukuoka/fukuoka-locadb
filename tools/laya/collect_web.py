@@ -453,14 +453,21 @@ def run(spots, urls, doms, out, fetcher=None, extract=ollama_facts, search=tavil
                     continue
             else:
                 got = extract(name, address, w)
-                if got is not None:
-                    seen_v = {(f.get("attr"), norm(str(f.get("value", "")))) for f in got}
-                    got = got + [f for f in label_value_facts(w) if (f["attr"], norm(f["value"])) not in seen_v]
-            if got is None:
-                print(f"{sid}\t{name}\t{u}\t抽出の出力が読めない（JSONでない）", file=log)
-                got = []
-            elif not got:
-                print(f"{sid}\t{name}\t{u}\t事実なし（抽出が空）", file=log)
+                if isinstance(got, list):
+                    bad_items = [x for x in got if not isinstance(x, dict)]
+                    if bad_items:
+                        print(f"{sid}\t{name}\t{u}\t抽出の出力に形の違う項目を捨てた：{str(bad_items)[:80]}", file=log)
+                    got = [x for x in got if isinstance(x, dict)]
+                elif got is not None:
+                    got = None                    # リストでもない（辞書だけ返したなど）→ 読めない扱い
+                if got is None:
+                    print(f"{sid}\t{name}\t{u}\t抽出の出力が読めない（JSONでない）", file=log)
+                    got = []
+                seen_v = {(f.get("attr"), norm(str(f.get("value", "")))) for f in got}
+                lv = [f for f in label_value_facts(w) if (f["attr"], norm(f["value"])) not in seen_v]
+                if not got and not lv:
+                    print(f"{sid}\t{name}\t{u}\t事実なし（抽出が空）", file=log)
+                got = got + lv
             for f in got:
                 bad = verify(f, text, name)
                 if bad:

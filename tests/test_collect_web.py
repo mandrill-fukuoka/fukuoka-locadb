@@ -253,3 +253,15 @@ def test_label_value_facts_and_run_uses_table_instead_of_llm(tmp_path):
     assert not called                                    # 表のページではAIを呼ばない
     assert sorted(r[4] for r in rows) == ["建築年・竣工年・開設年：平成28年", "規模（面積・階数・戸数・延長）：45戸"]
     assert all("表の列" in r[7] for r in rows)
+
+
+def test_malformed_llm_items_are_dropped_not_crash(tmp_path):
+    class F:
+        last_html = None
+        def text(self, u): return "新天町商店街 設立 昭和21年10月", ""
+    for bad in (["設立 昭和21年"], {"facts": 1}, [None, 3]):
+        log = tmp_path / "l.txt"
+        with open(log, "w") as lg:
+            rows = cw.run([("1", "新天町商店街", "福岡市中央区天神二丁目", "shotengai")], {"1": ["https://shintencho.or.jp/o/"]},
+                          ["shintencho.or.jp"], str(tmp_path / "o.tsv"), fetcher=F(), extract=lambda *a, **k: bad, log=lg)
+        assert [r[4] for r in rows] == ["建築年・竣工年・開設年：昭和21年10月"]      # 項目名と値を機械で拾った分は残る
