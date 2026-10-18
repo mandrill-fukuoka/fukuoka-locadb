@@ -38,3 +38,7 @@ LAYA が書き込めるのは下書き（ai_submit）まで。採用は人が確
 - 表でないページは従来どおりAI＋照合。加えて「業務開始 昭和30年6月21日」「敷地面積 120,400m2」のような『項目 値』は機械で拾う（`label_value_facts`）。
 - 照合には「引用が地点名の近くにあるか」（短い引用200字／長い文800字）を追加。
 - 許可リストに新天町（shintencho.or.jp）、川端通商店街（kawabatadori.com）、福岡市漁協（fukuokashigyokyo.com）を追加。銀天町・みのしま・吉塚は公式サイトを確認できず未追加。
+
+### 承認済みのWeb候補を材料にする（2026-10-18）
+- `build_kw_web.py`：採否=採 の行から `knowledge_web.php`（地点ID => 材料の文）を作る。xlsx／TSVどちらも可。文は引用の項目名と値だけ（言い換えなし）。団地全体の値は「団地全体の」を付ける。使い方：`python3 build_kw_web.py web_candidates_review.xlsx`
+- `knowledge_web.php`：2026-10-18 承認分（5地点・9文）。まだ `batch_knowledge.php` には繋いでいない（繋ぐのは別の確認のあと）。

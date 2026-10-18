@@ -293,3 +293,21 @@ def test_output_has_bom_for_excel(tmp_path):
     cw.run([("1", "新天町商店街", "", "shotengai")], {"1": ["https://shintencho.or.jp/o/"]}, ["shintencho.or.jp"], str(out), fetcher=F(),
            extract=lambda *a, **k: [], log=open(os.devnull, "w"))
     assert out.read_bytes()[:3] == b"\xef\xbb\xbf"
+
+
+def test_build_kw_web_sentences(tmp_path):
+    import build_kw_web as b
+    tsv = tmp_path / "r.tsv"
+    H = "\t".join(b.COLS)
+    rows = [
+        ["8425", "UR箱崎三丁目団地31号棟", "1", "scale", "規模：351戸", "u", "採", "地点は棟、記載は団地全体の可能性", "-", "web:x", "戸数 351", "要確認", "d"],
+        ["8757", "県営東箱崎住宅", "1", "built", "建築年：平成28年", "u", "採", "表の列『建設年度』を機械的に読んだ", "-", "web:x", "東箱崎 45 平成28年", "要確認", "d"],
+        ["7262", "小呂島漁港", "1", "owner", "管理者：福岡県", "u", "不採", "", "-", "web:x", "事業実施主体:福岡県", "要確認", "d"],
+        ["9483", "鮮魚市場", "1", "built", "建築年：昭和30年6月21日", "u", "", "", "-", "web:x", "業務開始 昭和30年6月21日", "要確認", "d"],
+    ]
+    tsv.write_text(H + "\n" + "\n".join("\t".join(r) for r in rows) + "\n", encoding="utf-8-sig")
+    out = tmp_path / "k.php"
+    b.main(str(tsv), str(out))
+    t = out.read_text(encoding="utf-8")
+    assert "団地全体の戸数は351戸。" in t and "建設年度は平成28年。" in t
+    assert "7262" not in t and "9483" not in t                   # 不採・未記入は入らない
