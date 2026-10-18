@@ -57,10 +57,10 @@ jobs:
               if not c.execute("select to_regclass('public.spot_spatial')").fetchone()[0]:
                   print("spot_spatial がありません"); raise SystemExit
               print("## 空間特徴の分布（信頼度 ok のみ）\n")
-              q = lambda col: c.execute(f"""select count({col}), round(percentile_cont(array[.1,.25,.5,.75,.9]) within group (order by {col})::numeric,3)
+              q = lambda col: c.execute(f"""select count({col}), percentile_cont(array[.1,.25,.5,.75,.9]) within group (order by {col})
                                               from spot_spatial where confidence='ok'""").fetchone()
               for col in ("building_cover_100", "building_count_100", "open_ratio", "sight_max_m", "water_dist_m", "road_width_m"):
-                  n, p = q(col); print(f"- {col}: n={n} 10/25/50/75/90% = {p}")
+                  n, p = q(col); print(f"- {col}: n={n} 10/25/50/75/90% = " + " / ".join(f"{x:.3g}" for x in p))
               print("\n### 開放性の刻み別の地点数")
               for lo, hi in ((0,.2),(.2,.35),(.35,.5),(.5,.7),(.7,.9),(.9,1.01)):
                   n = c.execute("select count(*) from spot_spatial where confidence='ok' and open_ratio>=%s and open_ratio<%s", (lo, hi)).fetchone()[0]
