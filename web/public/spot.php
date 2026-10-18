@@ -146,6 +146,15 @@ page_header(nm($s['name']), '');
           <span class="muted">（OpenStreetMapの道と国土地理院の標高から計算した目安）</span></p>
       <?php endif; ?>
 
+      <?php if (!empty($s['spatial'])): ?>
+        <?php if (($s['spatial']['status'] ?? '') === 'ok'): ?>
+          <p class="small terrain">周辺の特徴（推定）：<?= h(spatial_line($s['spatial'])) ?>
+            <span class="muted">（OpenStreetMapの建物・道・水辺から計算した目安）</span></p>
+        <?php else: ?>
+          <p class="small muted terrain">周辺の特徴：未判定（周りに建物のデータが少ない）</p>
+        <?php endif; ?>
+      <?php endif; ?>
+
       <?= summary_html($s, 'p', 'summary') ?>
       <?php // 自動チェックの未対応の指摘（ログイン時だけ。DB変更170）
         $openChecks = [];
