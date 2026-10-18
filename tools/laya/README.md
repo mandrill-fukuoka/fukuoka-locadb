@@ -42,3 +42,8 @@ LAYA が書き込めるのは下書き（ai_submit）まで。採用は人が確
 ### 承認済みのWeb候補を材料にする（2026-10-18）
 - `build_kw_web.py`：採否=採 の行から `knowledge_web.php`（地点ID => 材料の文）を作る。xlsx／TSVどちらも可。文は引用の項目名と値だけ（言い換えなし）。団地全体の値は「団地全体の」を付ける。使い方：`python3 build_kw_web.py web_candidates_review.xlsx`
 - `knowledge_web.php`：2026-10-18 承認分（5地点・9文）。`batch_knowledge.php` が読み込む（送信済みの7地点は触らない。生成はドライラン固定のまま）。
+
+## 事実カード（2026-10-18・タスクH）
+- 人が承認した事実を「項目: 値（出典）」で持つ表 `spot_facts`（DB変更180）。項目は 管理者・所有者／創設・開設年／規模／現況／指定・登録／人口。承認済みだけを画面に出す（ログインなしにも出す）。
+- `build_facts_json.py`：承認済みの候補（xlsx）から、`facts_import` に渡す JSON を作る。DBには触れない。出典URLのない行は出さない（`unresolved`）。Wikipedia は記事名とライセンス（CC BY-SA 4.0）を付ける。使い方：`python3 build_facts_json.py fact_cards_reviewed.xlsx facts_import.json web_candidates_review.xlsx`
+- 取り込み（本番への書き込み）は、了承を取ってから `facts_import`（1回200件まで）で行う。
