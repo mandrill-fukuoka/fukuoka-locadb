@@ -15,18 +15,17 @@ def doc(tmp_path, items):
     return p
 
 
-def test_dry_run_rolls_back_apply_commits_and_rejects_stop(db, tmp_path, monkeypatch):
+def test_dry_run_rolls_back_apply_commits_and_rejects_stop(db, tmp_path):   # 接続先は db が環境変数 DATABASE_URL に設定する
     w = World(); w.point(10, 130.385, 33.585, amenity="place_of_worship", name="寺A"); w.run(db, tmp_path)
     a = spot(db, name="寺A")["id"]
     ok = {"spot_id": a, "item": "規模", "value": "351戸", "source_kind": "web", "source_url": "https://www.ur-net.go.jp/x"}
-    url = db.info.dsn
     n = lambda: db.execute("select count(*) n from spot_facts").fetchone()["n"]
-    r = facts_import.run(doc(tmp_path, [ok]), apply=False, url=url)
+    r = facts_import.run(doc(tmp_path, [ok]), apply=False)
     assert (r["added"], r["committed"]) == (1, False) and n() == 0                      # 試しは取り消す
     bad = dict(ok, source_url=None)
-    r = facts_import.run(doc(tmp_path, [ok, bad]), apply=True, url=url)
+    r = facts_import.run(doc(tmp_path, [ok, bad]), apply=True)
     assert r["committed"] is False and len(r["rejected"]) == 1 and n() == 0              # 1件でも弾かれたら全体を取り消す
-    r = facts_import.run(doc(tmp_path, [ok]), apply=True, url=url)
+    r = facts_import.run(doc(tmp_path, [ok]), apply=True)
     assert (r["added"], r["committed"]) == (1, True) and n() == 1
-    r = facts_import.run(doc(tmp_path, [ok]), apply=True, url=url)
+    r = facts_import.run(doc(tmp_path, [ok]), apply=True)
     assert (r["added"], r["skipped"]) == (0, 1) and n() == 1                            # 何度実行しても同じ
