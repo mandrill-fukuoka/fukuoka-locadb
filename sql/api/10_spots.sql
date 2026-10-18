@@ -31,13 +31,29 @@ create function sp_road(cls text, w real) returns text language sql immutable as
               when w::numeric >= 6.5 then 'wide' else 'normal' end;
 $$;
 
+-- 周辺の特徴（公開画面に出す言葉）。confidence=low（周囲300m以内の建物が3棟未満）は段階を出さず status='low'（画面は「未判定」）。
+--  計算していなければ null
+create function spatial_view(p_id bigint) returns jsonb language sql stable as $$
+select case when ss.confidence = 'low' then jsonb_build_object('status', 'low')
+  else jsonb_build_object('status', 'ok',
+    'open',  case sp_open(ss.open_ratio) when 'open' then '開けている' when 'mid' then 'ふつう' else '囲まれている' end,
+    'built', case sp_built(ss.building_cover_100) when 'few' then '少ない' when 'mid' then '中くらい' else '多い' end,
+    'water', case sp_water(ss.water_dist_m) when 'near' then 'すぐそば' when 'close' then '近い' else 'なし' end,
+    'water_kind', case when sp_water(ss.water_dist_m) <> 'none' then ss.water_kind end,
+    'road',  case sp_road(ss.road_class, ss.road_width_m) when 'narrow' then '狭い道' when 'wide' then '広い道'
+                  when 'normal' then 'ふつうの道' end)
+  end
+  from spot_spatial ss where ss.spot_id = p_id;
+$$;
+
 -- 場所を探す。川・線路などの「線」の地点は、同じ線ごとに1件にまとめて「ほか○か所」を返す
 -- （名前が同じでも別の施設＝点の地点はまとめない）
 create function search_spots(
   p_q text default null, p_area text default null, p_category text default null,
   p_group text default null, p_tags text[] default null, p_offset int default 0, p_limit int default 40,
   p_relief_min real default null,
-  p_open text default null, p_water text default null, p_road text default null
+  p_open text default null, p_water text default null, p_road text default null,
+  p_built text default null
 ) returns jsonb language sql stable as $$
 with hits as (
   select s.id, s.code, s.name, s.area_code, s.address, s.category as cat, sc.name as category,
@@ -55,11 +71,12 @@ with hits as (
      and (p_category is null or s.category = p_category or p_category = any (s.extra_categories))
      and (p_group is null or grp_match(p_group, sc.landscape_group))
      and (p_relief_min is null or s.relief_m >= p_relief_min)      -- 高台（周りより p_relief_min m 以上高い）
-     and (p_open is null and p_water is null and p_road is null or exists (      -- 周辺の特徴（推定）。信頼度 low は対象外
+     and (p_open is null and p_water is null and p_road is null and p_built is null or exists (      -- 周辺の特徴（推定）。信頼度 low は対象外
             select 1 from spot_spatial x where x.spot_id = s.id and x.confidence = 'ok'
                and (p_open is null or sp_open(x.open_ratio) = p_open)                  -- open（開けている）/ closed（囲まれている）
                and (p_water is null or (p_water = 'near' and sp_water(x.water_dist_m) = 'near')       -- near（50m未満）
                                     or (p_water = 'within150' and sp_water(x.water_dist_m) in ('near','close')))   -- within150（150m未満）
+               and (p_built is null or sp_built(x.building_cover_100) = p_built)                 -- few（少ない）/ many（多い）
                and (p_road is null or sp_road(x.road_class, x.road_width_m) = p_road)))  -- narrow（狭い道）/ wide
      and (p_tags is null or cardinality(p_tags) = 0 or exists (
             select 1 from spot_tags st where st.spot_id = s.id and st.tag_code = any (p_tags)))
@@ -80,6 +97,9 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
          g.same_line_count - 1 as others,
          (select jsonb_agg(t.name order by st.score desc) from spot_tags st join tags t on t.code = st.tag_code
            where st.spot_id = g.id and st.score >= 0.5 and st.origin = 'human') as tags,   -- 公開の検索結果は人のタグだけ
+         (select jsonb_agg(t.name order by t.code) from spot_tags st join tags t on t.code = st.tag_code
+           where st.spot_id = g.id and st.origin = 'rule') as rule_tags,                    -- ルールで付けた（推定）。人のタグとは別に出す
+         spatial_view(g.id) as spatial,
          exists (select 1 from change_risks rk where rk.spot_id = g.id and rk.risk_type <> 'none') as risk
     from grouped g
    where g.rn = 1
@@ -125,21 +145,6 @@ select coalesce(jsonb_agg(x order by x.meters), '[]'::jsonb) from (
   order by d.meters
   limit 30
 ) x;
-$$;
-
--- 周辺の特徴（公開画面に出す言葉）。confidence=low（周囲300m以内の建物が3棟未満）は段階を出さず status='low'（画面は「未判定」）。
---  計算していなければ null
-create function spatial_view(p_id bigint) returns jsonb language sql stable as $$
-select case when ss.confidence = 'low' then jsonb_build_object('status', 'low')
-  else jsonb_build_object('status', 'ok',
-    'open',  case sp_open(ss.open_ratio) when 'open' then '開けている' when 'mid' then 'ふつう' else '囲まれている' end,
-    'built', case sp_built(ss.building_cover_100) when 'few' then '少ない' when 'mid' then '中くらい' else '多い' end,
-    'water', case sp_water(ss.water_dist_m) when 'near' then 'すぐそば' when 'close' then '近い' else 'なし' end,
-    'water_kind', case when sp_water(ss.water_dist_m) <> 'none' then ss.water_kind end,
-    'road',  case sp_road(ss.road_class, ss.road_width_m) when 'narrow' then '狭い道' when 'wide' then '広い道'
-                  when 'normal' then 'ふつうの道' end)
-  end
-  from spot_spatial ss where ss.spot_id = p_id;
 $$;
 
 -- 地点の詳細（地点ページ用）
@@ -248,9 +253,10 @@ begin
                    review_reason = case when p_resolve then null else review_reason end
    where id = p_id;
   if p_tags is not null then
-    delete from spot_tags where spot_id = p_id;
+    delete from spot_tags where spot_id = p_id and origin <> 'rule';      -- ルールのタグ（推定）は、人の保存で消さない
     insert into spot_tags (spot_id, tag_code, origin, score)
-      select p_id, t, 'human', 1.0 from unnest(p_tags) t where exists (select 1 from tags where code = t);
+      select p_id, t, 'human', 1.0 from unnest(p_tags) t where exists (select 1 from tags where code = t)
+      on conflict (spot_id, tag_code) do update set origin = 'human', score = 1.0;
   end if;
   insert into spot_history (spot_id, actor, event, detail)
   values (p_id, coalesce(p_reviewer, 'user'), 'reviewed',

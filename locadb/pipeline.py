@@ -1,4 +1,4 @@
-"""一括実行：OSMの取得 → 地点の反映 → 住所 → 地形 → 空間特徴 → 流れの生成 → AI分類 → 変化リスク監視
+"""一括実行：OSMの取得 → 地点の反映 → 住所 → 地形 → 空間特徴 → ルールのタグ → 流れの生成 → AI分類 → 変化リスク監視
 
   python -m locadb.pipeline --dry-run                 # 試し：本番を変えずに差分レポートだけ出す
   python -m locadb.pipeline --apply                   # 本番に反映
@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import address, build_clusters, monitor_risk, osm_source, slopes, spatial, terrain
+from . import address, build_clusters, monitor_risk, osm_source, ruletags, slopes, spatial, terrain
 from .categories import RULES_VERSION
 from .db import code_version, connect
 from .sync import MAX_ARCHIVE_RATIO, Sync
@@ -156,6 +156,9 @@ def main() -> int:
     if not a.skip_spatial and res["snapshot"].spatial is not None:
         print("[4c] 空間特徴（建物・水辺・道）")
         spatial.run(run_id, res["snapshot"].spatial)
+    if not a.skip_spatial:
+        print("[4d] ルールのタグ（種別・空間特徴から）")
+        ruletags.run(run_id)
     if not a.skip_extras:
         print("[5] 流れの自動生成")
         build_clusters.run_all(run_id)

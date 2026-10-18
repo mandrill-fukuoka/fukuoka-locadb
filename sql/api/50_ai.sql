@@ -54,8 +54,8 @@ begin
         end if;
         insert into spot_tags (spot_id, tag_code, origin, score, source)
         values (v_id, v_code, 'ai', v_score, p_source)
-        on conflict (spot_id, tag_code) do update set score = excluded.score, source = excluded.source
-          where spot_tags.origin = 'ai';                       -- 人のタグはそのまま
+        on conflict (spot_id, tag_code) do update set score = excluded.score, source = excluded.source, origin = 'ai'
+          where spot_tags.origin in ('ai', 'rule');            -- 人のタグはそのまま（ルールのタグはAIのタグに置き換わる）
         n_tag := n_tag + 1;
       end loop;
     end if;

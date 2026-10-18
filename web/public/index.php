@@ -12,6 +12,7 @@ $terr  = ($_GET['terrain'] ?? '') === 'high' ? 'high' : '';      // 高台：周
 // 周辺の特徴（推定）：空間特徴（タスクI）。段階の境界は sql/api/10_spots.sql
 $spOpen  = in_array($_GET['sp_open'] ?? '', ['open', 'closed'], true) ? $_GET['sp_open'] : '';
 $spWater = in_array($_GET['sp_water'] ?? '', ['near', 'within150'], true) ? $_GET['sp_water'] : '';
+$spBuilt = in_array($_GET['sp_built'] ?? '', ['few', 'many'], true) ? $_GET['sp_built'] : '';
 $spRoad  = in_array($_GET['sp_road'] ?? '', ['narrow', 'wide'], true) ? $_GET['sp_road'] : '';
 $near  = (int)($_GET['near'] ?? 0);
 $page  = max(0, (int)($_GET['p'] ?? 0));
@@ -25,7 +26,7 @@ try {
 } catch (Throwable $e) { $error = $e->getMessage(); $cats = $groups = $tags = []; }
 $groupNames = array_column($groups, 'name', 'code');
 
-$searched = $q !== '' || $area !== '' || $cat !== '' || $grp !== '' || $tag !== '' || $terr !== '' || $spOpen !== '' || $spWater !== '' || $spRoad !== '';
+$searched = $q !== '' || $area !== '' || $cat !== '' || $grp !== '' || $tag !== '' || $terr !== '' || $spOpen !== '' || $spWater !== '' || $spRoad !== '' || $spBuilt !== '';
 try {
     if ($near) {
         $nearby = sb_rpc('spots_nearby', ['p_id' => $near, 'p_radius' => 800]) ?? [];
@@ -37,13 +38,13 @@ try {
             'p_q' => $q ?: null, 'p_area' => $area ?: null, 'p_category' => $cat ?: null,
             'p_group' => $grp ?: null, 'p_tags' => $tag ? [$tag] : null,
             'p_offset' => $page * $per, 'p_limit' => $per, 'p_relief_min' => $terr === 'high' ? HIGH_GROUND_M : null,
-            'p_open' => $spOpen ?: null, 'p_water' => $spWater ?: null, 'p_road' => $spRoad ?: null]) ?? [];
+            'p_open' => $spOpen ?: null, 'p_water' => $spWater ?: null, 'p_road' => $spRoad ?: null, 'p_built' => $spBuilt ?: null]) ?? [];
     }
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
 $embedKey = cfg('google_maps_embed_key');
 $qs = fn(array $o) => '?' . http_build_query(array_merge(['q' => $q, 'area' => $area, 'cat' => $cat, 'grp' => $grp, 'tag' => $tag, 'terrain' => $terr,
-    'sp_open' => $spOpen, 'sp_water' => $spWater, 'sp_road' => $spRoad], $o));
+    'sp_open' => $spOpen, 'sp_water' => $spWater, 'sp_road' => $spRoad, 'sp_built' => $spBuilt], $o));
 
 
 page_header('場所を探す', 'index.php');
@@ -67,6 +68,9 @@ page_header('場所を探す', 'index.php');
     <label>開放感（推定）<select name="sp_open"><option value="">指定なし</option>
       <option value="open" <?= $spOpen === 'open' ? 'selected' : '' ?>>開けている</option>
       <option value="closed" <?= $spOpen === 'closed' ? 'selected' : '' ?>>囲まれている</option></select></label>
+    <label>建物の多さ（推定）<select name="sp_built"><option value="">指定なし</option>
+      <option value="few" <?= $spBuilt === 'few' ? 'selected' : '' ?>>少ない（まわり100mの面積率15%未満）</option>
+      <option value="many" <?= $spBuilt === 'many' ? 'selected' : '' ?>>多い（30%以上）</option></select></label>
     <label>水辺（推定）<select name="sp_water"><option value="">指定なし</option>
       <option value="near" <?= $spWater === 'near' ? 'selected' : '' ?>>すぐそば（50m未満）</option>
       <option value="within150" <?= $spWater === 'within150' ? 'selected' : '' ?>>近い（150m未満）</option></select></label>
@@ -75,7 +79,7 @@ page_header('場所を探す', 'index.php');
       <option value="wide" <?= $spRoad === 'wide' ? 'selected' : '' ?>>広い道</option></select></label>
   </div>
   <button>検索</button>
-  <p class="small muted">雰囲気での絞り込みは、雰囲気のタグが付いた地点だけが対象です。「推定」の条件は、OpenStreetMapの建物・道・水辺から計算した目安で、周りに建物のデータが少ない地点（未判定）は対象外です。</p>
+  <p class="small muted">雰囲気での絞り込みは、雰囲気のタグが付いた地点だけが対象です（「推定」のタグは、種別や位置から機械的に付けたものです）。「推定」の条件は、OpenStreetMapの建物・道・水辺から計算した目安で、周りに建物のデータが少ない地点（未判定）は対象外です。</p>
 </form>
 
 <?php if (!$searched && !$near): ?>
@@ -130,6 +134,8 @@ page_header('場所を探す', 'index.php');
               <?php if (!empty($s['others'])): ?><span class="chip">ほか<?= (int)$s['others'] ?>か所</span><?php endif; ?>
             </div>
             <?php if (!empty($s['tags'])): ?><div class="small"><?php foreach ($s['tags'] as $t): ?><span class="chip"><?= h($t) ?></span><?php endforeach; ?></div><?php endif; ?>
+            <?php if (!empty($s['rule_tags'])): ?><div class="small"><?php foreach ($s['rule_tags'] as $t): ?><span class="chip dim"><?= h($t) ?>（推定）</span><?php endforeach; ?></div><?php endif; ?>
+            <?php if (!empty($s['spatial']) && ($s['spatial']['status'] ?? '') === 'ok'): ?><div class="small muted">周辺の特徴（推定）：<?= h(spatial_line($s['spatial'])) ?></div><?php endif; ?>
             <?= summary_html($s, 'div', 'small muted') ?>
             <div class="small actions">
               <a href="#ovmap" class="showmap" data-n="<?= $i + 1 ?>">全体地図で表示</a>

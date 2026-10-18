@@ -335,3 +335,64 @@ def test_search_boundaries_match_the_view(db, tmp_path):
         got = db.execute("select spot_detail(%s) d", (sid,)).fetchone()["d"]["spatial"]["open"]
         assert got == {"open": "開けている", "mid": "ふつう", "closed": "囲まれている"}[label]
         assert ("寺A" in found(db, p_open="open")) == (label == "open")
+
+
+# =====================================================================
+# 一覧カード・建物の多さ・ルールのタグ
+# =====================================================================
+def test_search_returns_spatial_view_and_filters_by_built(db, tmp_path):
+    w = World(); city(w)
+    w.point(11, LON + 0.01, LAT, amenity="place_of_worship", name="寺B")
+    w.run(db, tmp_path)
+    put(db, "寺A", building_cover_100=0.10)
+    put(db, "寺B", building_cover_100=0.30)
+    assert found(db, p_built="few") == {"寺A"} and found(db, p_built="many") == {"寺B"}
+    rows = db.execute("select search_spots(p_q => '寺A') r").fetchone()["r"]
+    assert rows[0]["spatial"]["built"] == "少ない"
+
+
+def rule_tags(db):
+    return {(r["name"], r["tag_code"]) for r in db.execute(
+        "select s.name, st.tag_code from spot_tags st join spots s on s.id = st.spot_id where st.origin = 'rule'")}
+
+
+def test_rule_tags_follow_spatial_features_and_category(db, tmp_path):
+    w = World(); city(w)
+    w.point(11, LON + 0.01, LAT, amenity="place_of_worship", name="寺B")
+    w.run(db, tmp_path)
+    put(db, "寺A", open_ratio=0.9, road_class="residential", road_width_m=3.5)
+    put(db, "寺B", confidence="low", open_ratio=0.9, road_class="residential", road_width_m=3.5)
+    db.execute("update spots set category='park' where name='寺B'")
+    st = db.execute("select rule_tags_apply() r").fetchone()["r"]
+    assert rule_tags(db) == {("寺A", "wide_open"), ("寺A", "narrow_street"), ("寺B", "greenery")}   # lowは空間の規則に使わない
+    assert st["added"] == 3 and st["by_tag"]["wide_open"] == 1
+    again = db.execute("select rule_tags_apply() r").fetchone()["r"]
+    assert again["added"] == 0 and again["removed"] == 0                                         # 何度やっても同じ
+    put(db, "寺A", open_ratio=0.5, road_class="residential", road_width_m=3.5)                  # 条件を外れたら消える
+    db.execute("select rule_tags_apply()")
+    assert ("寺A", "wide_open") not in rule_tags(db) and ("寺A", "narrow_street") in rule_tags(db)
+
+
+def test_rule_tags_never_override_human_or_ai_and_survive_review_save(db, tmp_path):
+    w = World(); city(w); w.run(db, tmp_path)
+    sid = put(db, "寺A", open_ratio=0.9)
+    db.execute("insert into spot_tags (spot_id, tag_code, origin, score) values (%s,'wide_open','human',1.0)", (sid,))
+    db.execute("select rule_tags_apply()")
+    assert db.execute("select origin from spot_tags where spot_id=%s and tag_code='wide_open'", (sid,)).fetchone()["origin"] == "human"
+    db.execute("delete from spot_tags where spot_id=%s", (sid,))
+    db.execute("select rule_tags_apply()")
+    assert rule_tags(db) == {("寺A", "wide_open")}
+    db.execute("select review_spot(%s, 'candidate', 'desk_checked', null, %s, %s)", (sid, ["calm"], "tester"))                          # 人が別のタグを保存しても
+    assert ("寺A", "wide_open") in rule_tags(db)                                                  # ルールのタグは消えない
+    pub = db.execute("select search_spots(p_q => '寺A') r").fetchone()["r"][0]
+    assert pub["rule_tags"] == ["開けた空間"] and pub["tags"] == ["穏やか"]                         # 人のタグとは別に出る
+
+
+def test_pipeline_step_records_a_job_run(db, tmp_path):
+    from locadb import ruletags
+    w = World(); city(w); res = w.run(db, tmp_path)
+    put(db, "寺A", open_ratio=0.9); db.commit()
+    st = ruletags.run(res["run_id"])
+    assert st["by_tag"].get("wide_open") == 1
+    job = db.execute("select stats, error from job_runs where job = 'rule_tags' order by id desc limit 1").fetchone()
+    assert job["error"] is None and job["stats"]["added"] >= 1
