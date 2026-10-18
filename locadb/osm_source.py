@@ -22,7 +22,7 @@ from pathlib import Path
 import osmium
 import requests
 from shapely import wkb as shp_wkb
-from shapely.geometry import LineString, MultiLineString, Point, box
+from shapely.geometry import LineString, MultiLineString, Point, Polygon, box
 import numpy as np
 import shapely
 from shapely.ops import linemerge, unary_union
@@ -30,7 +30,7 @@ from shapely.prepared import prep
 from shapely.strtree import STRtree
 
 from .categories import CATEGORIES, WALKABLE, categories_of, display_name
-from . import slopes
+from . import slopes, spatial
 
 GEOFABRIK_URL = "https://download.geofabrik.de/asia/japan/kyushu-latest.osm.pbf"
 
@@ -179,6 +179,7 @@ class Snapshot:
     samples: list[LineSample]
     meta: dict
     present: set = field(default_factory=set)   # DBにある要素のうち、ファイルに存在したもの（条件に合わなくても）
+    spatial: object = None                      # 建物・車道・水辺の形（空間特徴の計算用。spatial.Spatial）
 
 
 class _Reader(osmium.SimpleHandler):
@@ -193,6 +194,7 @@ class _Reader(osmium.SimpleHandler):
         self.roads: list = []                                          # 坂道の検出に使う道（slopes.Road）
         self.wkb = osmium.geom.WKBFactory()
         self.n_nodes = self.n_ways = self.n_rels = 0
+        self.spatial = spatial.Spatial()                              # 建物・車道・水辺の形
 
     @staticmethod
     def _tags(o) -> dict:
@@ -225,7 +227,11 @@ class _Reader(osmium.SimpleHandler):
             return
         if len(coords) < 2:
             return
+        if t.get("building") and t.get("building") != "no" and w.is_closed() and len(coords) >= 4:
+            self.spatial.add_building(Polygon([to_m(*c) for c in coords]))
         hw = t.get("highway")
+        if hw in spatial.ROAD_CLASS_WIDTH and t.get("tunnel") in (None, "no"):
+            self.spatial.add_road(LineString([to_m(*c) for c in coords]), hw, t.get("width"), t.get("lanes"))
         if hw in WALKABLE or (t.get("bridge") and hw):
             self.walk.append(LineString([to_m(*c) for c in coords]))
         road = slopes.road_of(w.id, t, coords)
@@ -244,10 +250,12 @@ class _Reader(osmium.SimpleHandler):
             return
         line_m = LineString([to_m(*c) for c in coords])
         if w.is_closed() and len(coords) >= 4:
-            from shapely.geometry import Polygon
             poly = Polygon(line_m.coords)
             if not poly.is_valid:
                 poly = poly.buffer(0)
+            for c in point_cats:
+                if c in ("pond", "beach"):
+                    self.spatial.add_water(poly, c)
             rp = poly.representative_point() if not poly.is_empty else line_m.interpolate(0.5, normalized=True)
             extent = math.sqrt(max(poly.area, 0) / math.pi)
         else:
@@ -269,10 +277,15 @@ class _Reader(osmium.SimpleHandler):
             self.wards[rid] = geom
             return
         t = self._tags(a)
+        if t.get("building") and t.get("building") != "no":
+            self.spatial.add_building(geom_to_m(geom))
         cats = [c for c in categories_of(t, "r", True) if CATEGORIES[c][2] == "point" or c in ("coast",)]
         if not cats:
             return
         gm = geom_to_m(geom)
+        for c in cats:
+            if c in ("pond", "beach"):
+                self.spatial.add_water(gm, c)
         rp = gm.representative_point()
         lon, lat = to_ll(rp.x, rp.y)
         self.n_rels += 1
@@ -351,6 +364,8 @@ def read(pbf: Path, watch: set[str] | None = None, detect_slopes: bool = True) -
             merged = MultiLineString([g for g in getattr(merged, "geoms", []) if g.geom_type == "LineString"])
             if merged.is_empty:
                 continue
+        if cat in ("river", "coast"):
+            r.spatial.add_water(merged, cat)
         line_key = f"{cat}:{norm_name(name) or '_'}"
         way_ids = sorted(w for w, _ in ways)
         for (cx, cy), pt in _grid_samples(merged, spacing):
@@ -412,7 +427,9 @@ def read(pbf: Path, watch: set[str] | None = None, detect_slopes: bool = True) -
     if slope_stats["incomplete"]:
         meta["incomplete_categories"] = [slopes.CAT]       # 標高タイルが取れなかった回：坂道は消失扱いしない
     areas = {code: {"name": AREAS[code][0], "wkt": ward_ll[code].wkt} for code in AREAS}
-    return Snapshot(areas, points, samples, meta, r.present)
+    sp = r.spatial.build()
+    meta["spatial"] = sp.counts()
+    return Snapshot(areas, points, samples, meta, r.present, sp)
 
 
 if __name__ == "__main__":
