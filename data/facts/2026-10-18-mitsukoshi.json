@@ -1,0 +1,18 @@
+{
+ "approved_by": "hirata",
+ "approved_on": "2026-10-18",
+ "note": "福岡三越の管理者・所有者を、現在の運営者「株式会社岩田屋三越」に直して承認（保留から採へ。利用者判断 2026-10-18）。",
+ "items": [
+  {
+   "spot_id": 6959,
+   "item": "管理者・所有者",
+   "value": "株式会社岩田屋三越",
+   "note": null,
+   "source_kind": "wikipedia",
+   "source_url": "https://ja.wikipedia.org/wiki/%E7%A6%8F%E5%B2%A1%E4%B8%89%E8%B6%8A",
+   "quote": "三越伊勢丹ホールディングス傘下の株式会社岩田屋三越が運営している。",
+   "source_title": "福岡三越 - Wikipedia",
+   "license": "CC BY-SA 4.0"
+  }
+ ]
+}
