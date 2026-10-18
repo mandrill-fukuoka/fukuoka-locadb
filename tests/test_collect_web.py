@@ -258,10 +258,28 @@ def test_label_value_facts_and_run_uses_table_instead_of_llm(tmp_path):
 def test_malformed_llm_items_are_dropped_not_crash(tmp_path):
     class F:
         last_html = None
-        def text(self, u): return "新天町商店街 設立 昭和21年10月", ""
+        def text(self, u): return "新天町商店街 創設 昭和21年10月", ""
     for bad in (["設立 昭和21年"], {"facts": 1}, [None, 3]):
         log = tmp_path / "l.txt"
         with open(log, "w") as lg:
             rows = cw.run([("1", "新天町商店街", "福岡市中央区天神二丁目", "shotengai")], {"1": ["https://shintencho.or.jp/o/"]},
                           ["shintencho.or.jp"], str(tmp_path / "o.tsv"), fetcher=F(), extract=lambda *a, **k: bad, log=lg)
         assert [r[4] for r in rows] == ["建築年・竣工年・開設年：昭和21年10月"]      # 項目名と値を機械で拾った分は残る
+
+
+def test_shotengai_suffix_company_founding_and_dup_numbers():
+    assert "新天町" in cw.name_keys("新天町商店街") and "川端" in cw.name_keys("川端商店街")
+    assert cw.label_value_facts("博多港ふ頭株式会社 設立年月日 平成5年4月30日") == []          # 会社の設立日は拾わない
+    assert [(x["attr"], x["value"]) for x in cw.label_value_facts("新天町 創設 1946年10月")] == [("built", "1946年10月")]
+    assert cw.label_value_facts("管理戸数 351")[0]["value"] == "351戸"
+    assert "不自然" in "；".join(cw.fact_notes("新天町商店街", {"attr": "scale", "value": "8,361,64m2", "quote": "敷地面積 8,361,64m2"}))
+    assert "不自然" not in "；".join(cw.fact_notes("x", {"attr": "scale", "value": "120,400m2", "quote": "q"}))
+
+    class F:
+        last_html = None
+        def text(self, u): return "UR箱崎三丁目団地 戸数 351 ほか", ""
+    import tempfile
+    d = tempfile.mkdtemp()
+    rows = cw.run([("1", "UR都市機構箱崎三丁目団地31号棟", "福岡市東区箱崎三丁目", "housing_estate")], {"1": ["https://ur-net.go.jp/a"]}, ["ur-net.go.jp"],
+                  d + "/o.tsv", fetcher=F(), extract=lambda *a, **k: [{"attr": "scale", "value": "351戸", "quote": "戸数 351"}], log=open(os.devnull, "w"))
+    assert len(rows) == 1                                   # AIと機械の同じ値は1件にまとめる

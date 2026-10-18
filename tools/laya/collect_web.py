@@ -247,7 +247,7 @@ def table_facts(html_text, name, address=""):
     return out, True
 
 
-LV_BUILT = r"(?P<l>業務開始|開設|創設|設立|竣工|完成|供用開始|開業)\s*[:：]?\s*(?P<v>(?:明治|大正|昭和|平成|令和)?\s?\d+年(?:\s?\d+月)?(?:\s?\d+日)?)"
+LV_BUILT = r"(?P<l>業務開始|開設|創設|竣工|完成|供用開始|開業)\s*[:：]?\s*(?P<v>(?:明治|大正|昭和|平成|令和)?\s?\d+年(?:\s?\d+月)?(?:\s?\d+日)?)"
 LV_SCALE = r"(?P<l>敷地面積|延床面積|延べ面積|建築面積|管理戸数|戸数|延長|階数)\s*[:：]?\s*(?P<v>[\d,.]+\s?(?:m2|㎡|m²|ha|戸|棟|階|m|ｍ)?)"
 
 
@@ -260,7 +260,10 @@ def label_value_facts(text):
         for m in re.finditer(rx, t):
             if attr == "scale" and not re.search(r"\d", m.group("v")):
                 continue
-            out.append({"attr": attr, "value": m.group("v").strip(), "quote": m.group(0).strip(), "via": "label"})
+            v = m.group("v").strip()
+            if attr == "scale" and "戸数" in m.group("l") and v.isdigit():
+                v += "戸"
+            out.append({"attr": attr, "value": v, "quote": m.group(0).strip(), "via": "label"})
     return out
 
 
@@ -284,7 +287,7 @@ def name_keys(name):
     for k in list(keys):
         k2 = re.sub(r"^(県営|市営|UR都市機構|都市再生機構|福岡市|福岡県)", "", k)
         k2 = re.sub(r"(\d+号棟|\d+棟|\d+)$", "", k2)
-        k2 = re.sub(r"(住宅|団地|漁港)$", "", k2)
+        k2 = re.sub(r"(住宅|団地|漁港|商店街)$", "", k2)
         k2 = re.sub(r"\d+号棟$", "", k2)
         keys.add(k2.strip())
     for k in list(keys):
@@ -367,6 +370,8 @@ def fact_notes(name, f):
         n.append("引用は『実施主体』などの語のみ。管理者かは要確認")
     if f["attr"] == "built" and "管理" in q:
         n.append("管理開始年。建築年とは限らない")
+    if f["attr"] == "scale" and re.search(r"\d,\d{2}(?!\d)", f.get("value", "")):
+        n.append("数字の区切りが不自然（原文の表記のまま。誤記の可能性）")
     if f.get("via") == "table":
         n.append(f"表の列『{f.get('col')}』を機械的に読んだ")
     if re.search(r"\d+号棟|\d+棟", name) and f["attr"] in ("scale", "built", "status"):
@@ -463,8 +468,11 @@ def run(spots, urls, doms, out, fetcher=None, extract=ollama_facts, search=tavil
                 if got is None:
                     print(f"{sid}\t{name}\t{u}\t抽出の出力が読めない（JSONでない）", file=log)
                     got = []
-                seen_v = {(f.get("attr"), norm(str(f.get("value", "")))) for f in got}
-                lv = [f for f in label_value_facts(w) if (f["attr"], norm(f["value"])) not in seen_v]
+                def vkey(f):      # 「351戸」と「351」は同じ値とみなす（数字だけで比べる。数字がなければ文字で）
+                    v = str(f.get("value", ""))
+                    return (f.get("attr"), re.sub(r"\D", "", unicodedata.normalize("NFKC", v)) or norm(v))
+                seen_v = {vkey(f) for f in got}
+                lv = [f for f in label_value_facts(w) if vkey(f) not in seen_v]
                 if not got and not lv:
                     print(f"{sid}\t{name}\t{u}\t事実なし（抽出が空）", file=log)
                 got = got + lv
