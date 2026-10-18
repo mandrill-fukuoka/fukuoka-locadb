@@ -60,6 +60,7 @@ class Fetcher:
     def __init__(self, interval=1.0, opener=None):
         self.interval, self.last, self.robots = interval, 0.0, {}
         self.opener = opener or self._open
+        self.last_html = None          # 直近に取得したHTML（PDFのときは None）。表の読み取りに使う
 
     def _open(self, url):
         req = urllib.request.Request(url, headers={"User-Agent": UA})
@@ -92,6 +93,7 @@ class Fetcher:
         if not self.robots_ok(url):
             return None, "robotsで拒否"
         self._wait()
+        self.last_html = None
         try:
             body, ctype = self.opener(url)
         except Exception as e:
@@ -101,7 +103,8 @@ class Fetcher:
                 return None, "PDF（pdftotext なし）"
             p = subprocess.run(["pdftotext", "-layout", "-", "-"], input=body, capture_output=True)
             return squeeze(p.stdout.decode("utf-8", "replace")), ""
-        return html_to_text(body.decode(guess_charset(body, ctype), "replace")), ""
+        self.last_html = body.decode(guess_charset(body, ctype), "replace")
+        return html_to_text(self.last_html), ""
 
 
 def squeeze(t):
@@ -159,6 +162,106 @@ def tavily_urls(name, extra, doms, key, post=None, n=5):
     with urllib.request.urlopen(req, timeout=30) as r:
         d = json.load(r)
     return [x["url"] for x in d.get("results", []) if x.get("url")]       # 本文・要約は捨てる
+
+
+# ---------- 決まった形の読み取り（AIを使わない） ----------
+class _Tables(html.parser.HTMLParser):
+    """HTMLの表を [[行のセル文字列…]…] にする。入れ子の表は外側だけ。"""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.tables, self.depth, self.row, self.cell = [], 0, None, None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "table":
+            self.depth += 1
+            if self.depth == 1:
+                self.tables.append([])
+        elif self.depth == 1 and tag == "tr":
+            self.row = []
+        elif self.depth == 1 and tag in ("td", "th") and self.row is not None:
+            self.cell = []
+        elif tag in ("br", "p") and self.cell is not None:
+            self.cell.append(" ")
+
+    def handle_endtag(self, tag):
+        if tag == "table":
+            self.depth -= 1
+        elif self.depth == 1 and tag in ("td", "th") and self.cell is not None and self.row is not None:
+            self.row.append(re.sub(r"\s+", " ", "".join(self.cell)).strip())
+            self.cell = None
+        elif self.depth == 1 and tag == "tr" and self.row is not None:
+            if self.row:
+                self.tables[-1].append(self.row)
+            self.row = None
+
+    def handle_data(self, data):
+        if self.cell is not None:
+            self.cell.append(data)
+
+
+NAME_COL = re.compile(r"団地名|施設名|名称|名前")
+COL_ATTR = [(re.compile(r"管理戸数|戸数|面積|延長|階数|規模"), "scale"),
+            (re.compile(r"建設年|建築年|竣工|築年|開設|供用開始"), "built")]
+
+
+def table_facts(html_text, name, address=""):
+    """見出し（団地名・管理戸数・建設年度…）のある表から、地点名と一致する行の値を機械的に読む。
+    戻り値 (事実の一覧, 該当する形の表があったか)。表があって地点が見つからない／行が決まらないときは ([], True)。
+    AIが隣の行の値を取り違える事故（東箱崎の昭和61年）を、構造で防ぐ。"""
+    if not html_text:
+        return [], False
+    p = _Tables()
+    try:
+        p.feed(html_text)
+    except Exception:
+        pass
+    keys = {norm(k) for k in name_keys(name)}
+    found, is_table = [], False
+    for tb in p.tables:
+        head = next((r for r in tb if len(r) >= 3 and any(NAME_COL.search(c) for c in r)), None)
+        if head is None:
+            continue
+        is_table = True
+        ni = next(i for i, c in enumerate(head) if NAME_COL.search(c))
+        for r in tb:
+            if r is head or len(r) != len(head):
+                continue
+            if norm(r[ni]) in keys:
+                found.append((head, r, ni))
+    if len(found) > 1:                                  # 同名の行が複数 → 住所の区でしぼる。決まらなければ出さない
+        ku = re.search(r"([^\s\d市]{1,3}区)", address or "")
+        found = [x for x in found if ku and ku.group(1) in " ".join(x[1])]
+    if len(found) != 1:
+        return [], is_table
+    head, r, ni = found[0]
+    out = []
+    for ci, col in enumerate(head):
+        for rx, attr in COL_ATTR:
+            if rx.search(col) and r[ci].strip():
+                lo, hi = sorted((ni, ci))
+                v = unicodedata.normalize("NFKC", r[ci]).strip()
+                if attr == "scale" and "戸" in col and v.isdigit():
+                    v += "戸"
+                out.append({"attr": attr, "value": v, "quote": " ".join(r[lo:hi + 1]), "via": "table", "col": col})
+                break
+    return out, True
+
+
+LV_BUILT = r"(?P<l>業務開始|開設|創設|設立|竣工|完成|供用開始|開業)\s*[:：]?\s*(?P<v>(?:明治|大正|昭和|平成|令和)?\s?\d+年(?:\s?\d+月)?(?:\s?\d+日)?)"
+LV_SCALE = r"(?P<l>敷地面積|延床面積|延べ面積|建築面積|管理戸数|戸数|延長|階数)\s*[:：]?\s*(?P<v>[\d,.]+\s?(?:m2|㎡|m²|ha|戸|棟|階|m|ｍ)?)"
+
+
+def label_value_facts(text):
+    """「業務開始 昭和30年6月21日」「敷地面積 120,400m2」のような『項目 値』を、そのまま拾う。
+    quote は項目名＋値だけ。呼び出し側が verify（地点名の近さを含む）を通す。"""
+    t = unicodedata.normalize("NFKC", text)
+    out = []
+    for rx, attr in ((LV_BUILT, "built"), (LV_SCALE, "scale")):
+        for m in re.finditer(rx, t):
+            if attr == "scale" and not re.search(r"\d", m.group("v")):
+                continue
+            out.append({"attr": attr, "value": m.group("v").strip(), "quote": m.group(0).strip(), "via": "label"})
+    return out
 
 
 # ---------- 抽出と照合 ----------
@@ -236,6 +339,8 @@ def verify(fact, text, name=None):
         return "項目不正"
     if norm(q) not in norm(text):
         return "引用が本文にない"
+    if fact.get("via") == "table":          # 表の行から機械的に読んだもの：行の特定は構造で済んでいる
+        return "除外語" if EXCL.search(v + q) else ("評判・撮影可否の語" if REPUTE.search(v) or PERMIT.search(v + q) else "")
     for num in re.findall(r"\d+(?:[.,]\d+)?", unicodedata.normalize("NFKC", v)):
         if num.replace(",", "") not in unicodedata.normalize("NFKC", q).replace(",", ""):
             return "数字が引用にない"
@@ -262,6 +367,8 @@ def fact_notes(name, f):
         n.append("引用は『実施主体』などの語のみ。管理者かは要確認")
     if f["attr"] == "built" and "管理" in q:
         n.append("管理開始年。建築年とは限らない")
+    if f.get("via") == "table":
+        n.append(f"表の列『{f.get('col')}』を機械的に読んだ")
     if re.search(r"\d+号棟|\d+棟", name) and f["attr"] in ("scale", "built", "status"):
         n.append("地点は棟、記載は団地全体の可能性")
     return n
@@ -338,7 +445,17 @@ def run(spots, urls, doms, out, fetcher=None, extract=ollama_facts, search=tavil
                 continue
             dom = urllib.parse.urlparse(u).hostname
             hint = place_hint(text, address) if address else None   # 住所なしは判定不能（None）
-            got = extract(name, address, w)
+            tfacts, is_table = table_facts(getattr(fetcher, "last_html", None), name, address)
+            if is_table:                      # 表のページは機械で読む。AIには読ませない（行の取り違えを避ける）
+                got = tfacts
+                if not got:
+                    print(f"{sid}\t{name}\t{u}\t表に該当行なし（または同名の行が決まらない）", file=log)
+                    continue
+            else:
+                got = extract(name, address, w)
+                if got is not None:
+                    seen_v = {(f.get("attr"), norm(str(f.get("value", "")))) for f in got}
+                    got = got + [f for f in label_value_facts(w) if (f["attr"], norm(f["value"])) not in seen_v]
             if got is None:
                 print(f"{sid}\t{name}\t{u}\t抽出の出力が読めない（JSONでない）", file=log)
                 got = []

@@ -213,3 +213,43 @@ def test_no_address_is_note_not_hold(tmp_path):
     rows = cw.run(spots, {"1": ["https://www.pref.fukuoka.lg.jp/a.html"]}, ["pref.fukuoka.lg.jp"], str(out), fetcher=F(),
                   extract=lambda *a, **k: [{"attr": "owner", "value": "福岡県", "quote": "管理者 福岡県"}], log=open(os.devnull, "w"))
     assert rows[0][6] == "" and "住所なし" in rows[0][7]
+
+
+TABLE = """<table><tr><th>市町村</th><th>団地名</th><th>管理戸数</th><th>間取り</th><th>建設年度</th></tr>
+<tr><td>福岡市<br>東区</td><td>東箱崎</td><td>４５</td><td>3LDK</td><td>平成２８年</td></tr>
+<tr><td>福岡市<br>西区</td><td>内野</td><td>１７</td><td>3LDK</td><td>昭和６１年</td></tr>
+<tr><td>福岡市<br>東区</td><td>同名</td><td>10</td><td>2DK</td><td>昭和40年</td></tr>
+<tr><td>北九州市<br>小倉北区</td><td>同名</td><td>20</td><td>2DK</td><td>昭和50年</td></tr></table>"""
+
+
+def test_table_facts_reads_only_the_matching_row():
+    f, is_table = cw.table_facts(TABLE, "県営東箱崎住宅")
+    assert is_table
+    got = {x["attr"]: x["value"] for x in f}
+    assert got == {"scale": "45戸", "built": "平成28年"}          # 隣の内野の昭和61年は出ない
+    text = cw.html_to_text(TABLE)
+    assert all(cw.verify(x, text, "県営東箱崎住宅") == "" for x in f)
+    # 同名の行が複数 → 住所の区でしぼる。しぼれなければ出さない
+    assert cw.table_facts(TABLE, "同名", "福岡市東区X")[0][0]["value"] == "10戸"
+    assert cw.table_facts(TABLE, "同名", "")[0] == []
+    # 表はあるが地点がない／表がないページ
+    assert cw.table_facts(TABLE, "存在しない団地") == ([], True)
+    assert cw.table_facts("<p>表なし</p>", "東箱崎") == ([], False)
+
+
+def test_label_value_facts_and_run_uses_table_instead_of_llm(tmp_path):
+    lv = cw.label_value_facts("鮮魚市場 業務開始 昭和30年6月21日 敷地面積 120,400m2 ほか")
+    assert [(x["attr"], x["value"]) for x in lv] == [("built", "昭和30年6月21日"), ("scale", "120,400m2")]
+
+    class F:
+        last_html = TABLE
+        def text(self, u): return cw.html_to_text(TABLE), ""
+    called = []
+    def llm(*a, **k):
+        called.append(1); return [{"attr": "built", "value": "昭和61年", "quote": "昭和６１年"}]   # 取り違えるAI
+    out = tmp_path / "o.tsv"
+    rows = cw.run([("1", "県営東箱崎住宅", "福岡市東区箱崎五丁目", "housing_estate")], {"1": ["https://www.pref.fukuoka.lg.jp/a.html"]},
+                  ["pref.fukuoka.lg.jp"], str(out), fetcher=F(), extract=llm, log=open(os.devnull, "w"))
+    assert not called                                    # 表のページではAIを呼ばない
+    assert sorted(r[4] for r in rows) == ["建築年・竣工年・開設年：平成28年", "規模（面積・階数・戸数・延長）：45戸"]
+    assert all("表の列" in r[7] for r in rows)
