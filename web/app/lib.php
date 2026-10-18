@@ -255,11 +255,10 @@ const HIGH_GROUND_M = 10;     // 「高台」：周り（半径150m）の平均�
 const WATER_KIND_LABEL = ['river' => '川', 'coast' => '海', 'pond' => '池', 'beach' => '砂浜'];
 function spatial_line(array $sp): string {
     $kind = WATER_KIND_LABEL[$sp['water_kind'] ?? ''] ?? '水辺';
-    $water = match ($sp['water'] ?? 'なし') {
-        'すぐそば' => $kind . 'がすぐそば',
-        '近い' => $kind . 'が近い',
-        default => '150m以内に水辺なし',
-    };
+    $w = $sp['water'] ?? 'なし';
+    if ($w === 'すぐそば') $water = $kind . 'がすぐそば';
+    elseif ($w === '近い') $water = $kind . 'が近い';
+    else $water = '150m以内に水辺なし';
     $parts = ['開放感 ' . ($sp['open'] ?? ''), '建物 ' . ($sp['built'] ?? ''), $water];
     if (!empty($sp['road'])) $parts[] = $sp['road'];
     return implode('・', $parts);

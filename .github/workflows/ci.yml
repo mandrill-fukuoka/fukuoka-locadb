@@ -20,5 +20,10 @@ jobs:
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq php-cli
       - run: pip install -r requirements.txt pytest
       - run: for f in web/public/*.php web/app/*.php tools/laya/*.php; do php -l "$f" >/dev/null || exit 1; done
+      # 公開サーバー（heteml）のPHPは8未満：PHP 8 以降だけの書き方を画面側で使わない（CIのPHPは新しいので php -l では見つからない）
+      - name: PHP 8 だけの書き方が入っていないか（画面側）
+        run: |
+          if grep -nE '(^|[^.>$A-Za-z_])match[[:space:]]*\(|\?->|str_contains\(|str_starts_with\(|str_ends_with\(|#\[' web/public/*.php web/app/*.php | grep -v '^[^:]*:[0-9]*:[[:space:]]*//' ; then
+            echo "！公開サーバーのPHPで動かない書き方があります（上の行）"; exit 1; fi
       - run: pytest -q tests
         env: { TEST_PG: "postgresql://app:app@localhost:5432" }
