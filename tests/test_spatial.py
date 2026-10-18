@@ -213,3 +213,13 @@ def test_dry_run_reports_distribution_and_writes_nothing(db, tmp_path):
     assert rows(db) == {}
     assert st["dry_run"] is True and "distribution" in st and "compute_seconds" in st
     json.dumps(st, ensure_ascii=False)                                  # 報告に書き出せる形
+
+
+def test_dry_run_works_before_the_table_exists(db, tmp_path):
+    """DB変更190の適用前の本番でも、試し実行で時間と分布を測れる"""
+    w = World(); city(w)
+    res = w.run(db, tmp_path)                       # 地点を入れてから、表だけ無い状態にする
+    db.execute("drop table spot_spatial")
+    db.commit()
+    st = spatial.dry_run(res["snapshot"].spatial, min_buildings=1)
+    assert st["target"] > 0 and "distribution" in st

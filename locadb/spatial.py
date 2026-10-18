@@ -177,7 +177,12 @@ class Spatial:
 # 実行（自動収集の一工程）
 # ---------------------------------------------------------------------------
 def targets(conn, all_: bool = False, limit: int = 20000) -> list[dict]:
-    """未計算・版が変わった・計算後に動いた地点（all_ なら全件）"""
+    """未計算・版が変わった・計算後に動いた地点（all_ なら全件。全件のときは spot_spatial を見ない
+    ＝ DB変更190の適用前でも、試し実行で時間と分布を測れる）"""
+    if all_:
+        return conn.execute(
+            """select s.id, ST_Y(s.geom::geometry) lat, ST_X(s.geom::geometry) lon
+                 from spots s where s.data_status <> 'archived' order by s.id limit %s""", (limit,)).fetchall()
     return conn.execute(
         """select s.id, ST_Y(s.geom::geometry) lat, ST_X(s.geom::geometry) lon
              from spots s left join spot_spatial ss on ss.spot_id = s.id
