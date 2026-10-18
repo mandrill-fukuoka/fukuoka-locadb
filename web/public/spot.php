@@ -24,6 +24,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                  'p_user' => current_user(), 'p_text' => trim((string)($_POST['text'] ?? '')) ?: null]);
             $msg = $action === 'ai_accept' ? '説明文を採用しました（公開されます）' : '下書きを却下しました';
         } catch (Throwable $e) { $error = preg_replace('/^.*?ERROR:\s*/su', '', $e->getMessage()); }
+    } elseif ($action === 'fact_revoke') {
+        // 事実カードの取り消し（行は残る。公開の画面から消える）
+        try {
+            sb_rpc('fact_revoke', ['p_id' => (int)($_POST['fact_id'] ?? 0), 'p_user' => current_user(),
+                                   'p_note' => trim((string)($_POST['note'] ?? '')) ?: null]);
+            $msg = '事実を取り消しました（公開の画面から消えます）';
+        } catch (Throwable $e) { $error = preg_replace('/^.*?ERROR:\s*/su', '', $e->getMessage()); }
     } elseif ($action === 'practicals') {
         // 撮影実務（撮影実績は1行に1件）
         $req = (string)($_POST['permit_required'] ?? '');
@@ -48,6 +55,8 @@ try {
     $s = $id ? sb_rpc('spot_detail', ['p_id' => $id, 'p_with_history' => (bool)current_user()]) : null;
     if ($s) $nearby = sb_rpc('spots_nearby', ['p_id' => $id, 'p_radius' => 600]) ?? [];
 } catch (Throwable $e) { $error = $e->getMessage(); }
+$facts = [];                                           // 承認済みの事実（DB変更180。誰にでも出す）。取れなくてもページは出す
+if ($s) { try { $facts = sb_rpc('facts_for_spot', ['p_id' => $id]) ?? []; } catch (Throwable $e) { $facts = []; } }
 
 if (!$s || (($s['data_status'] ?? '') === 'archived' && !current_user())) {
     http_response_code(404);
@@ -174,6 +183,22 @@ page_header(nm($s['name']), '');
         <span class="small muted">（人が確認）</span></p><?php endif; ?>
       <?php if ($aiTags): ?><p><?php foreach ($aiTags as $t): ?><span class="chip dim"><?= h($t['name']) ?></span><?php endforeach; ?>
         <span class="small muted">（AIの推定・ログイン時のみ表示）</span></p><?php endif; ?>
+
+      <?php if ($facts): ?>
+      <section class="block facts-block">
+        <h2>事実</h2>
+        <dl class="facts">
+          <?php foreach ($facts as $f): ?>
+            <dt><?= h($f['item']) ?></dt>
+            <dd><?= h($f['value']) ?><?php if (!empty($f['as_of'])): ?><span class="muted small">（<?= h($f['as_of']) ?>）</span><?php endif; ?><?php if (!empty($f['note'])): ?><span class="muted small">・<?= h($f['note']) ?></span><?php endif; ?>
+              <span class="src">出典：<?php if (!empty($f['source_url'])): ?><a href="<?= h($f['source_url']) ?>" target="_blank" rel="noopener"><?= h($f['source_title'] ?: (FACT_SOURCE_LABEL[$f['source_kind']] ?? $f['source_kind'])) ?></a><?php else: ?><?= h(FACT_SOURCE_LABEL[$f['source_kind']] ?? $f['source_kind']) ?><?php endif; ?><?php if (!empty($f['license'])): ?>（<?= h($f['license']) ?>）<?php endif; ?></span>
+              <?php if (current_user()): ?><form method="post"><?= csrf_field() ?><input type="hidden" name="fact_id" value="<?= (int)$f['id'] ?>">
+                <button name="action" value="fact_revoke" class="secondary small-btn" onclick="return confirm('この事実を取り消しますか？（公開の画面から消えます）')">取り消す</button></form><?php endif; ?></dd>
+          <?php endforeach; ?>
+        </dl>
+        <p class="facts-note">出典ページの記載をもとに人が承認した事実です。現在の状況と異なることがあります。撮影の可否を示すものではありません。</p>
+      </section>
+      <?php endif; ?>
 
       <section class="block">
         <h2>光の目安</h2>

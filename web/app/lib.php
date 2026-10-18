@@ -33,6 +33,9 @@ function summary_html(array $s, string $tag, string $class): string {
     return '<' . $tag . ' class="' . h($class) . '">' . h($text) . '</' . $tag . '>';
 }
 const AI_SOURCE_LABEL = ['laya' => 'LAYA', 'claude' => 'Claude'];
+// 事実カード（DB変更180、タスクH）：項目は固定。承認した事実だけを出す
+const FACT_ITEMS = ['管理者・所有者', '創設・開設年', '規模', '現況', '指定・登録', '人口'];
+const FACT_SOURCE_LABEL = ['wikipedia' => 'Wikipedia', 'web' => '公式ページ', 'osm' => 'OpenStreetMap', 'manual' => '人が入力'];
 
 // ---------- ログイン ----------
 function current_user(): ?string { return $_SESSION['user'] ?? null; }

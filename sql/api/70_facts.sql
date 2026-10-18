@@ -1,10 +1,11 @@
 -- 事実カード（タスクH、DB変更180。tools/migrate.py が毎回作り直す）
+--  確認画面の「事実」タブは facts_counts と facts_list で読む（承認済みだけ）
 --  書くのは facts_import（人が承認した事実の取り込み）と fact_revoke（取り消し）だけ。画面は facts_for_spot で読む
 do $$
 declare f record;
 begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-            where n.nspname = 'public' and p.proname in ('facts_for_spot','facts_import','fact_revoke','facts_counts')
+            where n.nspname = 'public' and p.proname in ('facts_for_spot','facts_import','fact_revoke','facts_counts','facts_list')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
@@ -95,3 +96,23 @@ begin
           jsonb_build_object('fact_id', f.id, 'item', f.item, 'value', f.value, 'note', f.revoke_note));
   return jsonb_build_object('id', f.id, 'spot_id', f.spot_id, 'status', 'revoked');
 end $$;
+
+-- 確認画面の一覧（承認済みだけ。原文 quote は確認用に含める）。p_item：項目、p_area：エリア、p_q：地点名・住所・地点コード・値の部分一致
+create function facts_list(p_item text default null, p_area text default null, p_q text default null,
+                           p_offset int default 0, p_limit int default 30)
+returns jsonb language sql stable as $$
+select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+  select f.id, f.item, f.value, f.note, f.as_of, f.source_kind, f.source_url, f.source_title, f.license, f.quote,
+         f.approved_by, f.approved_at,
+         s.id as spot_id, s.code, s.name, s.area_code, s.address, sc.name as category
+    from spot_facts f
+    join spots s on s.id = f.spot_id
+    left join spot_categories sc on sc.code = s.category
+   where f.status = 'approved' and s.data_status <> 'archived'
+     and (p_item is null or f.item = p_item)
+     and (p_area is null or s.area_code = p_area)
+     and (p_q is null or s.code = p_q or s.name ilike '%' || p_q || '%' or s.address ilike '%' || p_q || '%' or f.value ilike '%' || p_q || '%')
+   order by s.code, array_position(array['管理者・所有者','創設・開設年','規模','現況','指定・登録','人口'], f.item), f.id
+   offset p_offset limit p_limit
+) x;
+$$;

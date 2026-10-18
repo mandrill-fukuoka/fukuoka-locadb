@@ -1,16 +1,18 @@
 <?php
-// 地点の確認（ログイン必須）：要確認・未確認・対象外・重複の疑い・説明文の下書き・自動チェック
+// 地点の確認（ログイン必須）：要確認・未確認・対象外・重複の疑い・説明文の下書き・自動チェック・事実カード
 require __DIR__ . '/bootstrap.php';
 require_login();
 
 $queue  = $_GET['queue'] ?? 'review';
-if (!in_array($queue, ['review', 'unreviewed', 'manual', 'drafts', 'checks', 'archived', 'all', 'dups'], true)) $queue = 'review';
+if (!in_array($queue, ['review', 'unreviewed', 'manual', 'drafts', 'checks', 'facts', 'archived', 'all', 'dups'], true)) $queue = 'review';
 $area   = $_GET['area'] ?? '';
 $status = $_GET['status'] ?? '';
 $q      = trim($_GET['q'] ?? '');
 $target = $_GET['target'] ?? '';                       // 自動チェック：category / address / summary
 if (!in_array($target, ['', 'category', 'address', 'summary'], true)) $target = '';
 $check  = preg_replace('/[^a-z_]/', '', (string)($_GET['check'] ?? ''));
+$item   = $_GET['item'] ?? '';                       // 事実カード：項目
+if (!in_array($item, FACT_ITEMS, true)) $item = '';
 $flag   = $_GET['flag'] ?? '';                         // 説明文の下書き：指摘あり（1）・なし（0）
 if (!in_array($flag, ['', '0', '1'], true)) $flag = '';
 $page   = max(0, (int)($_GET['p'] ?? 0));
@@ -25,6 +27,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             sb_rpc('check_close', ['p_id' => (int)$_POST['check_id'], 'p_user' => current_user(),
                                    'p_note' => trim((string)($_POST['note'] ?? '')) ?: null]);
             $msg = '「' . ($_POST['name'] ?? '') . '」の指摘を閉じました';
+        } elseif (($_POST['action'] ?? '') === 'fact_revoke') {
+            // 事実カードの取り消し（行は残る。公開の画面から消える）
+            sb_rpc('fact_revoke', ['p_id' => (int)$_POST['fact_id'], 'p_user' => current_user(),
+                                   'p_note' => trim((string)($_POST['note'] ?? '')) ?: null]);
+            $msg = '「' . ($_POST['name'] ?? '') . '」の事実を取り消しました（公開の画面から消えます）';
         } elseif (in_array($_POST['action'] ?? '', ['ai_accept', 'ai_reject'], true)) {
             // AIの説明文の下書き：採用（そのまま／直して）・却下
             sb_rpc('ai_review', ['p_note_id' => (int)$_POST['note_id'], 'p_action' => $_POST['action'] === 'ai_accept' ? 'accept' : 'reject',
@@ -53,6 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $rows = []; $dups = []; $tags = []; $drafts = []; $checks = []; $ccount = ['items' => [], 'last_run' => null];
+$facts = []; $fcount = ['items' => [], 'spots' => 0];
 try {
     if ($queue === 'drafts') {
         $drafts = sb_rpc('ai_drafts', ['p_area' => $area ?: null, 'p_q' => $q ?: null,
@@ -62,6 +70,10 @@ try {
         $ccount = sb_rpc('checks_counts') ?? $ccount;
         $checks = sb_rpc('checks_list', ['p_target' => $target ?: null, 'p_check' => $check ?: null, 'p_area' => $area ?: null,
                                          'p_q' => $q ?: null, 'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
+    } elseif ($queue === 'facts') {
+        $fcount = sb_rpc('facts_counts') ?? $fcount;
+        $facts = sb_rpc('facts_list', ['p_item' => $item ?: null, 'p_area' => $area ?: null, 'p_q' => $q ?: null,
+                                       'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
     } elseif ($queue === 'dups') {
         $dups = sb_rpc('duplicate_candidates', ['p_limit' => 100, 'p_meters' => 150]) ?? [];
     } else {
@@ -74,9 +86,9 @@ try {
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
 $qs = fn(array $o) => '?' . http_build_query(array_merge(['queue' => $queue, 'area' => $area, 'status' => $status, 'q' => $q,
-                                                          'target' => $target, 'check' => $check, 'flag' => $flag], $o));
+                                                          'target' => $target, 'check' => $check, 'flag' => $flag, 'item' => $item], $o));
 $tabs = ['review' => '要確認', 'unreviewed' => '未確認', 'manual' => '手入力・人が直した', 'drafts' => '説明文の下書き',
-         'checks' => '自動チェック', 'dups' => '重複の疑い', 'archived' => '対象外', 'all' => 'すべて'];
+         'checks' => '自動チェック', 'facts' => '事実カード', 'dups' => '重複の疑い', 'archived' => '対象外', 'all' => 'すべて'];
 $TARGET_LABEL = ['category' => '種別', 'address' => '住所', 'summary' => '説明文'];
 page_header('地点の確認', 'spots.php');
 ?>
@@ -84,7 +96,7 @@ page_header('地点の確認', 'spots.php');
   <h1>地点の確認</h1>
   <p class="small muted">「要確認」は、人が確認した地点でOSMの位置・名前・種別が変わったもの、OSMから見つからなくなったものです。自動では変更せず、ここで判断します。</p>
   <nav class="tabs">
-    <?php foreach ($tabs as $k => $v): ?><a href="<?= h($qs(['queue' => $k, 'p' => 0, 'target' => '', 'check' => '', 'flag' => ''])) ?>" class="<?= $queue === $k ? 'on' : '' ?>"><?= $v ?></a><?php endforeach; ?>
+    <?php foreach ($tabs as $k => $v): ?><a href="<?= h($qs(['queue' => $k, 'p' => 0, 'target' => '', 'check' => '', 'flag' => '', 'item' => ''])) ?>" class="<?= $queue === $k ? 'on' : '' ?>"><?= $v ?></a><?php endforeach; ?>
   </nav>
   <?php if ($queue !== 'dups'): ?>
   <form class="row filters" method="get">
@@ -95,6 +107,9 @@ page_header('地点の確認', 'spots.php');
     <label>対象<select name="target"><option value="">すべて</option>
       <?php foreach ($TARGET_LABEL as $k => $v): ?><option value="<?= $k ?>" <?= $target === $k ? 'selected' : '' ?>><?= $v ?></option><?php endforeach; ?></select></label>
     <input type="hidden" name="check" value="<?= h($check) ?>">
+    <?php elseif ($queue === 'facts'): ?>
+    <label>項目<select name="item"><option value="">すべて</option>
+      <?php foreach (FACT_ITEMS as $v): ?><option value="<?= h($v) ?>" <?= $item === $v ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></label>
     <?php elseif ($queue === 'drafts'): ?>
     <label>自動チェック<select name="flag"><option value="">すべて（指摘のあるものが先）</option>
       <option value="1" <?= $flag === '1' ? 'selected' : '' ?>>指摘あり</option><option value="0" <?= $flag === '0' ? 'selected' : '' ?>>指摘なし</option></select></label>
@@ -168,6 +183,41 @@ page_header('地点の確認', 'spots.php');
   <nav class="pager">
     <?php if ($page > 0): ?><a href="<?= h($qs(['p' => $page - 1])) ?>">← 前へ</a><?php endif; ?>
     <?php if (count($checks) === $per): ?><a href="<?= h($qs(['p' => $page + 1])) ?>">次へ →</a><?php endif; ?>
+  </nav>
+<?php elseif ($queue === 'facts'): ?>
+  <section class="card">
+    <p class="small muted">人が承認した事実（項目・値・出典）です。ここにあるものは、ログインなしの地点ページにも出ます。誤りが見つかったら「取り消す」と、公開の画面から消えます（行は残ります）。
+      追加は、承認済みの一覧を data/facts に入れて facts-import で取り込みます。撮影の可否は書きません。</p>
+    <?php if (!$fcount['items']): ?><p>承認済みの事実はまだありません。</p><?php else: ?>
+    <table class="checks-summary"><tr><th>項目</th><th class="cnt">件数</th><th class="cnt">地点数</th></tr>
+      <?php foreach ($fcount['items'] as $it): ?>
+      <tr class="<?= $item === $it['item'] ? 'on' : '' ?>"><td><a href="<?= h($qs(['item' => $it['item'], 'p' => 0])) ?>"><?= h($it['item']) ?></a></td>
+        <td class="cnt"><?= number_format((int)$it['n']) ?></td><td class="cnt"><?= number_format((int)$it['spots']) ?></td></tr>
+      <?php endforeach; ?>
+      <tr><td>合計（地点）</td><td class="cnt"></td><td class="cnt"><?= number_format((int)$fcount['spots']) ?></td></tr></table>
+    <?php if ($item): ?><p class="small"><a href="<?= h($qs(['item' => '', 'p' => 0])) ?>">すべての項目を表示</a></p><?php endif; ?>
+    <?php endif; ?>
+  </section>
+  <?php foreach ($facts as $f): ?>
+    <article class="card check">
+      <h3><a href="spot.php?id=<?= (int)$f['spot_id'] ?>"><?= h(nm($f['name'])) ?></a>
+        <span class="muted small"><?= h($f['category']) ?>・<?= h($f['address'] ?: (AREA_LABEL[$f['area_code']] ?? '')) ?>・<?= h($f['code']) ?></span></h3>
+      <p><span class="chip"><?= h($f['item']) ?></span> <strong><?= h($f['value']) ?></strong>
+        <?php if (!empty($f['as_of'])): ?><span class="muted small">（<?= h($f['as_of']) ?>）</span><?php endif; ?>
+        <?php if (!empty($f['note'])): ?><span class="muted small">・<?= h($f['note']) ?></span><?php endif; ?></p>
+      <p class="small muted">出典：<?php if (!empty($f['source_url'])): ?><a href="<?= h($f['source_url']) ?>" target="_blank" rel="noopener"><?= h($f['source_title'] ?: (FACT_SOURCE_LABEL[$f['source_kind']] ?? $f['source_kind'])) ?></a><?php else: ?><?= h(FACT_SOURCE_LABEL[$f['source_kind']] ?? $f['source_kind']) ?><?php endif; ?>
+        <?php if (!empty($f['license'])): ?>（<?= h($f['license']) ?>）<?php endif; ?>・承認：<?= h($f['approved_by']) ?> <?= h(substr((string)$f['approved_at'], 0, 10)) ?></p>
+      <?php if (!empty($f['quote'])): ?><p class="small muted">根拠の原文：<?= h($f['quote']) ?></p><?php endif; ?>
+      <form method="post" action="<?= h($qs(['p' => $page])) ?>" class="row"><?= csrf_field() ?>
+        <input type="hidden" name="fact_id" value="<?= (int)$f['id'] ?>"><input type="hidden" name="name" value="<?= h(nm($f['name'])) ?>">
+        <input name="note" placeholder="取り消す理由（任意）"><button name="action" value="fact_revoke" class="secondary small-btn" onclick="return confirm('この事実を取り消しますか？（公開の画面から消えます）')">取り消す</button>
+      </form>
+    </article>
+  <?php endforeach; ?>
+  <?php if (!$facts && !$error && $fcount['items']): ?><p class="card">該当する事実はありません。</p><?php endif; ?>
+  <nav class="pager">
+    <?php if ($page > 0): ?><a href="<?= h($qs(['p' => $page - 1])) ?>">← 前へ</a><?php endif; ?>
+    <?php if (count($facts) === $per): ?><a href="<?= h($qs(['p' => $page + 1])) ?>">次へ →</a><?php endif; ?>
   </nav>
 <?php elseif ($queue === 'dups'): ?>
   <?php if (!$dups && !$error): ?><p class="card">重複の疑いはありません。</p><?php endif; ?>
