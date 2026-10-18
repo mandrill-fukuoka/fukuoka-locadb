@@ -26,7 +26,7 @@ create table if not exists spot_facts (
   revoke_note  text,
   created_at   timestamptz not null default now(),
   constraint spot_facts_source_chk
-    check (source_kind = 'manual' or source_url ~ '^https://'),
+    check (source_kind = 'manual' or coalesce(source_url ~ '^https://', false)),   -- NULL でもすり抜けない
   constraint spot_facts_wikipedia_chk
     check (source_kind <> 'wikipedia' or (source_title is not null and license is not null))
 );

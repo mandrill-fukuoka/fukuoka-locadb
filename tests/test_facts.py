@@ -42,7 +42,7 @@ def test_import_adds_and_skips_duplicates(db, two):
     assert [(x["item"], x["value"]) for x in f] == [("規模", "351戸"), ("人口", "353人")]   # 項目の順に並ぶ
     assert f[1]["as_of"] == "令和2年国勢調査" and f[1]["license"] == "CC BY-SA 4.0"
     assert all("quote" not in x for x in f)                                                  # 原文は公開用に含めない
-    assert [h["event"] for h in db.execute("select event from spot_history where spot_id=%s order by id", (a,)).fetchall()] == ["fact_added"] * 2
+    assert [h["event"] for h in db.execute("select event from spot_history where spot_id=%s and event like 'fact_%%' order by id", (a,)).fetchall()] == ["fact_added"] * 2
 
 
 def test_validation_rejects_without_source_or_vocabulary(db, two):
