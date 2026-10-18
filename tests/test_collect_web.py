@@ -95,7 +95,7 @@ def test_run_end_to_end_with_fakes(tmp_path):
     assert len(rows) == 2 and all(r[11] == "確度高" for r in rows)            # 2ドメインで一致
     assert all("blog.example.com" not in r[5] for r in rows)                  # 許可リスト外は読まない
     assert not any(r[3] == "owner" for r in rows)                             # 引用なしは捨てた
-    head = out.read_text(encoding="utf-8").split("\n")[0].split("\t")
+    head = out.read_text(encoding="utf-8-sig").split("\n")[0].split("\t")
     assert head[:7] == ["地点ID", "地点名", "候補No", "種類", "候補の文", "出典URL", "採否（採/不採/保留）"]
 
 
@@ -283,3 +283,13 @@ def test_shotengai_suffix_company_founding_and_dup_numbers():
     rows = cw.run([("1", "UR都市機構箱崎三丁目団地31号棟", "福岡市東区箱崎三丁目", "housing_estate")], {"1": ["https://ur-net.go.jp/a"]}, ["ur-net.go.jp"],
                   d + "/o.tsv", fetcher=F(), extract=lambda *a, **k: [{"attr": "scale", "value": "351戸", "quote": "戸数 351"}], log=open(os.devnull, "w"))
     assert len(rows) == 1                                   # AIと機械の同じ値は1件にまとめる
+
+
+def test_output_has_bom_for_excel(tmp_path):
+    class F:
+        last_html = None
+        def text(self, u): return "新天町商店街 創設 1946年10月", ""
+    out = tmp_path / "o.tsv"
+    cw.run([("1", "新天町商店街", "", "shotengai")], {"1": ["https://shintencho.or.jp/o/"]}, ["shintencho.or.jp"], str(out), fetcher=F(),
+           extract=lambda *a, **k: [], log=open(os.devnull, "w"))
+    assert out.read_bytes()[:3] == b"\xef\xbb\xbf"

@@ -494,7 +494,7 @@ def run(spots, urls, doms, out, fetcher=None, extract=ollama_facts, search=tavil
         out_rows.append([sid, name, str(no[sid]), f["attr"], f"{ATTRS[f['attr']]}：{f['value']}", u, mark,
                          "；".join(note), "-", "web:" + dom, f["quote"].replace("\n", " "),
                          "確度高" if n >= 2 else "要確認", today])
-    with open(out, "w", encoding="utf-8") as fh:
+    with open(out, "w", encoding="utf-8-sig") as fh:      # BOM付き：Excelで開いても文字化けしない
         fh.write("\t".join(HEAD) + "\n")
         for r in out_rows:
             fh.write("\t".join(str(x).replace("\t", " ") for x in r) + "\n")
@@ -503,7 +503,7 @@ def run(spots, urls, doms, out, fetcher=None, extract=ollama_facts, search=tavil
 
 
 def read_spots(path):
-    r = list(csv.reader(open(path, encoding="utf-8"), delimiter="\t", quotechar=None))
+    r = list(csv.reader(open(path, encoding="utf-8-sig"), delimiter="\t", quotechar=None))
     # 地点IDが数字の行だけ（空行・PHPの警告文などが混ざっても読み飛ばす）
     return [(x[0].strip(), x[1], x[2] if len(x) > 2 else "", x[3] if len(x) > 3 else "")
             for x in r[1:] if len(x) > 1 and x[0].strip().isdigit()]
@@ -512,7 +512,7 @@ def read_spots(path):
 def read_urls(path):
     d = collections.defaultdict(list)
     if path:
-        for x in csv.reader(open(path, encoding="utf-8"), delimiter="\t", quotechar=None):
+        for x in csv.reader(open(path, encoding="utf-8-sig"), delimiter="\t", quotechar=None):
             if len(x) >= 2 and not x[0].startswith(("#", "地点")):
                 d[x[0]].append(x[1])
     return d
