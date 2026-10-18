@@ -5,7 +5,7 @@ begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname in (
               'grp_match','search_spots','spots_nearby','spot_detail','review_queue','review_spot',
-              'spatial_view','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids')
+              'spatial_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
@@ -14,12 +14,30 @@ create function grp_match(p_want text, p_actual text) returns boolean language s
   select p_want = p_actual or (p_want = 'water' and p_actual in ('river','sea','beach','lake','water'));
 $$;
 
+-- 周辺の特徴の段階（空間特徴 spot_spatial。仕様書10章タスクI。2026-10-18 利用者と合意・暫定）
+--  境界は sp_* の4関数だけに書く（画面の表示 spatial_view と絞り込み search_spots が同じものを使う）。
+--  real は numeric にしてから境界と比べる＝0.7 ちょうどが 0.69999 にならない。見通し(sight_max_m)は段階にしない。
+create function sp_open(v real) returns text language sql immutable as $$
+  select case when v is null then null when v::numeric >= 0.7 then 'open' when v::numeric >= 0.35 then 'mid' else 'closed' end;
+$$;
+create function sp_built(v real) returns text language sql immutable as $$
+  select case when v is null then null when v::numeric < 0.15 then 'few' when v::numeric < 0.30 then 'mid' else 'many' end;
+$$;
+create function sp_water(d real) returns text language sql immutable as $$     -- 水辺なし（null）も 'none'
+  select case when d is null or d::numeric >= 150 then 'none' when d::numeric < 50 then 'near' else 'close' end;
+$$;
+create function sp_road(cls text, w real) returns text language sql immutable as $$
+  select case when cls is null or w is null then null when w::numeric < 5 then 'narrow'
+              when w::numeric >= 6.5 then 'wide' else 'normal' end;
+$$;
+
 -- 場所を探す。川・線路などの「線」の地点は、同じ線ごとに1件にまとめて「ほか○か所」を返す
 -- （名前が同じでも別の施設＝点の地点はまとめない）
 create function search_spots(
   p_q text default null, p_area text default null, p_category text default null,
   p_group text default null, p_tags text[] default null, p_offset int default 0, p_limit int default 40,
-  p_relief_min real default null
+  p_relief_min real default null,
+  p_open text default null, p_water text default null, p_road text default null
 ) returns jsonb language sql stable as $$
 with hits as (
   select s.id, s.code, s.name, s.area_code, s.address, s.category as cat, sc.name as category,
@@ -37,6 +55,12 @@ with hits as (
      and (p_category is null or s.category = p_category or p_category = any (s.extra_categories))
      and (p_group is null or grp_match(p_group, sc.landscape_group))
      and (p_relief_min is null or s.relief_m >= p_relief_min)      -- 高台（周りより p_relief_min m 以上高い）
+     and (p_open is null and p_water is null and p_road is null or exists (      -- 周辺の特徴（推定）。信頼度 low は対象外
+            select 1 from spot_spatial x where x.spot_id = s.id and x.confidence = 'ok'
+               and (p_open is null or sp_open(x.open_ratio) = p_open)                  -- open（開けている）/ closed（囲まれている）
+               and (p_water is null or (p_water = 'near' and sp_water(x.water_dist_m) = 'near')       -- near（50m未満）
+                                    or (p_water = 'within150' and sp_water(x.water_dist_m) in ('near','close')))   -- within150（150m未満）
+               and (p_road is null or sp_road(x.road_class, x.road_width_m) = p_road)))  -- narrow（狭い道）/ wide
      and (p_tags is null or cardinality(p_tags) = 0 or exists (
             select 1 from spot_tags st where st.spot_id = s.id and st.tag_code = any (p_tags)))
 ),
@@ -103,19 +127,17 @@ select coalesce(jsonb_agg(x order by x.meters), '[]'::jsonb) from (
 ) x;
 $$;
 
--- 周辺の特徴（real は numeric にしてから境界と比べる＝0.7 ちょうどが 0.69999 にならない。空間特徴 spot_spatial を、公開画面に出す段階の言葉にする。仕様書10章タスクI。2026-10-18 利用者と合意・暫定）
---  境界はここだけに書く（直すときはこの関数と tests/test_spatial.py）。見通し(sight_max_m)は出さない。
---  confidence=low（周囲300m以内の建物が3棟未満）は段階を出さず status='low'（画面は「未判定」）。計算していなければ null。
+-- 周辺の特徴（公開画面に出す言葉）。confidence=low（周囲300m以内の建物が3棟未満）は段階を出さず status='low'（画面は「未判定」）。
+--  計算していなければ null
 create function spatial_view(p_id bigint) returns jsonb language sql stable as $$
 select case when ss.confidence = 'low' then jsonb_build_object('status', 'low')
   else jsonb_build_object('status', 'ok',
-    'open',  case when ss.open_ratio::numeric >= 0.7 then '開けている' when ss.open_ratio::numeric >= 0.35 then 'ふつう' else '囲まれている' end,
-    'built', case when ss.building_cover_100::numeric < 0.15 then '少ない' when ss.building_cover_100::numeric < 0.30 then '中くらい' else '多い' end,
-    'water', case when ss.water_dist_m is null or ss.water_dist_m >= 150 then 'なし'
-                  when ss.water_dist_m < 50 then 'すぐそば' else '近い' end,
-    'water_kind', case when ss.water_dist_m < 150 then ss.water_kind end,
-    'road',  case when ss.road_class is null or ss.road_width_m is null then null
-                  when ss.road_width_m < 5 then '狭い道' when ss.road_width_m >= 6.5 then '広い道' else 'ふつうの道' end)
+    'open',  case sp_open(ss.open_ratio) when 'open' then '開けている' when 'mid' then 'ふつう' else '囲まれている' end,
+    'built', case sp_built(ss.building_cover_100) when 'few' then '少ない' when 'mid' then '中くらい' else '多い' end,
+    'water', case sp_water(ss.water_dist_m) when 'near' then 'すぐそば' when 'close' then '近い' else 'なし' end,
+    'water_kind', case when sp_water(ss.water_dist_m) <> 'none' then ss.water_kind end,
+    'road',  case sp_road(ss.road_class, ss.road_width_m) when 'narrow' then '狭い道' when 'wide' then '広い道'
+                  when 'normal' then 'ふつうの道' end)
   end
   from spot_spatial ss where ss.spot_id = p_id;
 $$;
