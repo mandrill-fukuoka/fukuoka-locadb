@@ -281,3 +281,57 @@ def test_view_low_confidence_has_no_bands(db, temple):
 
 def test_view_never_exposes_sight_range(db, temple):
     assert "sight_max_m" not in json.dumps(view(db), ensure_ascii=False)
+
+
+# =====================================================================
+# 絞り込み検索（search_spots の p_open / p_water / p_road）
+# =====================================================================
+def put(db, name, **cols):
+    sid = db.execute("select id from spots where name = %s", (name,)).fetchone()["id"]
+    base = dict(confidence="ok", open_ratio=0.5, building_cover_100=0.2, water_dist_m=None, water_kind=None,
+                road_class=None, road_width_m=None)
+    base.update(cols)
+    db.execute("delete from spot_spatial where spot_id = %s", (sid,))
+    db.execute("""insert into spot_spatial (spot_id, spatial_version, confidence, open_ratio, building_cover_100,
+                  water_dist_m, water_kind, road_class, road_width_m) values (%s,'t',%s,%s,%s,%s,%s,%s,%s)""",
+               (sid, base["confidence"], base["open_ratio"], base["building_cover_100"], base["water_dist_m"],
+                base["water_kind"], base["road_class"], base["road_width_m"]))
+    return sid
+
+
+def found(db, **args):
+    keys = ", ".join(f"{k} => %s" for k in args)
+    rows = db.execute(f"select search_spots({keys}) r", tuple(args.values())).fetchone()["r"]
+    return {r["name"] for r in rows}
+
+
+def test_search_filters_by_open_water_road(db, tmp_path):
+    w = World(); city(w)
+    w.point(11, LON + 0.01, LAT, amenity="place_of_worship", name="寺B")
+    w.point(12, LON + 0.02, LAT, amenity="place_of_worship", name="寺C")
+    w.point(13, LON + 0.03, LAT, amenity="place_of_worship", name="寺D")
+    w.run(db, tmp_path)
+    put(db, "寺A", open_ratio=0.9, water_dist_m=30, water_kind="river", road_class="residential", road_width_m=3.5)
+    put(db, "寺B", open_ratio=0.2, water_dist_m=100, water_kind="pond", road_class="primary", road_width_m=8)
+    put(db, "寺C", confidence="low", open_ratio=0.9, water_dist_m=10, road_class="residential", road_width_m=3.5)
+    # 寺D は空間特徴が未計算
+    assert found(db, p_open="open") == {"寺A"}                       # 信頼度lowの寺Cは対象外
+    assert found(db, p_open="closed") == {"寺B"}
+    assert found(db, p_water="near") == {"寺A"}                      # 50m未満
+    assert found(db, p_water="within150") == {"寺A", "寺B"}          # 150m未満
+    assert found(db, p_road="narrow") == {"寺A"} and found(db, p_road="wide") == {"寺B"}
+    assert found(db, p_open="open", p_water="near", p_road="narrow") == {"寺A"}    # 重ねると両方満たすもの
+    assert found(db, p_open="closed", p_water="near") == set()
+    assert {"寺A", "寺B", "寺C", "寺D"} <= found(db, p_category="shrine_temple")   # 指定がなければ全部（未計算も）
+
+
+def test_search_boundaries_match_the_view(db, tmp_path):
+    w = World(); city(w); w.run(db, tmp_path)
+    for d, near, within in ((49.9, True, True), (50, False, True), (149.9, False, True), (150, False, False)):
+        put(db, "寺A", water_dist_m=d, water_kind="river")
+        assert (("寺A" in found(db, p_water="near")), ("寺A" in found(db, p_water="within150"))) == (near, within)
+    for v, label in ((0.7, "open"), (0.699, "mid"), (0.349, "closed")):
+        sid = put(db, "寺A", open_ratio=v)
+        got = db.execute("select spot_detail(%s) d", (sid,)).fetchone()["d"]["spatial"]["open"]
+        assert got == {"open": "開けている", "mid": "ふつう", "closed": "囲まれている"}[label]
+        assert ("寺A" in found(db, p_open="open")) == (label == "open")
