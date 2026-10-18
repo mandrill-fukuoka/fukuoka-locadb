@@ -92,3 +92,19 @@ def test_import_requires_user_and_limit(db, two):
     with pytest.raises(psycopg.errors.RaiseException):
         imp(db, [dict(WEB, spot_id=a, value=f"{i}戸") for i in range(201)])
     db.rollback()
+
+
+def test_facts_list_filters_and_excludes_revoked(db, two):
+    a, b = two
+    imp(db, [dict(WEB, spot_id=a), dict(WIKI, spot_id=a), dict(WEB, spot_id=b, value="10戸")])
+    rows = rpc(db, "facts_list()")
+    assert {(r["name"], r["item"], r["value"]) for r in rows} == {("寺A", "規模", "351戸"), ("寺A", "人口", "353人"), ("寺B", "規模", "10戸")}
+    assert all("quote" in r and "source_url" in r for r in rows)
+    assert [r["value"] for r in rpc(db, "facts_list(%s)", "人口")] == ["353人"]
+    assert [r["name"] for r in rpc(db, "facts_list(null, null, %s)", "寺B")] == ["寺B"]
+    assert len(rpc(db, "facts_list(null, null, null, 1, 1)")) == 1                       # ページ送り
+    fid = next(r["id"] for r in rows if r["item"] == "人口")
+    rpc(db, "fact_revoke(%s, %s)", fid, "hirata")
+    assert "人口" not in {r["item"] for r in rpc(db, "facts_list()")}                    # 取り消したものは出ない
+    db.execute("update spots set data_status='archived', archived_reason='manual:test' where id=%s", (b,)); db.commit()
+    assert {r["name"] for r in rpc(db, "facts_list()")} == {"寺A"}                        # 対象外の地点も出ない

@@ -316,3 +316,11 @@ details.practical-edit form{padding:12px 0 0;max-width:520px}
 .checks-summary td:first-child{white-space:nowrap}
 .checks-summary tr.on td{background:var(--sunk)}
 .checks .chip,.check .chip{white-space:normal}
+
+/* 事実カード（タスクH）：項目・値・出典 */
+dl.facts{display:grid;grid-template-columns:max-content 1fr;gap:8px 18px;margin:0;font-size:14px}
+dl.facts dt{color:var(--muted)}
+dl.facts dd{margin:0}
+dl.facts .src{display:block;font-size:12px;color:var(--muted)}
+dl.facts form{display:inline;margin-left:8px}
+.facts-note{font-size:12px;color:var(--muted);margin:8px 0 0}
