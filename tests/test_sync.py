@@ -23,17 +23,68 @@ def temples(w, n, base=10):
 # =====================================================================
 # A. 取得の失敗・不完全なデータ
 # =====================================================================
-def test_A_md5_mismatch_aborts(tmp_path, monkeypatch):
-    """ダウンロードしたファイルが壊れていたら中止（データは使わない）"""
-    class R:
-        def __init__(self, body): self.body = body; self.text = "deadbeef  x.pbf"; self.status_code = 200
-        def raise_for_status(self): pass
-        def iter_content(self, n): yield self.body
-        def __enter__(self): return self
-        def __exit__(self, *a): pass
-    monkeypatch.setattr(osm_source.requests, "get", lambda url, **k: R(b"broken"))
+class _Resp:
+    def __init__(self, body=b"", md5=None, status=200):
+        self.body, self.status_code = body, status
+        self.text = f"{md5 or hashlib.md5(body).hexdigest()}  x.pbf"
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            e = osm_source.requests.HTTPError(f"{self.status_code}")
+            e.response = self
+            raise e
+    def iter_content(self, n): yield self.body
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
+
+
+@pytest.fixture
+def no_wait(monkeypatch):
+    waits = []
+    monkeypatch.setattr(osm_source.time, "sleep", lambda s: waits.append(s))
+    return waits
+
+
+def test_A_md5_mismatch_aborts(tmp_path, monkeypatch, no_wait):
+    """ダウンロードしたファイルが壊れていたら（取り直しても直らなければ）中止。壊れたファイルは残さない"""
+    monkeypatch.setattr(osm_source.requests, "get", lambda url, **k: _Resp(b"broken", md5="deadbeef"))
     with pytest.raises(RuntimeError, match="MD5"):
-        osm_source.download(tmp_path / "x.pbf")
+        osm_source.download(tmp_path / "x.pbf", log=lambda *_: None)
+    assert len(no_wait) == osm_source.DOWNLOAD_ATTEMPTS - 1
+    assert not (tmp_path / "x.pbf").exists()
+
+
+def test_A_download_retries_transient_failure_then_succeeds(tmp_path, monkeypatch, no_wait):
+    calls = {"n": 0}
+    def get(url, **k):
+        if url.endswith(".md5"):
+            return _Resp(b"data")
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise osm_source.requests.ConnectionError("reset")
+        if calls["n"] == 2:
+            return _Resp(b"data", status=503)
+        return _Resp(b"data")
+    monkeypatch.setattr(osm_source.requests, "get", get)
+    info = osm_source.download(tmp_path / "x.pbf", log=lambda *_: None)
+    assert info["attempts"] == 3 and info["bytes"] == 4
+    assert no_wait == list(osm_source.DOWNLOAD_WAIT_S)
+
+
+def test_A_download_does_not_retry_client_error(tmp_path, monkeypatch, no_wait):
+    monkeypatch.setattr(osm_source.requests, "get",
+                        lambda url, **k: _Resp(b"x", status=404) if not url.endswith(".md5") else _Resp(b"x"))
+    with pytest.raises(osm_source.requests.HTTPError):
+        osm_source.download(tmp_path / "x.pbf", log=lambda *_: None)
+    assert no_wait == []
+
+
+def test_A_download_gives_up_after_attempts(tmp_path, monkeypatch, no_wait):
+    def get(url, **k):
+        raise osm_source.requests.Timeout("slow")
+    monkeypatch.setattr(osm_source.requests, "get", get)
+    with pytest.raises(osm_source.requests.Timeout):
+        osm_source.download(tmp_path / "x.pbf", log=lambda *_: None)
+    assert len(no_wait) == osm_source.DOWNLOAD_ATTEMPTS - 1
 
 
 def test_A_corrupt_file_changes_nothing(db, tmp_path):
