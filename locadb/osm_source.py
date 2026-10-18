@@ -13,6 +13,7 @@ import json
 import math
 import re
 import subprocess
+import time
 import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -75,8 +76,11 @@ def norm_name(s: str) -> str:
 # ---------------------------------------------------------------------------
 # 取得
 # ---------------------------------------------------------------------------
-def download(dest: Path, url: str = GEOFABRIK_URL) -> dict:
-    """pbf と公式の MD5 を取得して照合する。一致しなければ例外（その回は中止）"""
+DOWNLOAD_ATTEMPTS = 3          # 一時的な失敗（接続・タイムアウト・5xx・転送の欠け）は、この回数まで取り直す
+DOWNLOAD_WAIT_S = (30, 90)     # 取り直すまでの待ち（秒）。回数-1 個
+
+
+def _download_once(dest: Path, url: str) -> dict:
     md5_text = requests.get(url + ".md5", timeout=60).text.split()[0]
     h = hashlib.md5()
     with requests.get(url, stream=True, timeout=600) as r:
@@ -87,6 +91,32 @@ def download(dest: Path, url: str = GEOFABRIK_URL) -> dict:
     if h.hexdigest() != md5_text:
         raise RuntimeError(f"ダウンロードしたファイルが壊れています（MD5不一致 {h.hexdigest()} != {md5_text}）")
     return {"url": url, "md5": md5_text, "bytes": dest.stat().st_size}
+
+
+def _retryable(e: Exception) -> bool:
+    """取り直してよい失敗か。4xx（URLや権限の誤り）は取り直さない。MD5不一致（転送の欠け）は取り直す"""
+    if isinstance(e, requests.HTTPError):
+        code = getattr(e.response, "status_code", None)
+        return code is None or code >= 500 or code == 429
+    return isinstance(e, (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError,
+                          RuntimeError))
+
+
+def download(dest: Path, url: str = GEOFABRIK_URL, log=print) -> dict:
+    """pbf と公式の MD5 を取得して照合する。一致しなければ例外（その回は中止）。
+    一時的な失敗は最大 DOWNLOAD_ATTEMPTS 回まで取り直す。取り直しても取れなければ例外（既存データは変えない）"""
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            info = _download_once(dest, url)
+            info["attempts"] = attempt
+            return info
+        except Exception as e:  # noqa: BLE001
+            dest.unlink(missing_ok=True)                # 途中までのファイルは使わない
+            if attempt == DOWNLOAD_ATTEMPTS or not _retryable(e):
+                raise
+            wait = DOWNLOAD_WAIT_S[min(attempt - 1, len(DOWNLOAD_WAIT_S) - 1)]
+            log(f"    取得に失敗（{attempt}/{DOWNLOAD_ATTEMPTS} 回目）: {e!r}。{wait}秒後に取り直します")
+            time.sleep(wait)
 
 
 def clip(src: Path, dest: Path) -> None:
