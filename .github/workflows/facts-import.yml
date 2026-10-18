@@ -1,0 +1,32 @@
+# 承認済みの事実（data/facts/*.json）を spot_facts に取り込む（タスクH、DB変更180の後）
+#  Actions →「facts-import」→ Run workflow：dry_run（取り込んでから取り消す）/ apply（取り込む）
+#  弾かれた行が1件でもあれば全体を取り消して止まる。本番への書き込みなので、apply の前に了承を取る
+name: facts-import
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "取り込む JSON"
+        default: data/facts/2026-10-18.json
+      mode:
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+concurrency: { group: database, cancel-in-progress: false }
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "psycopg[binary]>=3.2"
+      - name: 取り込み
+        run: |
+          python tools/facts_import.py "$FILE" $([ "$MODE" = "apply" ] && echo --apply) | tee facts-import.json
+          { echo "モード：$MODE"; echo '```json'; cat facts-import.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FILE: ${{ inputs.file }}
+          MODE: ${{ inputs.mode }}
