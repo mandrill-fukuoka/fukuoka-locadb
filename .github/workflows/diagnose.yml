@@ -48,3 +48,37 @@ jobs:
               print(f"\n同じ地点・同じ出どころで下書きが2件以上：{dup}（0 が正常）")
           PY
         env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      # 空間特徴の分布（段階の境界を決める材料。読み取りのみ）
+      - name: 空間特徴の分布
+        run: |
+          python - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import os, psycopg
+          with psycopg.connect(os.environ["DATABASE_URL"]) as c:
+              if not c.execute("select to_regclass('public.spot_spatial')").fetchone()[0]:
+                  print("spot_spatial がありません"); raise SystemExit
+              print("## 空間特徴の分布（信頼度 ok のみ）\n")
+              q = lambda col: c.execute(f"""select count({col}), percentile_cont(array[.1,.25,.5,.75,.9]) within group (order by {col})
+                                              from spot_spatial where confidence='ok'""").fetchone()
+              for col in ("building_cover_100", "building_count_100", "open_ratio", "sight_max_m", "water_dist_m", "road_width_m"):
+                  n, p = q(col); print(f"- {col}: n={n} 10/25/50/75/90% = " + " / ".join(f"{x:.3g}" for x in p))
+              print("\n### 開放性の刻み別の地点数")
+              for lo, hi in ((0,.2),(.2,.35),(.35,.5),(.5,.7),(.7,.9),(.9,1.01)):
+                  n = c.execute("select count(*) from spot_spatial where confidence='ok' and open_ratio>=%s and open_ratio<%s", (lo, hi)).fetchone()[0]
+                  print(f"- {lo}〜{hi}: {n}")
+              print("\n### 建物面積率の刻み別")
+              for lo, hi in ((0,.05),(.05,.15),(.15,.25),(.25,.35),(.35,1.01)):
+                  n = c.execute("select count(*) from spot_spatial where confidence='ok' and building_cover_100>=%s and building_cover_100<%s", (lo, hi)).fetchone()[0]
+                  print(f"- {lo}〜{hi}: {n}")
+              print("\n### 水辺までの距離の刻み別（種類別）")
+              for lo, hi in ((0,50),(50,100),(100,200),(200,500),(500,1e9)):
+                  rows = c.execute("select water_kind, count(*) from spot_spatial where water_dist_m>=%s and water_dist_m<%s group by 1 order by 1", (lo, hi)).fetchall()
+                  print(f"- {lo}〜{hi}m: " + ", ".join(f"{k}={n}" for k, n in rows))
+              print("\n### 種別ごとの中央値（開放性・建物面積率・水辺m）")
+              for r in c.execute("""select s.category, count(*), round((percentile_cont(.5) within group (order by ss.open_ratio))::numeric,2),
+                                           round((percentile_cont(.5) within group (order by ss.building_cover_100))::numeric,2),
+                                           round((percentile_cont(.5) within group (order by ss.water_dist_m))::numeric)
+                                      from spot_spatial ss join spots s on s.id=ss.spot_id where ss.confidence='ok'
+                                     group by 1 order by 2 desc""").fetchall():
+                  print(f"- {r[0]}: n={r[1]} 開放性{r[2]} 面積率{r[3]} 水辺{r[4]}m")
+          PY
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
