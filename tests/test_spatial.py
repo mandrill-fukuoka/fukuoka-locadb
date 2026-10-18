@@ -223,3 +223,61 @@ def test_dry_run_works_before_the_table_exists(db, tmp_path):
     db.commit()
     st = spatial.dry_run(res["snapshot"].spatial, min_buildings=1)
     assert st["target"] > 0 and "distribution" in st
+
+
+# =====================================================================
+# 公開画面に出す段階（spatial_view。境界は暫定：仕様書10章タスクI）
+# =====================================================================
+def view(db, **cols):
+    base = dict(confidence="ok", open_ratio=0.5, building_cover_100=0.2, water_dist_m=None, water_kind=None,
+                road_class=None, road_width_m=None)
+    base.update(cols)
+    sid = db.execute("select id from spots where name = '寺A'").fetchone()["id"]
+    db.execute("delete from spot_spatial where spot_id = %s", (sid,))
+    db.execute("""insert into spot_spatial (spot_id, spatial_version, confidence, open_ratio, building_cover_100,
+                  water_dist_m, water_kind, road_class, road_width_m)
+                  values (%s,'t',%s,%s,%s,%s,%s,%s,%s)""",
+               (sid, base["confidence"], base["open_ratio"], base["building_cover_100"], base["water_dist_m"],
+                base["water_kind"], base["road_class"], base["road_width_m"]))
+    return db.execute("select spot_detail(%s) d", (sid,)).fetchone()["d"]["spatial"]
+
+
+@pytest.fixture
+def temple(db, tmp_path):
+    w = World(); city(w); w.run(db, tmp_path)
+
+
+def test_view_is_null_before_computation(db, temple):
+    sid = db.execute("select id from spots where name = '寺A'").fetchone()["id"]
+    assert db.execute("select spot_detail(%s) d", (sid,)).fetchone()["d"]["spatial"] is None
+
+
+@pytest.mark.parametrize("v,label", [(0.7, "開けている"), (0.699, "ふつう"), (0.35, "ふつう"), (0.349, "囲まれている")])
+def test_view_open_bands(db, temple, v, label):
+    assert view(db, open_ratio=v)["open"] == label
+
+
+@pytest.mark.parametrize("v,label", [(0.149, "少ない"), (0.15, "中くらい"), (0.299, "中くらい"), (0.30, "多い")])
+def test_view_built_bands(db, temple, v, label):
+    assert view(db, building_cover_100=v)["built"] == label
+
+
+@pytest.mark.parametrize("d,band", [(0, "すぐそば"), (49.9, "すぐそば"), (50, "近い"), (149.9, "近い"), (150, "なし"), (None, "なし")])
+def test_view_water_bands(db, temple, d, band):
+    sp = view(db, water_dist_m=d, water_kind="river" if d is not None else None)
+    assert sp["water"] == band
+    assert (sp["water_kind"] == "river") == (band != "なし")           # 「なし」では種類を出さない
+
+
+@pytest.mark.parametrize("w,label", [(3.5, "狭い道"), (4.99, "狭い道"), (5.0, "ふつうの道"), (6.49, "ふつうの道"), (6.5, "広い道")])
+def test_view_road_bands(db, temple, w, label):
+    assert view(db, road_class="residential", road_width_m=w)["road"] == label
+    assert view(db, road_class=None, road_width_m=None)["road"] is None
+
+
+def test_view_low_confidence_has_no_bands(db, temple):
+    assert view(db, confidence="low") == {"status": "low"}              # 段階は出さず「未判定」
+
+
+def test_view_never_exposes_sight_range(db, temple):
+    assert "sight_max_m" not in json.dumps(view(db), ensure_ascii=False)

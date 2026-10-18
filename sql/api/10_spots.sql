@@ -5,7 +5,7 @@ begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname in (
               'grp_match','search_spots','spots_nearby','spot_detail','review_queue','review_spot',
-              'set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids')
+              'spatial_view','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
@@ -103,6 +103,23 @@ select coalesce(jsonb_agg(x order by x.meters), '[]'::jsonb) from (
 ) x;
 $$;
 
+-- 周辺の特徴（real は numeric にしてから境界と比べる＝0.7 ちょうどが 0.69999 にならない。空間特徴 spot_spatial を、公開画面に出す段階の言葉にする。仕様書10章タスクI。2026-10-18 利用者と合意・暫定）
+--  境界はここだけに書く（直すときはこの関数と tests/test_spatial.py）。見通し(sight_max_m)は出さない。
+--  confidence=low（周囲300m以内の建物が3棟未満）は段階を出さず status='low'（画面は「未判定」）。計算していなければ null。
+create function spatial_view(p_id bigint) returns jsonb language sql stable as $$
+select case when ss.confidence = 'low' then jsonb_build_object('status', 'low')
+  else jsonb_build_object('status', 'ok',
+    'open',  case when ss.open_ratio::numeric >= 0.7 then '開けている' when ss.open_ratio::numeric >= 0.35 then 'ふつう' else '囲まれている' end,
+    'built', case when ss.building_cover_100::numeric < 0.15 then '少ない' when ss.building_cover_100::numeric < 0.30 then '中くらい' else '多い' end,
+    'water', case when ss.water_dist_m is null or ss.water_dist_m >= 150 then 'なし'
+                  when ss.water_dist_m < 50 then 'すぐそば' else '近い' end,
+    'water_kind', case when ss.water_dist_m < 150 then ss.water_kind end,
+    'road',  case when ss.road_class is null or ss.road_width_m is null then null
+                  when ss.road_width_m < 5 then '狭い道' when ss.road_width_m >= 6.5 then '広い道' else 'ふつうの道' end)
+  end
+  from spot_spatial ss where ss.spot_id = p_id;
+$$;
+
 -- 地点の詳細（地点ページ用）
 create function spot_detail(p_id bigint, p_with_history boolean default false)
 returns jsonb language sql stable as $$
@@ -153,6 +170,7 @@ select jsonb_build_object(
   'terrain_src', s.terrain_src, 'terrain_status', s.terrain_status, 'terrain_at', s.terrain_at,
   'slope_len_m', s.slope_len_m, 'slope_grade_pct', s.slope_grade_pct, 'slope_rise_m', s.slope_rise_m,
   'slope_bearing', s.slope_bearing, 'slope_kind', s.slope_kind,
+  'spatial', spatial_view(s.id),
   'summary_by', case when p_with_history then s.summary_by end, 'summary_at', s.summary_at,
   'drafts', case when p_with_history then
      (select coalesce(jsonb_agg(jsonb_build_object('id', n.id, 'source', n.source, 'body', n.body, 'model', n.model,

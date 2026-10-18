@@ -251,6 +251,19 @@ const GROUP_COLOR = [
     'historic' => '#8C6A4F', 'vacant' => '#9C978E', 'slope' => '#8A8A2E',
 ];
 const HIGH_GROUND_M = 10;     // 「高台」：周り（半径150m）の平均より何m以上高いか（タスクF。実データの上位約5%）
+// 周辺の特徴（spatial_view の段階）を1行の言葉にする。段階の境界は sql/api/10_spots.sql にある
+const WATER_KIND_LABEL = ['river' => '川', 'coast' => '海', 'pond' => '池', 'beach' => '砂浜'];
+function spatial_line(array $sp): string {
+    $kind = WATER_KIND_LABEL[$sp['water_kind'] ?? ''] ?? '水辺';
+    $water = match ($sp['water'] ?? 'なし') {
+        'すぐそば' => $kind . 'がすぐそば',
+        '近い' => $kind . 'が近い',
+        default => '150m以内に水辺なし',
+    };
+    $parts = ['開放感 ' . ($sp['open'] ?? ''), '建物 ' . ($sp['built'] ?? ''), $water];
+    if (!empty($sp['road'])) $parts[] = $sp['road'];
+    return implode('・', $parts);
+}
 const BEARING_LABEL = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
 function bearing_label(int $deg): string { return BEARING_LABEL[(int)round(($deg % 360) / 45) % 8]; }
 // 景観グループ名（表示名）→ 色。表示名しか持たないデータ（ルートの地点など）用
