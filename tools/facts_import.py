@@ -7,6 +7,7 @@
 - 1回のトランザクション。弾かれた行（rejected）が1件でもあれば、全体を取り消して終了コード1で止まる
 - 同じ内容がすでに承認済みなら skipped（何度実行しても同じ結果）
 - 承認者は JSON の approved_by。AIは使わない
+- JSON の "revoke"（spot_id・item・value・note）で、一致する承認済みの事実を取り消してから取り込む（値の直し用。同じトランザクション）
 """
 import argparse
 import json
@@ -21,8 +22,18 @@ BATCH = 200
 def run(path, apply=False, url=None):
     doc = json.load(open(path, encoding="utf-8"))
     items, user = doc["items"], doc["approved_by"]
-    total = {"added": 0, "skipped": 0, "rejected": []}
+    total = {"added": 0, "skipped": 0, "rejected": [], "revoked": 0}
     with psycopg.connect(url or os.environ["DATABASE_URL"]) as conn:
+        # 取り消し（JSON の "revoke"：spot_id・item・value が一致する承認済みの事実）。見つからなければ弾く
+        for rv in doc.get("revoke", []):
+            row = conn.execute(
+                "select id from spot_facts where status = 'approved' and spot_id = %s and item = %s and value = %s",
+                (rv["spot_id"], rv["item"], rv["value"])).fetchone()
+            if not row:
+                total["rejected"].append({"revoke": rv, "reason": "取り消す対象が見つからない"})
+                continue
+            conn.execute("select fact_revoke(%s, %s, %s)", (row[0], user, rv.get("note")))
+            total["revoked"] += 1
         for i in range(0, len(items), BATCH):
             r = conn.execute("select facts_import(%s::jsonb, %s)", (json.dumps(items[i:i + BATCH], ensure_ascii=False), user)).fetchone()[0]
             total["added"] += r["added"]; total["skipped"] += r["skipped"]; total["rejected"] += r["rejected"]
