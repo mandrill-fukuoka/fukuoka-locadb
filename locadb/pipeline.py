@@ -1,4 +1,4 @@
-"""一括実行：OSMの取得 → 地点の反映 → 住所 → 地形 → 流れの生成 → AI分類 → 変化リスク監視
+"""一括実行：OSMの取得 → 地点の反映 → 住所 → 地形 → 空間特徴 → 流れの生成 → AI分類 → 変化リスク監視
 
   python -m locadb.pipeline --dry-run                 # 試し：本番を変えずに差分レポートだけ出す
   python -m locadb.pipeline --apply                   # 本番に反映
@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import address, build_clusters, monitor_risk, osm_source, slopes, terrain
+from . import address, build_clusters, monitor_risk, osm_source, slopes, spatial, terrain
 from .categories import RULES_VERSION
 from .db import code_version, connect
 from .sync import MAX_ARCHIVE_RATIO, Sync
@@ -104,14 +104,14 @@ def run_sync(conn, snap_loader, mode: str, allow_large_change: bool = False) -> 
             conn.commit()
             print(report)
             print(f"\n（{'試し実行' if mode == 'dry_run' else '停止'}のため、データは変更していません。記録 #{run_id}）")
-            return {"run_id": run_id, "status": status, "summary": summary, "report": report}
+            return {"run_id": run_id, "status": status, "summary": summary, "report": report, "snapshot": snap}
 
         conn.execute("""update data_runs set status='ok', finished_at=now(), source=%s, counts=%s, summary=%s,
                         report=%s where id=%s""",
                      (json.dumps(src), json.dumps(counts), json.dumps(summary, ensure_ascii=False), report, run_id))
         conn.commit()
         print(report)
-        return {"run_id": run_id, "status": status, "summary": summary, "report": report}
+        return {"run_id": run_id, "status": status, "summary": summary, "report": report, "snapshot": snap}
     except Exception as e:  # noqa: BLE001
         conn.rollback()
         conn.execute("update data_runs set status='failed', finished_at=now(), error=%s where id=%s",
@@ -130,6 +130,7 @@ def main() -> int:
     ap.add_argument("--allow-large-change", action="store_true")
     ap.add_argument("--skip-address", action="store_true")
     ap.add_argument("--skip-terrain", action="store_true", help="地形（標高・高台度・傾き）を省く")
+    ap.add_argument("--skip-spatial", action="store_true", help="空間特徴（建物密度・開放性・水辺距離・道路幅）を省く")
     ap.add_argument("--skip-extras", action="store_true", help="流れの生成・AI分類・変化リスク監視を省く")
     a = ap.parse_args()
     mode = "apply" if a.apply else "dry_run"
@@ -140,6 +141,10 @@ def main() -> int:
     if res["status"] == "stopped":
         return 3
     if mode == "dry_run":
+        if not a.skip_spatial and res["snapshot"].spatial is not None:
+            print("[4c] 空間特徴（試し：書き込みなし。時間と分布だけ）")
+            Path(os.environ.get("SPATIAL_JSON", "spatial.json")).write_text(
+                json.dumps(spatial.dry_run(res["snapshot"].spatial), ensure_ascii=False, indent=1), encoding="utf-8")
         return 0
     run_id = res["run_id"]
     if not a.skip_address:
@@ -148,6 +153,9 @@ def main() -> int:
     if not a.skip_terrain:
         print("[4b] 地形（国土地理院 標高タイル）")
         terrain.run(run_id)
+    if not a.skip_spatial and res["snapshot"].spatial is not None:
+        print("[4c] 空間特徴（建物・水辺・道）")
+        spatial.run(run_id, res["snapshot"].spatial)
     if not a.skip_extras:
         print("[5] 流れの自動生成")
         build_clusters.run_all(run_id)
