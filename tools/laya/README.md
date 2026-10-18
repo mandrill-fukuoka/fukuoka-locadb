@@ -41,4 +41,4 @@ LAYA が書き込めるのは下書き（ai_submit）まで。採用は人が確
 
 ### 承認済みのWeb候補を材料にする（2026-10-18）
 - `build_kw_web.py`：採否=採 の行から `knowledge_web.php`（地点ID => 材料の文）を作る。xlsx／TSVどちらも可。文は引用の項目名と値だけ（言い換えなし）。団地全体の値は「団地全体の」を付ける。使い方：`python3 build_kw_web.py web_candidates_review.xlsx`
-- `knowledge_web.php`：2026-10-18 承認分（5地点・9文）。まだ `batch_knowledge.php` には繋いでいない（繋ぐのは別の確認のあと）。
+- `knowledge_web.php`：2026-10-18 承認分（5地点・9文）。`batch_knowledge.php` が読み込む（送信済みの7地点は触らない。生成はドライラン固定のまま）。

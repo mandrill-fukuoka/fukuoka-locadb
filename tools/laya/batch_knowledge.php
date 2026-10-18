@@ -80,6 +80,8 @@ $knowledge = [
 ],
 ];
 
+$originalIds = array_keys($knowledge);        // 送信済みの7地点（Web由来の材料でも触らない）
+
 // ===== 所在の承認済み材料（knowledge_wiki_v2.php）を追加 =====
 // 既存の材料（上の7地点）は送信済みなので、今回の対象は所在の材料だけの地点にする
 $locKnowledge = require __DIR__ . '/knowledge_wiki.php';
@@ -88,6 +90,18 @@ foreach ($locKnowledge as $id => $lines) {
     if (isset($knowledge[$id])) continue;      // 既存の材料がある地点は触らない
     $knowledge[$id] = $lines;
     $targetIds[] = $id;
+}
+// ===== Web（公式ページ）由来の承認済み材料（knowledge_web.php）を追加 =====
+// 送信済みの地点は触らない。所在の材料がある地点には文を足し、材料のない地点は対象に加える
+$webKnowledge = require __DIR__ . '/knowledge_web.php';
+foreach ($webKnowledge as $id => $lines) {
+    if (in_array($id, $originalIds, true)) continue;
+    if (isset($knowledge[$id])) {
+        $knowledge[$id] = array_values(array_unique(array_merge($knowledge[$id], $lines)));
+    } else {
+        $knowledge[$id] = $lines;
+        $targetIds[] = $id;
+    }
 }
 // 使い方：php batch_knowledge_v2.php [件数]  （例：5 で先頭5件だけ試す。省略で全件）
 $wikiAddr = require __DIR__ . '/wiki_addr.php';
