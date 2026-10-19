@@ -1,0 +1,20 @@
+# 評価用の地点リスト（読み取りのみ）：周辺の特徴の段階・ルールのタグを人が確かめるための xlsx を成果物に出す
+name: eval-sample
+on:
+  workflow_dispatch:
+    inputs:
+      n: { description: "地点数", default: "120" }
+      seed: { description: "乱数の種（同じなら同じ地点）", default: "2026-10-19" }
+concurrency: { group: "eval-sample-${{ github.run_id }}", cancel-in-progress: false }
+jobs:
+  sample:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "psycopg[binary]>=3.2" openpyxl
+      - run: python tools/eval_sample.py --n "${{ inputs.n }}" --seed "${{ inputs.seed }}" --out eval_sample.xlsx
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - uses: actions/upload-artifact@v4
+        with: { name: eval-sample, path: eval_sample.xlsx, retention-days: 30 }
