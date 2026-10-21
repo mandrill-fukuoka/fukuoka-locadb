@@ -105,6 +105,9 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
          (select jsonb_agg(t.name order by t.code) from spot_tags st join tags t on t.code = st.tag_code
            where st.spot_id = g.id and st.origin = 'rule') as rule_tags,                    -- ルールで付けた（推定）。人のタグとは別に出す
          spatial_view(g.id) as spatial,
+         (select jsonb_build_object('url', ph.url, 'author', coalesce(ph.author, ph.shot_by), 'license', ph.license,
+                                    'license_url', ph.license_url, 'source_url', ph.source_url, 'title', ph.title)
+            from spot_photos ph where ph.spot_id = g.id order by ph.id limit 1) as photo,        -- 採用された写真（出典つき）
          exists (select 1 from change_risks rk where rk.spot_id = g.id and rk.risk_type <> 'none') as risk
     from grouped g
    where g.rn = 1
