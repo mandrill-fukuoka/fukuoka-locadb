@@ -380,7 +380,7 @@ function render_route_card(array $r, int $i, array $opt = []): void {
             <div class="cap">
               <span class="grp"><i class="dot" aria-hidden="true"></i><?= h($s['group'] ?? '') ?></span>
               <strong class="name"><?php if (!empty($s['id'])): ?><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h(nm($s['name'])) ?></a><?php else: ?><?= h(nm($s['name'])) ?><?php endif; ?></strong>
-              <span class="flags"><?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?><?php if (($s['data_status'] ?? '') === 'archived'): ?><span class="chip warn">対象外</span><?php endif; ?><?php if (($s['confidence'] ?? '') !== 'field_checked' && !empty(CONF_LABEL[$s['confidence'] ?? ''])): ?><span class="chip dim"><?= h(CONF_LABEL[$s['confidence']]) ?></span><?php endif; ?></span>
+              <span class="flags"><?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?><?php if (($s['data_status'] ?? '') === 'archived'): ?><span class="chip warn">対象外</span><?php endif; ?><?php if (($s['confidence'] ?? '') !== 'field_checked'): ?><span class="chip dim"><?= h(conf_stage($s)) ?></span><?php endif; ?></span>
               <?= summary_html($s, 'span', 'desc') ?>
               <?php if (!empty($s['id'])): ?><span class="links"><a href="spot.php?id=<?= (int)$s['id'] ?>">詳細</a><a href="index.php?near=<?= (int)$s['id'] ?>">周辺の景観</a><a href="#" class="addlist" data-id="<?= (int)$s['id'] ?>">＋リスト</a></span><?php endif; ?>
             </div>

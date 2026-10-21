@@ -123,6 +123,7 @@ create function spots_by_ids(p_ids bigint[]) returns jsonb language sql stable a
 select coalesce(jsonb_agg(x order by x.ord), '[]'::jsonb) from (
   select u.ord, s.id, s.code, s.name, s.area_code, s.address, sc.name as category, sc.landscape_group as grp_code,
          lg.name as grp, s.confidence, s.data_status, s.summary,
+         (select count(*) from spot_facts f where f.spot_id = s.id and f.status = 'approved') as fact_count,
          ST_Y(s.geom::geometry) as lat, ST_X(s.geom::geometry) as lon,
          exists (select 1 from change_risks rk where rk.spot_id = s.id and rk.risk_type <> 'none') as risk
     from unnest(p_ids) with ordinality u(id, ord)
@@ -166,6 +167,7 @@ select jsonb_build_object(
   'position_kind', s.position_kind, 'line_key', s.line_key,
   'line_count', (select count(*) from spots o where o.line_key = s.line_key and o.data_status <> 'archived'),
   'status', s.status, 'confidence', s.confidence, 'data_status', s.data_status, 'review_reason', s.review_reason,
+  'fact_count', (select count(*) from spot_facts f where f.spot_id = s.id and f.status = 'approved'),
   'archived_reason', s.archived_reason, 'origin', s.origin, 'locked', s.locked,
   'era_feel', s.era_feel, 'shoot_scope', s.shoot_scope, 'owner_type', s.owner_type,
   'ffc_registered', s.ffc_registered, 'summary', s.summary, 'updated_at', s.updated_at,
