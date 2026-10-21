@@ -25,7 +25,7 @@ from shapely.strtree import STRtree
 
 from .db import connect, job
 
-SPATIAL_VERSION = "spatial-1"
+SPATIAL_VERSION = "spatial-2"        # spatial-2：名前のない海岸線・川も水辺に数える（2026-10-21）
 R_BUILDING_M = 100.0
 RAY_RANGE_M = 150.0
 N_RAYS = 16

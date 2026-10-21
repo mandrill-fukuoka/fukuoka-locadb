@@ -232,6 +232,13 @@ class _Reader(osmium.SimpleHandler):
         hw = t.get("highway")
         if hw in spatial.ROAD_CLASS_WIDTH and t.get("tunnel") in (None, "no"):
             self.spatial.add_road(LineString([to_m(*c) for c in coords]), hw, t.get("width"), t.get("lanes"))
+        # 水辺までの距離（空間特徴）：名前のない海岸線・川も数える。名前のあるものは下の「線の地点」の流れで足される
+        #  （これまで natural=coastline は名前のあるものしか入らず、那の津など海沿いが「150m以内に水辺なし」になっていた）
+        if not t.get("name"):
+            if t.get("natural") == "coastline":
+                self.spatial.add_water(LineString([to_m(*c) for c in coords]), "coast")
+            elif t.get("waterway") in ("river", "canal") and t.get("tunnel") in (None, "no"):
+                self.spatial.add_water(LineString([to_m(*c) for c in coords]), "river")
         if hw in WALKABLE or (t.get("bridge") and hw):
             self.walk.append(LineString([to_m(*c) for c in coords]))
         road = slopes.road_of(w.id, t, coords)
