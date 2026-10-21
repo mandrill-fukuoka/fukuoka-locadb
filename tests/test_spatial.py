@@ -396,3 +396,21 @@ def test_pipeline_step_records_a_job_run(db, tmp_path):
     assert st["by_tag"].get("wide_open") == 1
     job = db.execute("select stats, error from job_runs where job = 'rule_tags' order by id desc limit 1").fetchone()
     assert job["error"] is None and job["stats"]["added"] >= 1
+
+
+# =====================================================================
+# 一覧の並び順・確認状態の段階（2026-10-21 提案1）
+# =====================================================================
+def test_search_orders_rich_spots_first_and_exposes_fact_count(db, tmp_path):
+    w = World(); city(w)
+    w.point(11, LON + 0.01, LAT, amenity="place_of_worship", name="寺B")
+    w.point(12, LON + 0.02, LAT, amenity="place_of_worship", name="寺C")
+    w.run(db, tmp_path)
+    sid = db.execute("select id from spots where name = '寺C'").fetchone()["id"]
+    db.execute("""insert into spot_facts (spot_id, item, value, source_kind, source_url, approved_by)
+                  values (%s, '管理者・所有者', 'テスト法人', 'web', 'https://example.org/x', 't')""", (sid,))
+    rows = db.execute("select search_spots(p_category => 'shrine_temple') r").fetchone()["r"]
+    names = [r["name"] for r in rows]
+    assert names[0] == "寺C" and rows[0]["fact_count"] == 1          # 事実のある地点が先
+    again = [r["name"] for r in db.execute("select search_spots(p_category => 'shrine_temple') r").fetchone()["r"]]
+    assert names == again                                            # 並びは毎回同じ（ページ送りが安定）
