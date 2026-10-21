@@ -37,6 +37,8 @@ CHECKS = {
     "steps_double":      ("category", INFO, "階段が「路地・階段」と「坂道」の両方にある"),
     "same_name_near":    ("category", INFO, "同じ名前の地点が100m以内にある"),
     "seaside_high":      ("category", WARN, "海辺の種別なのに標高が30m超"),
+    "name_facility":     ("category", INFO, "名前が別の用途の施設に見える（クリニック・営業所・乗馬クラブなど）"),
+    "trunk_road":        ("category", WARN, "幹線道路（国道・県道など）が坂道・駅の種別"),
     "address_missing":   ("address", WARN, "住所が空（陸上の地点）"),
     "address_ward":      ("address", WARN, "住所の区と地点の区が違う"),
     "address_ward_edge": ("address", INFO, "区の境の橋・川などで、住所の区と地点の区が違う"),
@@ -119,6 +121,13 @@ NAME_RULES = [
 WORSHIP_NOT_TEMPLE = re.compile(r"教会|チャーチ|モスク|ジャーミイ|聖堂|Church|church")
 ENGLISH_ONLY = re.compile(r"^[A-Za-z0-9 .,'&()/\-]+$")
 SEASIDE = {"beach", "coast", "fishing_port", "port"}
+# 名前が景観の種別と別の用途に見える（2026-10-21 提案1）。施設の種別に入っていれば問題なし
+FACILITY_NAME = re.compile(r"クリニック|歯科|医院|薬局|保育|幼稚園|乗馬|スクール|フィットネス|美容|消防|警察|交番|"
+                           r"バス(?:営業所|車庫|センター|ターミナル)|営業所$")
+FACILITY_OK = {"hospital", "school", "civic", "commercial_facility", "eatery_street", "new_building",
+               "vacant", "redevelopment_site", "station"}
+# 幹線道路の名前。坂道・駅から外す対象（駅名は「駅」で終わるので当たらない）
+TRUNK_NAME = re.compile(r"^(?:福岡県道|県道|国道|主要地方道)\s*\d+|(?:国道|県道)\d+号|バイパス$|環状線$|国体道路|都市高速|高速\d*号")
 
 
 def check_category(s) -> list[Finding]:
@@ -128,6 +137,10 @@ def check_category(s) -> list[Finding]:
             if rx.search(nm) and not (c & want):
                 out.append(Finding(s["id"], "name_category", f"名前は「{label}」に見えるが種別は「{s['catname']}」"))
                 break
+    if nm and not nm.startswith(UNNAMED) and FACILITY_NAME.search(nm) and not (c & FACILITY_OK):
+        out.append(Finding(s["id"], "name_facility", f"「{nm}」は別の用途に見えるが種別は「{s['catname']}」"))
+    if nm and not nm.endswith("駅") and TRUNK_NAME.search(nm) and c & {"slope_street", "station"}:
+        out.append(Finding(s["id"], "trunk_road", f"「{nm}」は幹線道路に見えるが種別は「{s['catname']}」"))
     if "shrine_temple" in c and WORSHIP_NOT_TEMPLE.search(nm):
         out.append(Finding(s["id"], "worship_not_temple", f"「{nm}」が寺社の種別"))
     if nm and not nm.startswith(UNNAMED) and ENGLISH_ONLY.match(nm) and re.search(r"[A-Za-z]{3}", nm):

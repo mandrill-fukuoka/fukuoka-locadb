@@ -37,6 +37,21 @@ def test_category_rules():
     assert checks(check_category(S(name="地点", category="beach", elevation_m=45.0))) == ["seaside_high"]
 
 
+def test_facility_name_and_trunk_road_rules():
+    # 施設名が景観・産業の種別に入っている
+    assert checks(check_category(S(name="西鉄バス 営業所", category="port", catname="港湾"))) == ["name_facility"]
+    assert checks(check_category(S(name="博多消防団千代分団車庫", category="factory", catname="工場"))) == ["name_facility"]
+    assert checks(check_category(S(name="乗馬クラブ ルヴァード花畑", category="warehouse", catname="倉庫"))) == ["name_facility"]
+    assert checks(check_category(S(name="さくらクリニック", category="hospital", catname="病院"))) == []
+    assert checks(check_category(S(name="三菱倉庫 須崎事務所", category="warehouse", catname="倉庫"))) == []   # 事務所は対象外
+    # 幹線道路が坂道・駅に入っている（駅名は除く）
+    assert checks(check_category(S(name="福岡東環状線", category="slope_street", catname="坂道", shape="line"))) == ["trunk_road"]
+    assert checks(check_category(S(name="県道54号", category="station", catname="駅前"))) == ["trunk_road"]
+    assert checks(check_category(S(name="国体道路", category="station", catname="駅前"))) == ["trunk_road"]
+    assert checks(check_category(S(name="香椎駅", category="station", catname="駅前"))) == []
+    assert checks(check_category(S(name="平尾五丁目の坂道", category="slope_street", catname="坂道", shape="line"))) == []
+
+
 def test_address_rules():
     assert checks(check_address(S())) == []
     assert checks(check_address(S(address="福岡市博多区中洲一丁目"))) == ["address_ward"]
