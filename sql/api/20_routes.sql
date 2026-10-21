@@ -128,6 +128,7 @@ begin
                              'minutes_from_prev', case when w.prev_geom is null then null else
                                 round((ST_Distance(w.geom, w.prev_geom) * 1.3 / v_speed)::numeric, 1) end,
                              'grp_code', w.grp_code, 'confidence', w.confidence, 'summary', w.summary,
+                             'fact_count', (select count(*) from spot_facts f where f.spot_id = w.id and f.status = 'approved'),
                              'address', w.address, 'data_status', w.data_status,
                              'risk', exists (select 1 from change_risks rk where rk.spot_id = w.id and rk.risk_type <> 'none'))
                            order by w.ord)
@@ -186,6 +187,9 @@ declare
   r jsonb; v_id bigint; v_keys text[] := '{}'; n int := 0;
 begin
   for r in select * from jsonb_array_elements(coalesce(p_routes, '[]'::jsonb)) loop
+    -- 流れとして記録するのは、景観が2つ以上で、適合度が 0.5 以上のものだけ（2026-10-21 提案1）
+    continue when (select count(distinct e ->> 'grp_code') from jsonb_array_elements(r -> 'spots') e) < 2
+               or coalesce((r ->> 'match')::numeric, 0) < 0.5;
     n := n + 1;
     exit when n > 3;
     v_id := upsert_route(r, 'search', null);
@@ -209,6 +213,7 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
                    'address', s.address, 'data_status', s.data_status,
                    'lat', ST_Y(s.geom::geometry), 'lon', ST_X(s.geom::geometry),
                    'minutes_from_prev', cs.minutes_from_prev, 'confidence', s.confidence, 'summary', s.summary,
+                   'fact_count', (select count(*) from spot_facts f where f.spot_id = s.id and f.status = 'approved'),
                    'risk', exists (select 1 from change_risks rk where rk.spot_id = s.id and rk.risk_type <> 'none'))
                  order by cs.seq)
             from cluster_spots cs join spots s on s.id = cs.spot_id
@@ -218,6 +223,12 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
     from clusters c
    where c.status <> 'archived'
      and (p_area is null or c.area_code = p_area)
+     -- 検索から蓄積された流れは、景観が2つ以上・適合度 0.5 以上のものだけ出す（保存した流れ・自動生成は対象外）
+     and (c.origin <> 'search' or c.status in ('reviewed','verified') or (
+            coalesce(c.transition_score, 0) >= 0.5
+        and (select count(distinct sc.landscape_group) from cluster_spots cs2
+               join spots s2 on s2.id = cs2.spot_id join spot_categories sc on sc.code = s2.category
+              where cs2.cluster_id = c.id) >= 2))
      and case p_filter
            when 'saved'   then c.status in ('reviewed','verified')
            when 'popular' then c.origin = 'search'
@@ -235,7 +246,7 @@ returns jsonb language sql stable as $$
 select coalesce(jsonb_agg(x), '[]'::jsonb) from (
   select seq, count(*) as times, max(created_at) as last_at
     from search_logs
-   where kind = 'route' and cardinality(seq) > 0
+   where kind = 'route' and cardinality(seq) >= 2
    group by seq
    order by count(*) desc, max(created_at) desc
    limit p_limit

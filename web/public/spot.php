@@ -107,7 +107,7 @@ page_header(nm($s['name']), '');
   <p class="lead">
     <?php if ($s['address']): ?><span><?= h($s['address']) ?></span><?php endif; ?>
     <?php foreach ($s['extra_categories'] ?? [] as $x): ?><span class="chip"><?= h($x) ?></span><?php endforeach; ?>
-    <?php if ($s['confidence'] !== 'field_checked'): ?><span class="chip dim"><?= h(CONF_LABEL[$s['confidence']] ?? '') ?></span><?php else: ?><span class="chip ok">現地確認済み</span><?php endif; ?>
+    <?php if ($s['confidence'] !== 'field_checked'): ?><span class="chip dim"><?= h(conf_stage($s)) ?></span><?php else: ?><span class="chip ok">現地確認済み</span><?php endif; ?>
     <?php if ($s['data_status'] === 'needs_review'): ?><span class="chip warn" title="<?= h($s['review_reason']) ?>">データ要確認</span><?php endif; ?>
     <?php if ($s['data_status'] === 'archived'): ?><span class="chip warn">対象外：<?= h(preg_replace('/^(auto|manual):/', '', (string)$s['archived_reason'])) ?></span><?php endif; ?>
     <?php if (!empty($s['risks'])): ?><span class="chip warn">変化リスク</span><?php endif; ?>

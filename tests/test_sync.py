@@ -443,3 +443,42 @@ def test_D_rules_version_is_stable():
     from locadb import categories
     assert len(categories.RULES_VERSION) == 12
     assert hashlib.sha256(b"x").hexdigest()          # 形だけ（import 確認）
+
+
+def _flow_world(db, tmp_path):
+    w = World()
+    w.point(10, 130.39, 33.585, amenity="place_of_worship", name="寺A")
+    w.point(11, 130.392, 33.586, leisure="park", name="公園B")
+    w.point(12, 130.394, 33.586, leisure="park", name="公園C")
+    w.run(db, tmp_path)
+    return {s["name"]: s for s in spots(db)}
+
+
+def _record(db, sp, a, b, match):
+    spots_json = [{"grp_code": "historic" if x == "寺A" else "green", "minutes_from_prev": None} for x in (a, b)]
+    route = {"route_key": f"{sp[a]['id']}-{sp[b]['id']}", "match": match, "transition_label": "x", "total_minutes": 3,
+             "travel_mode": "walk", "spots": spots_json}
+    db.execute("select record_route_search('s', array['historic','green'], '{}'::jsonb, 'walk', null, null, %s::jsonb, null)",
+               (json.dumps([route]),))
+    db.commit()
+
+
+def test_flows_record_only_multi_landscape_and_good_match(db, tmp_path):
+    """2026-10-21 提案1：景観1つだけ・適合度の低い検索は、流れとして記録しない／おすすめに出さない"""
+    sp = _flow_world(db, tmp_path)
+    _record(db, sp, "公園B", "公園C", 0.9)                  # 景観が1つだけ（green・green）
+    _record(db, sp, "寺A", "公園B", 0.3)                    # 適合度が低い
+    assert db.execute("select count(*) n from clusters").fetchone()["n"] == 0
+    _record(db, sp, "寺A", "公園B", 0.7)                    # 景観2つ・適合度0.7 → 記録する
+    assert db.execute("select count(*) n from clusters").fetchone()["n"] == 1
+    flows = db.execute("select recommended_flows() r").fetchone()["r"]
+    assert len(flows) == 1 and all("fact_count" in s for s in flows[0]["spots"])
+    # すでに溜まっていた弱い流れ（適合度0.3）は、おすすめに出さない。保存した流れは出す
+    key = f"{sp['寺A']['id']}-{sp['公園C']['id']}"
+    db.execute("select upsert_route(%s::jsonb,'search',null)",
+               (json.dumps({"route_key": key, "match": 0.3, "transition_label": "x", "total_minutes": 3,
+                            "travel_mode": "walk", "spots": [{}, {}]}),))
+    db.commit()
+    assert len(db.execute("select recommended_flows() r").fetchone()["r"]) == 1
+    db.execute("update clusters set status='reviewed', saved_by='hirata' where route_key=%s", (key,)); db.commit()
+    assert len(db.execute("select recommended_flows() r").fetchone()["r"]) == 2
