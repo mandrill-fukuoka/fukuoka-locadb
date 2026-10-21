@@ -31,6 +31,22 @@ def lookup(lon: float, lat: float, session=requests) -> str | None:
     return None
 
 
+# 住所が引けない（海・砂浜など）名前のない地点は、近くの目印の名前で「（無名）種別（○○付近）」にする（2026-10-21）
+LANDMARK_CATS = ["station", "park", "shrine_temple", "school", "beach", "fishing_port", "port", "island", "hill",
+                 "heritage", "civic", "bridge_overpass"]
+LANDMARK_RADIUS_M = 1500
+
+
+def landmark_name(conn, spot_id: int) -> str | None:
+    r = conn.execute(
+        """select n.name from spots s
+             join spots n on n.id <> s.id and n.data_status <> 'archived' and n.name not like '（無名）%%'
+                         and n.category = any(%s) and ST_DWithin(n.geom, s.geom, %s)
+            where s.id = %s order by ST_Distance(n.geom, s.geom), n.id limit 1""",
+        (LANDMARK_CATS, LANDMARK_RADIUS_M, spot_id)).fetchone()
+    return r["name"] if r else None
+
+
 def run(run_id: int | None = None, limit: int = 20000) -> dict:
     with connect() as conn, job(conn, "address", run_id) as stats:
         rows = conn.execute(
@@ -42,6 +58,7 @@ def run(run_id: int | None = None, limit: int = 20000) -> dict:
                 order by s.id limit %s""", (limit,)).fetchall()
         ok = ng = 0
         batch = []
+        no_addr = []                       # 住所が引けなかった名前のない地点（目印の名前を付ける）
 
         def flush():
             if batch:
@@ -55,6 +72,8 @@ def run(run_id: int | None = None, limit: int = 20000) -> dict:
             for r, addr in zip(rows, pool.map(lambda r: lookup(r["lon"], r["lat"], sess), rows)):
                 if not addr:
                     ng += 1
+                    if r["name"] == f"（無名）{r['catname']}":
+                        no_addr.append(r)
                     continue
                 town = addr.split("区", 1)[-1] if "区" in addr else addr
                 new_name = None
@@ -65,6 +84,13 @@ def run(run_id: int | None = None, limit: int = 20000) -> dict:
                 if len(batch) >= 200:
                     flush(); print(f"    住所 {ok}/{len(rows)}", flush=True)
         flush()
-        stats.update(target=len(rows), filled=ok, failed=ng)
+        named = 0
+        for r in no_addr:
+            mark = landmark_name(conn, r["id"])
+            if mark:
+                conn.execute("update spots set name = %s where id = %s", (f"（無名）{r['catname']}（{mark}付近）", r["id"]))
+                named += 1
+        conn.commit()
+        stats.update(target=len(rows), filled=ok, failed=ng, landmark_named=named)
         print(f"    住所を入れた地点 {ok}（取得できず {ng}）")
     return stats

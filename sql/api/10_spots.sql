@@ -88,7 +88,11 @@ grouped as (
          row_number() over (w order by (h.confidence in ('desk_checked','field_checked')) desc,
                                        (h.position_kind = 'standpoint') desc, h.id) as rn
     from hits h
-  window w as (partition by coalesce(h.line_key || '|' || h.area_code, h.id::text))
+  -- 線の地点は同じ線ごと。名前のない地点と坂道は、同じ名前・同じ区ごとに代表点1件にまとめて「ほか○か所」（詳細で展開）
+  window w as (partition by coalesce(h.line_key || '|' || h.area_code,
+                                     case when h.unnamed or h.cat = 'slope_street'
+                                          then h.cat || '|' || h.name || '|' || h.area_code end,
+                                     h.id::text))
 )
 select coalesce(jsonb_agg(x), '[]'::jsonb) from (
   select g.id, g.code, g.name, g.area_code, g.address, g.category, g.grp_code, g.grp,
