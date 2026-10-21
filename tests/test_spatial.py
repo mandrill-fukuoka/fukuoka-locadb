@@ -414,3 +414,16 @@ def test_search_orders_rich_spots_first_and_exposes_fact_count(db, tmp_path):
     assert names[0] == "寺C" and rows[0]["fact_count"] == 1          # 事実のある地点が先
     again = [r["name"] for r in db.execute("select search_spots(p_category => 'shrine_temple') r").fetchone()["r"]]
     assert names == again                                            # 並びは毎回同じ（ページ送りが安定）
+
+
+def test_unnamed_coastline_and_river_count_as_water(db, tmp_path):
+    """名前のない海岸線（natural=coastline）も水辺に数える。那の津などの海沿いが「水辺なし」にならないように"""
+    w = World(); city(w)
+    # 寺Aの約55m南を東西に走る、名前のない海岸線
+    w.line(501, [(LON - 0.002, LAT - 0.0005), (LON + 0.004, LAT - 0.0005)], natural="coastline")
+    res = w.run(db, tmp_path)
+    assert res["snapshot"].spatial.counts()["water"] >= 2
+    spatial.run(res["run_id"], res["snapshot"].spatial, min_buildings=1)
+    temple = [s for s in spots(db, "category = 'shrine_temple'")][0]
+    r = rows(db)[temple["id"]]
+    assert r["water_kind"] == "coast" and r["water_dist_m"] < 100        # 川（200m超）より海岸線が近い
