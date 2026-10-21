@@ -136,6 +136,10 @@ page_header('場所を探す', 'index.php');
             <?php if (!empty($s['tags'])): ?><div class="small"><?php foreach ($s['tags'] as $t): ?><span class="chip"><?= h($t) ?></span><?php endforeach; ?></div><?php endif; ?>
             <?php if (!empty($s['rule_tags'])): ?><div class="small"><?php foreach ($s['rule_tags'] as $t): ?><span class="chip dim"><?= h($t) ?>（推定）</span><?php endforeach; ?></div><?php endif; ?>
             <?php if (!empty($s['spatial']) && ($s['spatial']['status'] ?? '') === 'ok'): ?><div class="small muted">周辺の特徴（推定）：<?= h(spatial_line($s['spatial'])) ?></div><?php endif; ?>
+            <?php if (!empty($s['photo']['url'])): ?>
+              <figure class="cardphoto"><a href="spot.php?id=<?= (int)$s['id'] ?>"><img src="<?= h($s['photo']['url']) ?>" alt="<?= h(nm($s['name'])) ?>" loading="lazy" referrerpolicy="no-referrer"></a>
+                <figcaption class="small muted"><?= photo_credit_html($s['photo']) ?></figcaption></figure>
+            <?php endif; ?>
             <?= summary_html($s, 'div', 'small muted') ?>
             <div class="small actions">
               <a href="#ovmap" class="showmap" data-n="<?= $i + 1 ?>">全体地図で表示</a>

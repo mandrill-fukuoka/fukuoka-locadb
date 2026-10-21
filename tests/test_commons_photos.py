@@ -72,6 +72,8 @@ def test_collect_apply_decide_and_resume(db, tmp_path):
     assert db.execute("select photo_decide(%s,'adopt','hirata') r", (cand["id"],)).fetchone()["r"]["ok"]
     ph = db.execute("select spot_detail(%s) r", (by["警固神社"]["id"],)).fetchone()["r"]["photos"]
     assert len(ph) == 1 and ph[0]["author"] == "山田 太郎" and ph[0]["license"] == "CC BY-SA 4.0" and ph[0]["source_url"].startswith("https://")
+    row = db.execute("select search_spots(p_q => '警固神社') r").fetchone()["r"][0]       # 一覧にも出典つきで出る
+    assert row["photo"]["author"] == "山田 太郎" and row["photo"]["license"] == "CC BY-SA 4.0"
     # 候補に戻すと写真も外れる／不採用
     db.execute("select photo_decide(%s,'reset','hirata')", (cand["id"],))
     assert db.execute("select spot_detail(%s) r", (by["警固神社"]["id"],)).fetchone()["r"]["photos"] == []

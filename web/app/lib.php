@@ -196,6 +196,22 @@ function conf_stage(array $s): string {
     if ((int)($s['fact_count'] ?? 0) > 0) return '事実あり';
     return $c === 'ai_estimated' ? 'AI推定' : '機械取得のみ';
 }
+// 写真の出典表示（作者・ライセンス・出典ページ。Wikimedia Commons の再利用の決まり：作者表示とライセンスへのリンク）
+function photo_credit_html(array $p): string {
+    $by = trim((string)($p['author'] ?? $p['by'] ?? ''));
+    $lic = (string)($p['license'] ?? '');
+    $out = '写真：' . ($by !== '' ? h($by) : '作者不明');
+    if ($lic !== '' && $lic !== 'own') {
+        $lu = (string)($p['license_url'] ?? '');
+        $out .= '・' . ($lu !== '' && strpos($lu, 'https://') === 0
+            ? '<a href="' . h($lu) . '" target="_blank" rel="noopener">' . h($lic) . '</a>' : h($lic));
+    }
+    $src = (string)($p['source_url'] ?? '');
+    if ($src !== '' && strpos($src, 'https://') === 0) {
+        $out .= '・<a href="' . h($src) . '" target="_blank" rel="noopener">Wikimedia Commons</a>';
+    }
+    return $out;
+}
 const RISK_LABEL = ['redevelopment' => '再開発', 'demolition' => '解体', 'closure' => '閉店・閉館',
                     'use_change' => '用途変更', 'none' => 'なし'];
 const HISTORY_LABEL = ['created' => '新規登録', 'moved' => '位置の更新', 'renamed' => '名前の更新', 'recategorized' => '種別の更新',
