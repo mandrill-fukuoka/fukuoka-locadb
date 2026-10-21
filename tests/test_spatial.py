@@ -427,3 +427,28 @@ def test_unnamed_coastline_and_river_count_as_water(db, tmp_path):
     temple = [s for s in spots(db, "category = 'shrine_temple'")][0]
     r = rows(db)[temple["id"]]
     assert r["water_kind"] == "coast" and r["water_dist_m"] < 100        # 川（200m超）より海岸線が近い
+
+
+# =====================================================================
+# 名前のない地点：近くの目印で名付ける／一覧では同名をまとめる（2026-10-21 提案1）
+# =====================================================================
+def test_unnamed_spot_without_address_is_named_after_a_landmark(db, tmp_path, monkeypatch):
+    from locadb import address
+    w = World()
+    w.point(20, LON, LAT, railway="station", name="和白駅", public_transport="station")
+    w.point(21, LON + 0.004, LAT, natural="beach")                       # 名前のない砂浜（約370m東）
+    w.run(db, tmp_path)
+    monkeypatch.setattr(address, "lookup", lambda lon, lat, session=None: None)      # 海辺：住所が引けない
+    st = address.run()
+    assert st["landmark_named"] == 1
+    names = {r["name"] for r in db.execute("select name from spots where name like '（無名）%'")}
+    assert any("和白駅付近" in n for n in names), names
+
+
+def test_search_groups_unnamed_and_slopes_of_the_same_name(db, tmp_path):
+    w = World(); city(w)
+    for i in range(3):
+        w.point(30 + i, LON + 0.01 + 0.0005 * i, LAT, natural="beach")     # 名前のない砂浜3か所（同じ名前・同じ区）
+    w.run(db, tmp_path)
+    rows = db.execute("select search_spots(p_category => 'beach') r").fetchone()["r"]
+    assert len(rows) == 1 and rows[0]["others"] == 2                        # 代表点1件＋「ほか2か所」
