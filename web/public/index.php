@@ -129,7 +129,7 @@ page_header('場所を探す', 'index.php');
               <span class="muted"><?= dot($s['grp_code'] ?? '') ?><?= h($s['category']) ?>・<?= h($s['address'] ?: (AREA_LABEL[$s['area_code']] ?? '')) ?></span>
               <?php if (($s['data_status'] ?? '') === 'needs_review'): ?><span class="chip warn">データ要確認</span><?php endif; ?>
               <?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?>
-              <?php if ($s['confidence'] !== 'field_checked'): ?><span class="chip dim"><?= h(CONF_LABEL[$s['confidence']] ?? '') ?></span><?php endif; ?>
+              <?php if ($s['confidence'] !== 'field_checked'): ?><span class="chip dim"><?= h(conf_stage($s)) ?></span><?php endif; ?>
               <?php if (!empty($s['ffc_registered'])): ?><span class="chip">FFC登録</span><?php endif; ?>
               <?php if (!empty($s['others'])): ?><span class="chip">ほか<?= (int)$s['others'] ?>か所</span><?php endif; ?>
             </div>

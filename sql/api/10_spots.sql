@@ -60,7 +60,8 @@ with hits as (
          sc.landscape_group as grp_code, lg.name as grp, s.era_feel, s.shoot_scope, s.status, s.confidence,
          s.data_status, s.summary, s.ffc_registered, s.geom, s.line_key, s.position_kind,
          s.relief_m, s.slope_grade_pct, s.slope_rise_m,
-         (s.name like '（無名）%') as unnamed
+         (s.name like '（無名）%') as unnamed,
+         (select count(*) from spot_facts f where f.spot_id = s.id and f.status = 'approved') as fact_count
     from spots s
     join spot_categories sc on sc.code = s.category
     join landscape_groups lg on lg.code = sc.landscape_group
@@ -93,7 +94,7 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
   select g.id, g.code, g.name, g.area_code, g.address, g.category, g.grp_code, g.grp,
          g.era_feel, g.shoot_scope, g.status, g.confidence, g.data_status, g.summary, g.ffc_registered,
          g.position_kind, ST_Y(g.geom::geometry) as lat, ST_X(g.geom::geometry) as lon,
-         g.relief_m, g.slope_grade_pct, g.slope_rise_m,
+         g.relief_m, g.slope_grade_pct, g.slope_rise_m, g.fact_count,
          g.same_line_count - 1 as others,
          (select jsonb_agg(t.name order by st.score desc) from spot_tags st join tags t on t.code = st.tag_code
            where st.spot_id = g.id and st.score >= 0.5 and st.origin = 'human') as tags,   -- 公開の検索結果は人のタグだけ
@@ -107,7 +108,8 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
             case when p_q is null then 0 else similarity(g.name, p_q) end desc,
             case when p_relief_min is null then 0 else g.relief_m end desc,
             (g.confidence in ('desk_checked','field_checked')) desc,
-            g.code
+            (g.fact_count > 0 or g.summary is not null) desc,     -- 事実・説明文のある地点を先に
+            md5(g.code)                                           -- 区・種類が偏らないよう散らす（毎回同じ順＝ページ送りは安定）
    offset p_offset limit p_limit
 ) x;
 $$;

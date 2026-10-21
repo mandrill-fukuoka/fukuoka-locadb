@@ -188,6 +188,14 @@ const TERRAIN_SRC_LABEL = ['dem5a' => '国土地理院 5mメッシュ・レー�
                            'dem10b' => '国土地理院 10mメッシュ'];
 const CONF_LABEL = ['unverified' => '未確認', 'ai_estimated' => 'AI推定', 'desk_checked' => '資料確認済み',
                     'field_checked' => '現地確認済み'];
+// 確認状態の段階（一覧・流れ・地点ページ共通）：現地確認済み／資料確認済み／事実あり／機械取得のみ
+function conf_stage(array $s): string {
+    $c = (string)($s['confidence'] ?? '');
+    if ($c === 'field_checked') return '現地確認済み';
+    if ($c === 'desk_checked') return '資料確認済み';
+    if ((int)($s['fact_count'] ?? 0) > 0) return '事実あり';
+    return $c === 'ai_estimated' ? 'AI推定' : '機械取得のみ';
+}
 const RISK_LABEL = ['redevelopment' => '再開発', 'demolition' => '解体', 'closure' => '閉店・閉館',
                     'use_change' => '用途変更', 'none' => 'なし'];
 const HISTORY_LABEL = ['created' => '新規登録', 'moved' => '位置の更新', 'renamed' => '名前の更新', 'recategorized' => '種別の更新',
