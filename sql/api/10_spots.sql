@@ -186,7 +186,9 @@ select jsonb_build_object(
                                                           'at', r.detected_at) order by r.detected_at desc), '[]')
               from change_risks r where r.spot_id = s.id and r.risk_type <> 'none'),
   'practical', (select to_jsonb(p) - 'spot_id' from spot_practicals p where p.spot_id = s.id),
-  'photos', (select coalesce(jsonb_agg(jsonb_build_object('url', ph.url, 'shot_at', ph.shot_at, 'by', ph.shot_by)), '[]')
+  'photos', (select coalesce(jsonb_agg(jsonb_build_object('url', ph.url, 'shot_at', ph.shot_at, 'by', ph.shot_by,
+                                                          'author', ph.author, 'license', ph.license, 'license_url', ph.license_url,
+                                                          'title', ph.title, 'source_url', ph.source_url) order by ph.id), '[]')
                from spot_photos ph where ph.spot_id = s.id),
   'sources', (select coalesce(jsonb_agg(jsonb_build_object('kind', so.kind, 'title', so.title, 'url', so.url,
                                                             'note', so.note, 'at', so.retrieved_at) order by so.retrieved_at desc), '[]')

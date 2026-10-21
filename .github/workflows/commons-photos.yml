@@ -1,0 +1,38 @@
+# 写真候補の収集：Wikimedia Commons の位置情報つき写真を地点ごとの「候補」として集める（AIなし・費用ゼロ）
+#  - dry_run：読み取りのみ。候補の一覧（candidates.csv）を成果物に出すだけ
+#  - apply：候補を spot_photo_candidates に保存（公開はしない。確認画面で人が採用すると地点ページに出る）
+#  外部への取得は1秒以上の間隔で直列。limit 件ずつ進める（探した地点は記録され、次回は続きから）
+name: commons-photos
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run（読み取りのみ）/ apply（候補を保存）"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+      limit:
+        description: "今回探す地点の数（1地点あたり約1秒）"
+        default: "200"
+concurrency:
+  group: ${{ inputs.mode == 'apply' && 'database' || format('commons-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  photos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 収集
+        run: |
+          python -m locadb.commons_photos --${MODE//_/-} --limit "${LIMIT}" --out commons-out | tee commons-out.log
+          { echo '```json'; tail -1 commons-out.log; echo '```'; echo "モード：$MODE"; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODE: ${{ inputs.mode }}
+          LIMIT: ${{ inputs.limit }}
+      - uses: actions/upload-artifact@v4
+        with: { name: commons-candidates, path: commons-out/, retention-days: 30 }
