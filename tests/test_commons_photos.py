@@ -79,3 +79,30 @@ def test_collect_apply_decide_and_resume(db, tmp_path):
     assert db.execute("select spot_detail(%s) r", (by["警固神社"]["id"],)).fetchone()["r"]["photos"] == []
     db.execute("select photo_decide(%s,'reject','hirata')", (cand["id"],))
     assert db.execute("select photos_counts() r").fetchone()["r"] == {"candidate": 0, "adopted": 0, "rejected": 1, "spots": 0}
+
+
+def test_photo_state_and_filter(db, tmp_path):
+    """写真の状態：todo（未探索）→ none（探索済み・候補なし）→ cand（候補あり）→ has（採用）。絞り込みと表示に使う"""
+    w = World()
+    w.point(10, 130.39, 33.585, amenity="place_of_worship", name="警固神社")
+    w.point(11, 130.40, 33.590, amenity="place_of_worship", name="寺B")
+    w.run(db, tmp_path)
+    by = {s["name"]: s for s in spots(db)}
+    a, b = by["警固神社"], by["寺B"]
+    state = lambda sp: db.execute("select photo_state(%s,%s,false) r", (sp["id"], sp["category"])).fetchone()["r"]
+    assert state(a) == "todo" and state(b) == "todo"
+    assert db.execute("select photo_state(%s,'barber',false) r", (a["id"],)).fetchone()["r"] == "na"        # 対象外の種別
+    assert db.execute("select photo_state(%s,%s,true) r", (a["id"], a["category"])).fetchone()["r"] == "na"  # 無名は対象外
+    db.execute("select 1")
+    db.execute("insert into spot_photo_search (spot_id, found) values (%s,0),(%s,1)", (a["id"], b["id"]))
+    db.execute("""insert into spot_photo_candidates (spot_id, file_title, page_url, image_url, author, license)
+                  values (%s,'File:x.jpg','https://c/x','https://c/x.jpg','作者','CC BY 4.0')""", (b["id"],))
+    db.commit()
+    assert state(a) == "none" and state(b) == "cand"
+    got = lambda st: {r["name"] for r in db.execute("select search_spots(p_photo => %s) r", (st,)).fetchone()["r"]}
+    assert got("none") == {"警固神社"} and got("cand") == {"寺B"} and got("todo") == set() and got("has") == set()
+    assert {r["name"]: r["photo_state"] for r in db.execute("select search_spots() r").fetchone()["r"]} == {"警固神社": "none", "寺B": "cand"}
+    cid = db.execute("select id from spot_photo_candidates where spot_id=%s", (b["id"],)).fetchone()["id"]
+    db.execute("select photo_decide(%s,'adopt','hirata')", (cid,))
+    assert state(b) == "has" and got("has") == {"寺B"}
+    assert db.execute("select spot_detail(%s) r", (b["id"],)).fetchone()["r"]["photo_state"] == "has"
