@@ -118,12 +118,6 @@ page_header(nm($s['name']), '');
 
   <div class="spot-grid">
     <div class="spot-main">
-      <?php foreach (array_slice($s['photos'] ?? [], 0, 3) as $ph): if (empty($ph['url'])) continue; ?>
-        <figure class="spotphoto">
-          <img src="<?= h($ph['url']) ?>" alt="<?= h(nm($s['name'])) ?>" loading="lazy" referrerpolicy="no-referrer">
-          <figcaption class="small muted"><?= photo_credit_html($ph) ?></figcaption>
-        </figure>
-      <?php endforeach; ?>
       <?php if ($embedKey): ?>
         <iframe class="map spotmap" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen
           src="<?= h('https://www.google.com/maps/embed/v1/view?' . http_build_query(['key' => $embedKey, 'center' => "$lat,$lon", 'zoom' => 17, 'maptype' => 'roadmap', 'language' => 'ja', 'region' => 'JP'])) ?>"></iframe>
@@ -262,6 +256,15 @@ page_header(nm($s['name']), '');
     </div>
 
     <aside class="spot-side">
+      <?php $phs = array_values(array_filter(array_slice($s['photos'] ?? [], 0, 3), function ($ph) { return !empty($ph['url']); })); ?>
+      <?php if ($phs): ?><section class="block spotphotos">
+        <?php foreach ($phs as $ph): ?>
+          <figure class="spotphoto">
+            <img src="<?= h($ph['url']) ?>" alt="<?= h(nm($s['name'])) ?>" loading="lazy" referrerpolicy="no-referrer">
+            <figcaption class="small muted"><?= photo_credit_html($ph) ?></figcaption>
+          </figure>
+        <?php endforeach; ?>
+      </section><?php endif; ?>
       <section class="block">
         <h2>周辺の景観（600m）</h2>
         <?php if (!$nearby): ?><p class="muted small">周辺に登録地点がありません。</p><?php else: ?>
