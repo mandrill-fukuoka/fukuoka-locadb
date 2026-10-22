@@ -15,7 +15,7 @@ jobs:
         run: |
           python - <<'PY' | tee "$GITHUB_STEP_SUMMARY"
           from locadb.db import connect
-          db = connect()
+          cm = connect(); db = cm.__enter__()
           q = lambda s: db.execute(s).fetchall()
           print("おすすめ度の件数:", db.execute("select photos_suggest_counts() r").fetchone()["r"])
           print("関数:", [r["proname"] + "(" + r["args"] + ")" for r in q("select p.proname, pg_get_function_arguments(p.oid) args from pg_proc p where proname in ('photo_decide_bulk','photo_decide','photo_candidates_list')")])
