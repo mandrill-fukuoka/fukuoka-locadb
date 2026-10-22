@@ -1,0 +1,40 @@
+# 層1の外部データの取り込み：did（国土数値情報 人口集中地区・福岡県）／ tide（気象庁 潮位表 博多）
+#  dry_run は読み取りのみ。apply は did_areas / tide_daily を入れ替える（二度実行しても同じ結果）
+name: layer1-import
+on:
+  workflow_dispatch:
+    inputs:
+      what:
+        type: choice
+        options: [did, tide]
+        default: tide
+      mode:
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+      years:
+        description: "tide の年（カンマ区切り）"
+        default: "2026,2027"
+concurrency:
+  group: ${{ inputs.mode == 'apply' && 'database' || format('layer1-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt pyshp
+      - name: 取り込み
+        shell: bash
+        run: |
+          python -m tools.layer1_import "$WHAT" ${MODE_FLAG} --years "$YEARS" | tee import.log
+          { echo '```json'; tail -1 import.log; echo '```'; echo "$WHAT / $MODE"; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          WHAT: ${{ inputs.what }}
+          MODE: ${{ inputs.mode }}
+          MODE_FLAG: ${{ inputs.mode == 'dry_run' && '--dry-run' || '' }}
+          YEARS: ${{ inputs.years }}
