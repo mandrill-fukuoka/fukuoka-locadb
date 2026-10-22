@@ -1,10 +1,10 @@
 <?php
-// 地点の確認（ログイン必須）：要確認・未確認・対象外・重複の疑い・説明文の下書き・自動チェック・事実カード・写真候補
+// 地点の確認（ログイン必須）：要確認・未確認・対象外・重複の疑い・説明文の下書き・自動チェック・事実カード・写真候補・追加候補
 require __DIR__ . '/bootstrap.php';
 require_login();
 
 $queue  = $_GET['queue'] ?? 'review';
-if (!in_array($queue, ['review', 'unreviewed', 'manual', 'drafts', 'checks', 'facts', 'photos', 'archived', 'all', 'dups'], true)) $queue = 'review';
+if (!in_array($queue, ['review', 'unreviewed', 'manual', 'drafts', 'checks', 'facts', 'photos', 'additions', 'archived', 'all', 'dups'], true)) $queue = 'review';
 $area   = $_GET['area'] ?? '';
 $status = $_GET['status'] ?? '';
 $q      = trim($_GET['q'] ?? '');
@@ -32,6 +32,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $r = sb_rpc('photo_decide', ['p_id' => (int)$_POST['cand_id'], 'p_decision' => $_POST['decision'], 'p_user' => current_user()]);
             if (!empty($r['ok'])) {
                 $msg = '「' . ($_POST['name'] ?? '') . '」の写真を' . ['adopt' => '採用しました（地点ページに出ます）', 'reject' => '不採用にしました', 'reset' => '候補に戻しました'][$_POST['decision']];
+            } else { $error = $r['reason'] ?? '保存できませんでした'; }
+        } elseif (($_POST['action'] ?? '') === 'addition_decide' && in_array($_POST['decision'] ?? '', ['adopt', 'reject', 'reset'], true)) {
+            // 追加候補の採否（採用すると手入力の地点ができる。名前・種別は人が確かめた値。決めるのは人だけ）
+            $r = sb_rpc('addition_decide', ['p_id' => (int)$_POST['add_id'], 'p_decision' => $_POST['decision'], 'p_user' => current_user(),
+                                            'p_name' => trim((string)($_POST['new_name'] ?? '')) ?: null,
+                                            'p_category' => trim((string)($_POST['new_category'] ?? '')) ?: null]);
+            if (!empty($r['ok'])) {
+                $msg = ['adopt' => '「' . trim((string)($_POST['new_name'] ?? '')) . '」を地点として追加しました（' . ($r['code'] ?? '') . '。確度は未確認。地点の画面で住所・説明などを直せます）',
+                        'reject' => '不採用にしました', 'reset' => '候補に戻しました'][$_POST['decision']];
             } else { $error = $r['reason'] ?? '保存できませんでした'; }
         } elseif (($_POST['action'] ?? '') === 'fact_revoke') {
             // 事実カードの取り消し（行は残る。公開の画面から消える）
@@ -70,6 +79,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $rows = []; $dups = []; $tags = []; $drafts = []; $checks = []; $ccount = ['items' => [], 'last_run' => null];
 $facts = []; $fcount = ['items' => [], 'spots' => 0];
 $photos = []; $pcount = ['candidate' => 0, 'adopted' => 0, 'rejected' => 0, 'spots' => 0];
+$additions = []; $acount = ['candidate' => 0, 'adopted' => 0, 'rejected' => 0, 'wikipedia' => 0, 'commons' => 0]; $addCats = [];
+$asrc = in_array($_GET['asrc'] ?? '', ['wikipedia', 'commons'], true) ? $_GET['asrc'] : '';
 $pstatus = in_array($_GET['pstatus'] ?? '', ['candidate', 'adopted', 'rejected'], true) ? $_GET['pstatus'] : 'candidate';
 try {
     if ($queue === 'drafts') {
@@ -87,6 +98,10 @@ try {
     } elseif ($queue === 'photos') {
         $pcount = sb_rpc('photos_counts') ?? $pcount;
         $photos = sb_rpc('photo_candidates_list', ['p_status' => $pstatus, 'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
+    } elseif ($queue === 'additions') {
+        $acount = sb_rpc('additions_counts') ?? $acount;
+        $additions = sb_rpc('additions_list', ['p_status' => $pstatus, 'p_source' => $asrc ?: null, 'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
+        $addCats = sb_get('spot_categories?select=code,name&order=priority,code') ?? [];
     } elseif ($queue === 'dups') {
         $dups = sb_rpc('duplicate_candidates', ['p_limit' => 100, 'p_meters' => 150]) ?? [];
     } else {
@@ -99,9 +114,9 @@ try {
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
 $qs = fn(array $o) => '?' . http_build_query(array_merge(['queue' => $queue, 'area' => $area, 'status' => $status, 'q' => $q,
-                                                          'target' => $target, 'check' => $check, 'flag' => $flag, 'item' => $item, 'pstatus' => $pstatus], $o));
+                                                          'target' => $target, 'check' => $check, 'flag' => $flag, 'item' => $item, 'pstatus' => $pstatus, 'asrc' => $asrc], $o));
 $tabs = ['review' => '要確認', 'unreviewed' => '未確認', 'manual' => '手入力・人が直した', 'drafts' => '説明文の下書き',
-         'checks' => '自動チェック', 'facts' => '事実カード', 'photos' => '写真候補', 'dups' => '重複の疑い', 'archived' => '対象外', 'all' => 'すべて'];
+         'checks' => '自動チェック', 'facts' => '事実カード', 'photos' => '写真候補', 'additions' => '追加候補', 'dups' => '重複の疑い', 'archived' => '対象外', 'all' => 'すべて'];
 $TARGET_LABEL = ['category' => '種別', 'address' => '住所', 'summary' => '説明文'];
 page_header('地点の確認', 'spots.php');
 ?>
@@ -111,7 +126,7 @@ page_header('地点の確認', 'spots.php');
   <nav class="tabs">
     <?php foreach ($tabs as $k => $v): ?><a href="<?= h($qs(['queue' => $k, 'p' => 0, 'target' => '', 'check' => '', 'flag' => '', 'item' => ''])) ?>" class="<?= $queue === $k ? 'on' : '' ?>"><?= $v ?></a><?php endforeach; ?>
   </nav>
-  <?php if ($queue !== 'dups'): ?>
+  <?php if (!in_array($queue, ['dups', 'additions'], true)): ?>
   <form class="row filters" method="get">
     <input type="hidden" name="queue" value="<?= h($queue) ?>">
     <label>エリア<select name="area"><option value="">すべて</option>
@@ -272,6 +287,57 @@ page_header('地点の確認', 'spots.php');
   <nav class="pager">
     <?php if ($page > 0): ?><a href="<?= h($qs(['p' => $page - 1])) ?>">← 前へ</a><?php endif; ?>
     <?php if (count($facts) === $per): ?><a href="<?= h($qs(['p' => $page + 1])) ?>">次へ →</a><?php endif; ?>
+  </nav>
+<?php elseif ($queue === 'additions'): ?>
+  <section class="card">
+    <p class="small muted">DBにまだない場所を、日本語Wikipediaの座標つき記事と、Wikimedia Commons の写真が集まる場所から自動で集めた候補です（AIは使っていません）。
+      「地点として追加」を押すと、名前・種別を確かめた値で手入力の地点ができます（確度は「未確認」。撮影の可否などは書きません）。位置の近くに既存の地点がないか、「最寄りの地点」を見てから決めてください。
+      Wikipedia 由来は記事名・座標・記事へのリンクだけを使います。Commons 由来は名前が付いていないので、地図と写真の例を見て人が名前を付けます。</p>
+    <nav class="tabs">
+      <?php foreach (['candidate' => '候補', 'adopted' => '採用済み', 'rejected' => '不採用'] as $k => $v): ?>
+        <a href="<?= h($qs(['pstatus' => $k, 'p' => 0])) ?>" class="<?= $pstatus === $k ? 'on' : '' ?>"><?= $v ?>（<?= number_format((int)($acount[$k] ?? 0)) ?>）</a>
+      <?php endforeach; ?>
+    </nav>
+    <nav class="tabs">
+      <?php foreach ([''  => 'すべて', 'wikipedia' => 'Wikipedia 由来', 'commons' => 'Commons 由来（写真の多い場所）'] as $k => $v): ?>
+        <a href="<?= h($qs(['asrc' => $k, 'p' => 0])) ?>" class="<?= $asrc === $k ? 'on' : '' ?>"><?= $v ?><?= $k !== '' && $pstatus === 'candidate' ? '（' . number_format((int)($acount[$k] ?? 0)) . '）' : '' ?></a>
+      <?php endforeach; ?>
+    </nav>
+  </section>
+  <?php foreach ($additions as $c): ?>
+    <article class="card check">
+      <h3><?= h($c['name']) ?> <span class="muted small"><?= $c['source'] === 'wikipedia' ? 'Wikipedia 由来' : 'Commons 由来' ?>・<?= h($c['area_name'] ?? '') ?></span></h3>
+      <p class="small">
+        <?php if ($c['source'] === 'commons'): ?><span class="chip dim">写真 <?= (int)$c['files'] ?>枚</span><?php endif; ?>
+        <span class="chip dim">最寄りの地点：<?= h(nm($c['near_name'] ?? '')) ?>（<?= (int)$c['near_m'] ?>m）</span>
+        <a target="_blank" rel="noopener" href="<?= h($c['source_url']) ?>"><?= $c['source'] === 'wikipedia' ? 'Wikipedia の記事' : 'Commons の地図' ?></a>・
+        <a target="_blank" rel="noopener" href="<?= h('https://www.google.com/maps/search/?' . http_build_query(['api' => 1, 'query' => $c['lat'] . ',' . $c['lon']])) ?>">Googleマップで位置を見る</a></p>
+      <?php if (!empty($c['samples'])): ?><p class="small muted">写真の例：
+        <?php foreach ($c['samples'] as $i => $sm): ?><?= $i ? '・' : '' ?><a target="_blank" rel="noopener" href="<?= h($sm['url']) ?>"><?= h($sm['title']) ?></a><?php endforeach; ?></p><?php endif; ?>
+      <?php if ($c['status'] === 'candidate'): ?>
+      <form method="post" action="<?= h($qs(['p' => $page])) ?>" class="row"><?= csrf_field() ?>
+        <input type="hidden" name="action" value="addition_decide"><input type="hidden" name="add_id" value="<?= (int)$c['id'] ?>">
+        <label>地点の名前<input name="new_name" value="<?= $c['source'] === 'wikipedia' ? h($c['name']) : '' ?>" maxlength="100" placeholder="<?= $c['source'] === 'commons' ? '名前を付けてください' : '' ?>"></label>
+        <label>種別<select name="new_category"><option value="">選んでください</option>
+          <?php foreach ($addCats as $ct): ?><option value="<?= h($ct['code']) ?>" <?= ($c['suggest_cat'] ?? '') === $ct['code'] ? 'selected' : '' ?>><?= h($ct['name']) ?></option><?php endforeach; ?></select></label>
+        <button name="decision" value="adopt" class="small-btn">地点として追加</button>
+        <button name="decision" value="reject" class="secondary small-btn">不採用</button>
+      </form>
+      <?php else: ?>
+      <p class="small muted"><?= h($c['decided_by']) ?> <?= h(substr((string)$c['decided_at'], 0, 10)) ?>
+        <?php if (!empty($c['spot_id'])): ?>・<a href="spot.php?id=<?= (int)$c['spot_id'] ?>"><?= h($c['spot_code']) ?></a><?php endif; ?></p>
+      <?php if ($c['status'] === 'rejected'): ?>
+      <form method="post" action="<?= h($qs(['p' => $page])) ?>" class="row"><?= csrf_field() ?>
+        <input type="hidden" name="action" value="addition_decide"><input type="hidden" name="add_id" value="<?= (int)$c['id'] ?>">
+        <button name="decision" value="reset" class="secondary small-btn">候補に戻す</button></form>
+      <?php endif; ?>
+      <?php endif; ?>
+    </article>
+  <?php endforeach; ?>
+  <?php if (!$additions && !$error): ?><p class="card">該当する候補はありません。</p><?php endif; ?>
+  <nav class="pager">
+    <?php if ($page > 0): ?><a href="<?= h($qs(['p' => $page - 1])) ?>">← 前へ</a><?php endif; ?>
+    <?php if (count($additions) === $per): ?><a href="<?= h($qs(['p' => $page + 1])) ?>">次へ →</a><?php endif; ?>
   </nav>
 <?php elseif ($queue === 'dups'): ?>
   <?php if (!$dups && !$error): ?><p class="card">重複の疑いはありません。</p><?php endif; ?>

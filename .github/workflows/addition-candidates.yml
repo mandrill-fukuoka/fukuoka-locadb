@@ -1,0 +1,35 @@
+# 追加候補の収集：DBにまだない名前のある場所を、Wikipedia（日本語）と Wikimedia Commons から候補として集める（AIなし・費用ゼロ）
+#  - dry_run：読み取りのみ。候補の一覧（additions.csv）を成果物に出すだけ
+#  - apply：候補を spot_additions に保存（公開はしない。確認画面の「追加候補」で人が採用すると地点になる）
+#  外部への取得は1秒以上の間隔で直列（約900回・20分前後）
+name: addition-candidates
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run（読み取りのみ）/ apply（候補を保存）"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+concurrency:
+  group: ${{ inputs.mode == 'apply' && 'database' || format('additions-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  additions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 収集
+        shell: bash
+        run: |
+          python -m locadb.addition_candidates --${MODE//_/-} --out additions-out | tee additions.log
+          { echo '```json'; tail -1 additions.log; echo '```'; echo "モード：$MODE"; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODE: ${{ inputs.mode }}
+      - uses: actions/upload-artifact@v4
+        with: { name: addition-candidates, path: additions-out/, retention-days: 30 }
