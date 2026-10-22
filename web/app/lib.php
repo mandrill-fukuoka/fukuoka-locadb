@@ -285,7 +285,7 @@ const GROUP_COLOR = [
     'commercial' => '#C8423A', 'old_town' => '#D27A2C', 'urban_new' => '#7A5BA6', 'residential' => '#B9547F',
     'institution' => '#4F5DA8', 'transport' => '#2F8DA0', 'port_industrial' => '#6B6F72', 'river' => '#3478C6',
     'sea' => '#1F4E8C', 'beach' => '#C49A45', 'lake' => '#2E8C7E', 'water' => '#3478C6', 'green' => '#4F8A4E',
-    'historic' => '#8C6A4F', 'vacant' => '#9C978E', 'slope' => '#8A8A2E',
+    'historic' => '#8C6A4F', 'vacant' => '#9C978E', 'slope' => '#8A8A2E', 'shop' => '#C0602F',
 ];
 const HIGH_GROUND_M = 10;     // 「高台」：周り（半径150m）の平均より何m以上高いか（タスクF。実データの上位約5%）
 // 周辺の特徴（spatial_view の段階）を1行の言葉にする。段階の境界は sql/api/10_spots.sql にある

@@ -73,6 +73,7 @@ const PERMIT_HINTS = [
     'river'    => ['川・河川敷', '河川の管理者（国・福岡県・福岡市のいずれか。川によって異なります）への確認が必要です。護岸・河川敷への立入にも注意してください。'],
     'sea'      => ['港・海岸・砂浜', '港湾・海岸・漁港の管理者（博多港は福岡市港湾空港局など）や漁協への確認が必要です。岸壁・ふ頭は立入制限があります。'],
     'facility' => ['学校・病院・公共施設', '敷地外からの外観撮影が前提です。敷地内・建物内は施設管理者の許可が必要です。病院・学校周辺では利用者への配慮が必要です。'],
+    'store'    => ['店舗・飲食店', '営業中の店舗は店主・運営会社の許可が必要です（チェーン店は本部への申請になることが多い）。店内の撮影、客や従業員が写る場合の肖像、看板・商標・メニューの扱いにも注意してください。'],
     'temple'   => ['寺社・歴史的建造物', '寺社・所有者への事前相談が必要です。文化財は撮影条件が決まっている場合があります。'],
     'rail'     => ['駅・線路', '駅構内・線路敷地は鉄道事業者の許可が必要です（線路内への立入は禁止）。周辺の道路からの撮影は道路の扱いになります。'],
     'private'  => ['建物・施設・土地', '所有者・管理会社への事前相談が必要です。私有地への立入は許可を得てからにしてください。'],
@@ -81,6 +82,8 @@ const PERMIT_BY_CATEGORY = [
     'alley' => ['road'], 'shotengai' => ['shop', 'road'], 'public_space' => ['road', 'private'], 'bridge_overpass' => ['road'],
     'park' => ['park'], 'hill' => ['park'], 'pond' => ['park'], 'river' => ['river', 'road'],
     'coast' => ['sea'], 'beach' => ['sea'], 'port' => ['sea'], 'fishing_port' => ['sea'], 'island' => ['sea'],
+    'restaurant' => ['store', 'road'], 'cafe' => ['store', 'road'], 'bar' => ['store', 'road'], 'fashion_shop' => ['store', 'road'],
+    'bookstore' => ['store', 'road'], 'zakka_shop' => ['store', 'road'], 'supermarket' => ['store', 'road'], 'other_shop' => ['store', 'road'],
     'school' => ['facility'], 'hospital' => ['facility'], 'civic' => ['facility'],
     'shrine_temple' => ['temple'], 'heritage' => ['temple'], 'station' => ['rail', 'road'], 'railway' => ['rail', 'road'],
 ];

@@ -44,6 +44,15 @@ CATEGORIES = {
     "industrial_structure": ("給水塔・サイロ・タンク", "port_industrial", "point", 0),
     "disused_railway":     ("廃線跡", "vacant", "point", 0),
     "sento":               ("銭湯", "old_town", "point", 0),
+    # 店舗・飲食（2026-10-22 利用者と合意）：映画・ドラマの撮影で必要になる店。景観グループは新設の「店舗・飲食」（shop）。チェーンも含める
+    "restaurant":          ("飲食店", "shop", "point", 0),
+    "cafe":                ("カフェ", "shop", "point", 0),
+    "bar":                 ("バー・居酒屋", "shop", "point", 0),
+    "fashion_shop":        ("服飾店", "shop", "point", 0),
+    "bookstore":           ("書店", "shop", "point", 0),
+    "zakka_shop":          ("雑貨店", "shop", "point", 0),
+    "supermarket":         ("スーパー", "shop", "point", 0),
+    "other_shop":          ("その他の店（パン・花・家具・美容室など）", "shop", "point", 0),
     "shotengai":           ("商店街", "old_town", "line", 150),
     "alley":               ("細街路・路地・階段", "old_town", "line", 120),
     "public_space":        ("広場・歩行者空間", "urban_new", "line", 150),
@@ -58,9 +67,18 @@ LANDSCAPE_GROUPS = {
     "urban_new": "新しい都市景観", "old_town": "古い街並み・路地", "commercial": "繁華街・商業",
     "residential": "住宅地・団地", "institution": "学校・病院・公共施設", "transport": "交通インフラ・駅",
     "port_industrial": "港湾・工業・倉庫", "river": "川・河川", "sea": "海・海辺", "beach": "砂浜",
-    "lake": "池・湖", "green": "公園・丘陵・自然", "historic": "歴史・寺社", "vacant": "空き施設・再開発地", "slope": "坂道・高低差",
+    "lake": "池・湖", "green": "公園・丘陵・自然", "historic": "歴史・寺社", "vacant": "空き施設・再開発地", "slope": "坂道・高低差", "shop": "店舗・飲食",
     "water": "水辺（川・海・砂浜・池のどれでも）",
 }
+
+# 店舗・飲食（タグの値 → 種別）
+SHOP_AMENITY = {"restaurant": "restaurant", "fast_food": "restaurant", "food_court": "restaurant",
+                "cafe": "cafe", "ice_cream": "cafe", "bar": "bar", "pub": "bar", "biergarten": "bar"}
+SHOP_SHOP = {**{k: "fashion_shop" for k in ("clothes", "shoes", "boutique", "jewelry", "bag", "fashion_accessories", "fashion", "tailor", "watches")},
+             "books": "bookstore",
+             **{k: "zakka_shop" for k in ("variety_store", "gift", "houseware", "stationery", "general", "interior_decoration", "art", "second_hand", "antiques")},
+             **{k: "supermarket" for k in ("supermarket", "greengrocer", "wholesale")},
+             **{k: "other_shop" for k in ("bakery", "florist", "furniture", "hairdresser", "beauty", "music", "records")}}
 
 MOTORWAY = {"motorway", "motorway_link", "trunk", "trunk_link"}
 WALKABLE = {"footway", "pedestrian", "path", "steps", "cycleway", "living_street", "residential",
@@ -128,6 +146,9 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
 
     if t.get("shop") in ("mall", "department_store"):
         out.append("commercial_facility")
+    shop_cat = SHOP_AMENITY.get(a) or SHOP_SHOP.get(t.get("shop"))
+    if shop_cat and nm:                                   # 名前のない店は取らない
+        out.append(shop_cat)
     if a == "marketplace" or (osm_type != "n" and re.search(r"横丁|屋台", nm)):
         out.append("eatery_street")
     if (osm_type == "w" and t.get("building") == "apartments" and re.search(r"団地|住宅|ハイツ|コーポ", nm)) \
