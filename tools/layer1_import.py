@@ -29,10 +29,9 @@ def get(url: str) -> bytes:
 
 def _hm(s: str):
     """' 829' → '08:29'。欠測（9999）は None"""
-    s = s.strip()
-    if not s or s == "9999":
+    if not s.strip() or s.strip() == "9999":
         return None
-    s = s.rjust(4, "0")
+    s = s.replace(" ", "0")            # 「20 7」は 20:07、「 829」は 08:29（空白は0の代わり）
     return f"{s[:2]}:{s[2:]}"
 
 
@@ -94,7 +93,7 @@ def did(dry):
             g = g.buffer(0)
         if g.geom_type == "Polygon":
             g = MultiPolygon([g])
-        out.append({"name": str(rec.get("A16_002") or ""), "pop": int(rec.get("A16_005") or 0) or None, "wkt": g.wkt})
+        out.append({"name": str(rec.get("A16_003") or ""), "pop": int(rec.get("A16_005") or 0) or None, "wkt": g.wkt})
     print(json.dumps({"did_areas": len(out), "sample": [{"name": o["name"], "pop": o["pop"]} for o in out[:3]]}, ensure_ascii=False))
     if dry or not out:
         return
