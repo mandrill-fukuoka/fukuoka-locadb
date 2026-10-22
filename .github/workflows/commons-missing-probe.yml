@@ -1,0 +1,23 @@
+# DBにない名前のある場所が Wikipedia/Commons にどれだけあるかを数える（読み取りだけ。DBへは SELECT のみ）
+name: commons-missing-probe
+on:
+  workflow_dispatch:
+concurrency: { group: database, cancel-in-progress: false }
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 数える
+        shell: bash
+        run: |
+          python -m tools.commons_missing_probe --out probe-out | tee probe.log
+          { echo '## 未登録の場所（Wikipedia / Commons）'; cat probe-out/summary.md; } >> "$GITHUB_STEP_SUMMARY"
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: commons-missing-probe, path: "probe-out/", retention-days: 30 }
