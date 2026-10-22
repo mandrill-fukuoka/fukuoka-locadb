@@ -46,7 +46,7 @@ def main():
                     lines.append("  prj：" + z.read(n).decode("utf-8", "replace")[:200])
                 if n.lower().endswith(".dbf"):
                     import shapefile
-                    sf = shapefile.Reader(dbf=io.BytesIO(z.read(n)))
+                    sf = shapefile.Reader(dbf=io.BytesIO(z.read(n)), encoding="cp932")
                     lines.append(f"  dbf {n}：{len(sf)}件 項目 {[f[0] for f in sf.fields[1:]]} 先頭 {list(sf.records()[0]) if len(sf) else ''}")
             break
     (out / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
