@@ -210,6 +210,8 @@ def display_name(t: dict, category: str) -> str:
             return t["bridge:name"]
         parts = [x.strip() for x in nm.split(";")]
         return next((x for x in parts if x.endswith("橋")), parts[0])
+    if ";" in nm and category != "bridge_overpass":
+        nm = next((x.strip() for x in nm.split(";") if x.strip()), "")      # 「A;B」は先頭を地点名に（残りは別名として検索に使う。sync.alt_names_from_tags）
     if ROAD_NUMBER.match(nm):
         return ""
     if category == "station" and nm and t.get("railway") in ("station", "halt") and not nm.endswith("駅") \
