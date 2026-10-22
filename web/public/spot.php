@@ -162,6 +162,15 @@ page_header(nm($s['name']), '');
           <span class="muted">（音は実際に確かめてください）</span></p><?php endif; ?>
       <?php endif; ?>
 
+      <?php if (!empty($s['drone'])): ?>
+        <p class="small terrain">ドローンの目安：<?= !empty($s['drone']['did']) ? '人口集中地区の中です（飛行には許可・承認が必要になる場合があります）' : '人口集中地区の外です' ?><?= !empty($s['drone']['airport_near']) ? '。福岡空港に近く、空港周辺の空域の制限に当たる可能性があります' : '' ?>
+          <span class="muted">（国土数値情報の人口集中地区（平成27年）と滑走路からの距離による目安。飛行の可否は判断しません。実際の飛行は<a href="https://www.mlit.go.jp/koku/info/" target="_blank" rel="noopener">国土交通省</a>の最新の情報で確認してください）</span></p>
+      <?php endif; ?>
+      <?php if (!empty($s['tide']) && !empty($s['tide']['days'])): ?>
+        <p class="small terrain">潮（博多の予報）：<?= h(implode('　／　', tide_lines($s['tide']))) ?>
+          <span class="muted">（出典：気象庁ホームページ「潮位表」博多。気象庁の予報値を当サイトで表示用に整理したもの。地点の実際の潮位とは差があります。高さは潮位表の基準面から）</span></p>
+      <?php endif; ?>
+
       <?= summary_html($s, 'p', 'summary') ?>
       <?php // 自動チェックの未対応の指摘（ログイン時だけ。DB変更170）
         $openChecks = [];

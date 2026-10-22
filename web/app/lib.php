@@ -311,6 +311,17 @@ function logistics_line(array $lg): string {
     }
     return implode('・', $parts);
 }
+// 潮位（tide_view）：今日・明日の満潮・干潮。気象庁 潮位表 博多（QF）の予報
+function tide_lines(array $tide): array {
+    $out = [];
+    foreach ($tide['days'] ?? [] as $i => $d) {
+        $fmt = function (array $xs): string {
+            return $xs ? implode('・', array_map(fn($x) => $x['t'] . '（' . (int)$x['cm'] . 'cm）', $xs)) : 'なし';
+        };
+        $out[] = ($i === 0 ? '今日' : '明日') . '　満潮 ' . $fmt($d['highs'] ?? []) . '　干潮 ' . $fmt($d['lows'] ?? []);
+    }
+    return $out;
+}
 const BEARING_LABEL = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
 function bearing_label(int $deg): string { return BEARING_LABEL[(int)round(($deg % 360) / 45) % 8]; }
 // 景観グループ名（表示名）→ 色。表示名しか持たないデータ（ルートの地点など）用

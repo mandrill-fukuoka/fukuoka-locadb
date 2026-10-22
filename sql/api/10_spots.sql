@@ -5,7 +5,7 @@ begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname in (
               'grp_match','search_spots','spots_nearby','spot_detail','review_queue','review_spot',
-              'photo_state','spatial_view','logistics_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids')
+              'photo_state','spatial_view','logistics_view','drone_view','tide_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
@@ -70,6 +70,25 @@ select jsonb_build_object(
       (3, case when ss.runway_m is null then null when ss.runway_m < 1000 then '空港の滑走路が近い' when ss.runway_m < 2500 then '空港の滑走路がやや近い' end)
     ) as x(ord, label) where x.label is not null))
   from spot_spatial ss where ss.spot_id = p_id and ss.spatial_version >= 'spatial-3';
+$$;
+
+-- ドローンの目安（DB変更204）。人口集中地区（国土数値情報A16・平成27年）の中か、福岡空港に近いか。飛行の可否は判断しない。
+--  空港：滑走路から6km以内を「近い」とする暫定の目安（空港周辺の制限空域の形は滑走路の延長方向に長く、実際は国土交通省の資料で確認）
+--  did_areas が空なら null（取り込み前は何も出さない）
+create function drone_view(p_id bigint) returns jsonb language sql stable as $$
+select case when not exists (select 1 from did_areas) then null else jsonb_build_object(
+  'did', exists (select 1 from did_areas d where ST_Covers(d.geom, s.geom)),
+  'airport_near', (select ss.runway_m is not null and ss.runway_m < 6000 from spot_spatial ss where ss.spot_id = s.id and ss.spatial_version >= 'spatial-3')) end
+  from spots s where s.id = p_id;
+$$;
+
+-- 潮位（DB変更204）。海・砂浜・港・漁港・島などの地点だけ。気象庁 潮位表 博多（QF）の今日・明日の予報（日本時間）
+create function tide_view(p_id bigint) returns jsonb language sql stable as $$
+select case when sc.landscape_group in ('sea','beach') or s.category in ('port','fishing_port','island','harbour_structure')
+  then (select jsonb_build_object('days', coalesce(jsonb_agg(jsonb_build_object('day', t.day, 'highs', t.highs, 'lows', t.lows) order by t.day), '[]'::jsonb))
+          from tide_daily t where t.day between (now() at time zone 'Asia/Tokyo')::date and (now() at time zone 'Asia/Tokyo')::date + 1)
+  end
+  from spots s join spot_categories sc on sc.code = s.category where s.id = p_id;
 $$;
 
 -- 場所を探す。川・線路などの「線」の地点は、同じ線ごとに1件にまとめて「ほか○か所」を返す
@@ -242,6 +261,8 @@ select jsonb_build_object(
   'slope_bearing', s.slope_bearing, 'slope_kind', s.slope_kind,
   'spatial', spatial_view(s.id),
   'logistics', logistics_view(s.id),
+  'drone', drone_view(s.id),
+  'tide', tide_view(s.id),
   'summary_by', case when p_with_history then s.summary_by end, 'summary_at', s.summary_at,
   'drafts', case when p_with_history then
      (select coalesce(jsonb_agg(jsonb_build_object('id', n.id, 'source', n.source, 'body', n.body, 'model', n.model,
