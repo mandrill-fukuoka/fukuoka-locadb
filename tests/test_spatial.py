@@ -105,6 +105,25 @@ def test_footways_and_steps_are_not_roads():
     assert sp.compute(0, 0)["road_class"] == "residential"          # 近い歩道ではなく、車道を見る
 
 
+def test_logistics_and_noise_distances():
+    from shapely.geometry import Point
+    sp = Spatial()
+    sp.add_poi("toilet", Point(30, 40))                     # 50m
+    sp.add_poi("parking", Point(0, 120))
+    sp.add_poi("kiosk", Point(1, 1))                        # 知らない種類は無視
+    sp.add_rail(LineString([(-100, 80), (100, 80)]))
+    sp.add_runway(LineString([(-500, 900), (500, 900)]))
+    sp.add_road(LineString([(-100, -30), (100, -30)]), "primary", None, None)
+    sp.add_road(LineString([(-100, 10), (100, 10)]), "residential", None, None)
+    sp.build()
+    r = sp.compute(0, 0)
+    assert r["toilet_m"] == pytest.approx(50) and r["parking_m"] == pytest.approx(120)
+    assert r["convenience_m"] is None                         # なければ None
+    assert r["rail_m"] == pytest.approx(80) and r["runway_m"] == pytest.approx(900)
+    assert r["major_road_m"] == pytest.approx(30)             # 近い住宅道ではなく幹線道路を測る
+    assert sp.counts()["poi"]["toilet"] == 1
+
+
 def test_parsers():
     assert parse_width("6") == 6 and parse_width("6.5 m") == 6.5 and parse_width("12m") == 12
     assert parse_width("wide") is None and parse_width("0") is None and parse_width("500") is None
@@ -452,3 +471,21 @@ def test_search_groups_unnamed_and_slopes_of_the_same_name(db, tmp_path):
     w.run(db, tmp_path)
     rows = db.execute("select search_spots(p_category => 'beach') r").fetchone()["r"]
     assert len(rows) == 1 and rows[0]["others"] == 2                        # 代表点1件＋「ほか2か所」
+
+
+def test_read_collects_logistics_and_noise_sources(db, tmp_path):
+    w = World(); city(w)
+    w.point(60, LON + 0.0005, LAT, amenity="toilets")
+    w.point(61, LON, LAT + 0.0008, shop="convenience", name="コンビニ")
+    w.point(62, LON, LAT + 0.0009, amenity="toilets", access="private")                      # 私有は数えない
+    w.line(960, [(LON - 0.002, LAT + 0.0005), (LON + 0.004, LAT + 0.0005)], railway="rail")
+    w.line(961, [(LON - 0.002, LAT + 0.0006), (LON + 0.004, LAT + 0.0006)], railway="rail", tunnel="yes")
+    w.line(962, [(LON - 0.002, LAT + 0.01), (LON + 0.004, LAT + 0.01)], aeroway="runway")
+    res = w.run(db, tmp_path)
+    c = res["snapshot"].spatial.counts()
+    assert c["poi"] == {"toilet": 1, "convenience": 1, "parking": 0} and c["rail"] == 1 and c["runway"] == 1
+    spatial.run(res["run_id"], res["snapshot"].spatial, min_buildings=1)
+    temple = [s for s in spots(db, "category = 'shrine_temple'")][0]
+    r = rows(db)[temple["id"]]
+    assert 40 < r["toilet_m"] < 60 and 80 < r["convenience_m"] < 100 and 50 < r["rail_m"] < 60
+    assert r["runway_m"] > 1000 and r["parking_m"] is None

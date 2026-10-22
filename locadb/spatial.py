@@ -25,7 +25,7 @@ from shapely.strtree import STRtree
 
 from .db import connect, job
 
-SPATIAL_VERSION = "spatial-2"        # spatial-2：名前のない海岸線・川も水辺に数える（2026-10-21）
+SPATIAL_VERSION = "spatial-3"        # spatial-2：名前のない海岸線・川も水辺に数える（2026-10-21） / spatial-3：ロジ情報（駐車場・トイレ・コンビニ）と騒音源（線路・幹線道路・滑走路）までの距離（2026-10-22）
 R_BUILDING_M = 100.0
 RAY_RANGE_M = 150.0
 N_RAYS = 16
@@ -44,6 +44,8 @@ ROAD_CLASS_WIDTH = {
     "tertiary": 6.5, "tertiary_link": 5.0, "unclassified": 5.5, "residential": 5.0,
     "living_street": 4.0, "service": 3.5, "pedestrian": 4.0, "track": 3.0,
 }
+MAJOR_ROADS = {"motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link"}   # 同録の騒音源にする幹線道路
+POI_KINDS = ("toilet", "convenience", "parking")      # ロジ情報：最寄りまでの距離を出す施設
 
 
 def parse_width(v) -> float | None:
@@ -80,6 +82,9 @@ class Spatial:
         self._b, self._r, self._rinfo, self._w, self._wkind = [], [], [], [], []
         self.b_tree = self.r_tree = self.w_tree = None
         self.b_arr = self.r_arr = self.w_arr = None
+        self._poi = {k: [] for k in POI_KINDS}          # ロジ：施設の点
+        self._rail, self._runway = [], []                # 騒音源：線路（地上）・滑走路
+        self.poi_trees, self.rail_tree, self.runway_tree, self.major_tree = {}, None, None, None
 
     # ---- 集める（osm_source.read から） ----
     def add_building(self, geom) -> None:
@@ -95,6 +100,18 @@ class Spatial:
         if geom is not None and not geom.is_empty:
             self._w.append(geom)
             self._wkind.append(kind)
+
+    def add_poi(self, kind: str, point) -> None:
+        if kind in self._poi and point is not None and not point.is_empty:
+            self._poi[kind].append(point)
+
+    def add_rail(self, line) -> None:
+        if line is not None and not line.is_empty:
+            self._rail.append(line)
+
+    def add_runway(self, line) -> None:
+        if line is not None and not line.is_empty:
+            self._runway.append(line)
 
     def build(self) -> "Spatial":
         b = np.array(self._b, dtype=object) if self._b else np.array([], dtype=object)
@@ -115,6 +132,13 @@ class Spatial:
         self.r_tree = STRtree(self.r_arr) if len(self.r_arr) else None
         self.w_tree = STRtree(self.w_arr) if len(self.w_arr) else None
         self._b = []                                  # 元のリストは手放す（メモリ）
+        for k, pts in self._poi.items():
+            if pts:
+                self.poi_trees[k] = STRtree(np.array(pts, dtype=object))
+        self.rail_tree = STRtree(np.array(self._rail, dtype=object)) if self._rail else None
+        self.runway_tree = STRtree(np.array(self._runway, dtype=object)) if self._runway else None
+        major = [g for g, info in zip(self._r, self._rinfo) if info[0] in MAJOR_ROADS]
+        self.major_tree = STRtree(np.array(major, dtype=object)) if major else None
         return self
 
     @property
@@ -124,14 +148,22 @@ class Spatial:
     def counts(self) -> dict:
         return {"buildings": self.n_buildings,
                 "roads": len(self.r_arr) if self.r_arr is not None else len(self._r),
-                "water": len(self.w_arr) if self.w_arr is not None else len(self._w)}
+                "water": len(self.w_arr) if self.w_arr is not None else len(self._w),
+                "poi": {k: len(v) for k, v in self._poi.items()}, "rail": len(self._rail), "runway": len(self._runway)}
 
     # ---- 計算 ----
     def compute(self, x: float, y: float) -> dict:
         p = shapely.Point(x, y)
         out = {"building_cover_100": 0.0, "building_count_100": 0, "open_ratio": 1.0, "sight_max_m": RAY_RANGE_M,
                "water_dist_m": None, "water_kind": None, "road_class": None, "road_width_m": None,
-               "road_width_src": None, "confidence": "low"}
+               "road_width_src": None, "confidence": "low",
+               "toilet_m": None, "convenience_m": None, "parking_m": None, "rail_m": None, "major_road_m": None,
+               "runway_m": None}
+        for k, tree in self.poi_trees.items():                    # ロジ・騒音：最寄りまでの距離（事実。OSMに載っているものだけ）
+            out[f"{k}_m"] = self._nearest(tree, p)
+        out["rail_m"] = self._nearest(self.rail_tree, p)
+        out["major_road_m"] = self._nearest(self.major_tree, p)
+        out["runway_m"] = self._nearest(self.runway_tree, p)
         if self.b_tree is not None:
             circle = p.buffer(R_BUILDING_M, quad_segs=8)
             idx = self.b_tree.query(circle, predicate="intersects")
@@ -153,6 +185,13 @@ class Spatial:
                 out["road_class"] = hw
                 out["road_width_m"], out["road_width_src"] = road_width(hw, wt, ln)
         return out
+
+    @staticmethod
+    def _nearest(tree, p):
+        if tree is None:
+            return None
+        i, d = tree.query_nearest(p, return_distance=True, all_matches=False)
+        return float(d[0]) if len(i) else None
 
     def _openness(self, x: float, y: float, p) -> tuple[float, float]:
         ang = np.arange(N_RAYS) * (2 * math.pi / N_RAYS)
@@ -198,7 +237,9 @@ def _round(r: dict) -> dict:
             "building_cover_100": round(r["building_cover_100"], 4),
             "open_ratio": round(r["open_ratio"], 4),
             "sight_max_m": round(r["sight_max_m"], 1),
-            "water_dist_m": None if r["water_dist_m"] is None else round(r["water_dist_m"], 1)}
+            "water_dist_m": None if r["water_dist_m"] is None else round(r["water_dist_m"], 1),
+            **{k: (None if r[k] is None else round(r[k], 1))
+               for k in ("toilet_m", "convenience_m", "parking_m", "rail_m", "major_road_m", "runway_m")}}
 
 
 def _pct(values, qs=(0.1, 0.5, 0.9, 0.99)):
@@ -220,6 +261,8 @@ def summarize(results: list[dict]) -> dict:
         "road_width_src": {s: sum(1 for r in results if r["road_width_src"] == s)
                            for s in ("osm_width", "lanes", "class")},
         "road_width_m_p10_50_90_99": _pct(r["road_width_m"] for r in results),
+        **{f"{k}_p10_50_90_99": _pct(r[k] for r in results)
+           for k in ("toilet_m", "convenience_m", "parking_m", "rail_m", "major_road_m", "runway_m")},
     }
 
 
@@ -271,18 +314,22 @@ def run(run_id: int | None, index: Spatial, all_: bool = False, limit: int = 200
                 cur.executemany(
                     """insert into spot_spatial (spot_id, spatial_version, computed_at, building_cover_100,
                               building_count_100, open_ratio, sight_max_m, water_dist_m, water_kind,
-                              road_class, road_width_m, road_width_src, confidence)
-                       values (%s,%s,now(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                              road_class, road_width_m, road_width_src, confidence,
+                              toilet_m, convenience_m, parking_m, rail_m, major_road_m, runway_m)
+                       values (%s,%s,now(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                        on conflict (spot_id) do update set spatial_version=excluded.spatial_version,
                          computed_at=now(), building_cover_100=excluded.building_cover_100,
                          building_count_100=excluded.building_count_100, open_ratio=excluded.open_ratio,
                          sight_max_m=excluded.sight_max_m, water_dist_m=excluded.water_dist_m,
                          water_kind=excluded.water_kind, road_class=excluded.road_class,
                          road_width_m=excluded.road_width_m, road_width_src=excluded.road_width_src,
-                         confidence=excluded.confidence""",
+                         confidence=excluded.confidence,
+                         toilet_m=excluded.toilet_m, convenience_m=excluded.convenience_m, parking_m=excluded.parking_m,
+                         rail_m=excluded.rail_m, major_road_m=excluded.major_road_m, runway_m=excluded.runway_m""",
                     [(sid, SPATIAL_VERSION, r["building_cover_100"], r["building_count_100"], r["open_ratio"],
                       r["sight_max_m"], r["water_dist_m"], r["water_kind"], r["road_class"], r["road_width_m"],
-                      r["road_width_src"], r["confidence"]) for sid, r in part])
+                      r["road_width_src"], r["confidence"], r["toilet_m"], r["convenience_m"], r["parking_m"],
+                      r["rail_m"], r["major_road_m"], r["runway_m"]) for sid, r in part])
             conn.commit()
             print(f"    空間特徴 {done}/{total}", flush=True)
 

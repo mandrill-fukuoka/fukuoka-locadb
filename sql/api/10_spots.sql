@@ -5,7 +5,7 @@ begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname in (
               'grp_match','search_spots','spots_nearby','spot_detail','review_queue','review_spot',
-              'photo_state','spatial_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids')
+              'photo_state','spatial_view','logistics_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
@@ -57,6 +57,19 @@ select case when ss.confidence = 'low' then jsonb_build_object('status', 'low')
                   when 'normal' then 'ふつうの道' end)
   end
   from spot_spatial ss where ss.spot_id = p_id;
+$$;
+
+-- ロジ情報と同録の騒音の目安（DB変更202。OSMに載っているものだけ。段階の境界は暫定＝仕様書10章）
+--  距離は10m単位に丸める。騒音の段階：線路・幹線道路は 〜50m 近い / 〜150m やや近い、滑走路は 〜1000m 近い / 〜2500m やや近い
+create function logistics_view(p_id bigint) returns jsonb language sql stable as $$
+select jsonb_build_object(
+  'toilet_m', round(ss.toilet_m / 10) * 10, 'convenience_m', round(ss.convenience_m / 10) * 10, 'parking_m', round(ss.parking_m / 10) * 10,
+  'noise', (select coalesce(jsonb_agg(x.label order by x.ord), '[]'::jsonb) from (values
+      (1, case when ss.rail_m is null then null when ss.rail_m < 50 then '線路が近い' when ss.rail_m < 150 then '線路がやや近い' end),
+      (2, case when ss.major_road_m is null then null when ss.major_road_m < 50 then '幹線道路が近い' when ss.major_road_m < 150 then '幹線道路がやや近い' end),
+      (3, case when ss.runway_m is null then null when ss.runway_m < 1000 then '空港の滑走路が近い' when ss.runway_m < 2500 then '空港の滑走路がやや近い' end)
+    ) as x(ord, label) where x.label is not null))
+  from spot_spatial ss where ss.spot_id = p_id and ss.spatial_version >= 'spatial-3';
 $$;
 
 -- 場所を探す。川・線路などの「線」の地点は、同じ線ごとに1件にまとめて「ほか○か所」を返す
@@ -228,6 +241,7 @@ select jsonb_build_object(
   'slope_len_m', s.slope_len_m, 'slope_grade_pct', s.slope_grade_pct, 'slope_rise_m', s.slope_rise_m,
   'slope_bearing', s.slope_bearing, 'slope_kind', s.slope_kind,
   'spatial', spatial_view(s.id),
+  'logistics', logistics_view(s.id),
   'summary_by', case when p_with_history then s.summary_by end, 'summary_at', s.summary_at,
   'drafts', case when p_with_history then
      (select coalesce(jsonb_agg(jsonb_build_object('id', n.id, 'source', n.source, 'body', n.body, 'model', n.model,
