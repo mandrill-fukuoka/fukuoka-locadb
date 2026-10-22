@@ -197,6 +197,18 @@ function conf_stage(array $s): string {
     return $c === 'ai_estimated' ? 'AI推定' : '機械取得のみ';
 }
 // 写真の出典表示（作者・ライセンス・出典ページ。Wikimedia Commons の再利用の決まり：作者表示とライセンスへのリンク）
+// 写真の状態（ログイン時だけ出す。has＝採用済みは写真そのものが出るので表示しない）
+const PHOTO_STATE_LABEL = ['has' => '写真あり', 'cand' => '写真候補あり（未確認）', 'none' => '写真候補なし（探索済み）', 'todo' => '写真は未探索'];
+function photo_state_chip(array $s): string {
+    if (!current_user()) return '';
+    $st = (string)($s['photo_state'] ?? '');
+    return isset(PHOTO_STATE_LABEL[$st]) ? '<span class="chip dim">' . h(PHOTO_STATE_LABEL[$st]) . '</span>' : '';
+}
+function photo_state_filter(): string {
+    $v = (string)($_GET['photo'] ?? '');
+    return current_user() && isset(PHOTO_STATE_LABEL[$v]) ? $v : '';
+}
+
 function photo_credit_html(array $p): string {
     $by = trim((string)($p['author'] ?? $p['by'] ?? ''));
     $lic = (string)($p['license'] ?? '');

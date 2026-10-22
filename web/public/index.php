@@ -14,6 +14,7 @@ $spOpen  = in_array($_GET['sp_open'] ?? '', ['open', 'closed'], true) ? $_GET['s
 $spWater = in_array($_GET['sp_water'] ?? '', ['near', 'within150'], true) ? $_GET['sp_water'] : '';
 $spBuilt = in_array($_GET['sp_built'] ?? '', ['few', 'many'], true) ? $_GET['sp_built'] : '';
 $spRoad  = in_array($_GET['sp_road'] ?? '', ['narrow', 'wide'], true) ? $_GET['sp_road'] : '';
+$photoSt = photo_state_filter();
 $near  = (int)($_GET['near'] ?? 0);
 $page  = max(0, (int)($_GET['p'] ?? 0));
 $per   = 40;
@@ -26,7 +27,7 @@ try {
 } catch (Throwable $e) { $error = $e->getMessage(); $cats = $groups = $tags = []; }
 $groupNames = array_column($groups, 'name', 'code');
 
-$searched = $q !== '' || $area !== '' || $cat !== '' || $grp !== '' || $tag !== '' || $terr !== '' || $spOpen !== '' || $spWater !== '' || $spRoad !== '' || $spBuilt !== '';
+$searched = $q !== '' || $area !== '' || $cat !== '' || $grp !== '' || $tag !== '' || $terr !== '' || $spOpen !== '' || $spWater !== '' || $spRoad !== '' || $spBuilt !== '' || $photoSt !== '';
 try {
     if ($near) {
         $nearby = sb_rpc('spots_nearby', ['p_id' => $near, 'p_radius' => 800]) ?? [];
@@ -38,13 +39,13 @@ try {
             'p_q' => $q ?: null, 'p_area' => $area ?: null, 'p_category' => $cat ?: null,
             'p_group' => $grp ?: null, 'p_tags' => $tag ? [$tag] : null,
             'p_offset' => $page * $per, 'p_limit' => $per, 'p_relief_min' => $terr === 'high' ? HIGH_GROUND_M : null,
-            'p_open' => $spOpen ?: null, 'p_water' => $spWater ?: null, 'p_road' => $spRoad ?: null, 'p_built' => $spBuilt ?: null]) ?? [];
+            'p_open' => $spOpen ?: null, 'p_water' => $spWater ?: null, 'p_road' => $spRoad ?: null, 'p_built' => $spBuilt ?: null, 'p_photo' => $photoSt ?: null]) ?? [];
     }
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
 $embedKey = cfg('google_maps_embed_key');
 $qs = fn(array $o) => '?' . http_build_query(array_merge(['q' => $q, 'area' => $area, 'cat' => $cat, 'grp' => $grp, 'tag' => $tag, 'terrain' => $terr,
-    'sp_open' => $spOpen, 'sp_water' => $spWater, 'sp_road' => $spRoad, 'sp_built' => $spBuilt], $o));
+    'sp_open' => $spOpen, 'sp_water' => $spWater, 'sp_road' => $spRoad, 'sp_built' => $spBuilt, 'photo' => $photoSt], $o));
 
 
 page_header('場所を探す', 'index.php');
@@ -78,6 +79,10 @@ page_header('場所を探す', 'index.php');
       <option value="narrow" <?= $spRoad === 'narrow' ? 'selected' : '' ?>>狭い道</option>
       <option value="wide" <?= $spRoad === 'wide' ? 'selected' : '' ?>>広い道</option></select></label>
   </div>
+  <?php if (current_user()): ?><div class="row">
+    <label>写真の状態（ログイン時のみ）<select name="photo"><option value="">指定なし</option>
+      <?php foreach (PHOTO_STATE_LABEL as $k => $v): ?><option value="<?= h($k) ?>" <?= $photoSt === $k ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></label>
+  </div><?php endif; ?>
   <button>検索</button>
   <p class="small muted">雰囲気での絞り込みは、雰囲気のタグが付いた地点だけが対象です（「推定」のタグは、種別や位置から機械的に付けたものです）。「推定」の条件は、OpenStreetMapの建物・道・水辺から計算した目安で、周りに建物のデータが少ない地点（未判定）は対象外です。</p>
 </form>
@@ -129,7 +134,7 @@ page_header('場所を探す', 'index.php');
               <span class="muted"><?= dot($s['grp_code'] ?? '') ?><?= h($s['category']) ?>・<?= h($s['address'] ?: (AREA_LABEL[$s['area_code']] ?? '')) ?></span>
               <?php if (($s['data_status'] ?? '') === 'needs_review'): ?><span class="chip warn">データ要確認</span><?php endif; ?>
               <?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?>
-              <?php if ($s['confidence'] !== 'field_checked'): ?><span class="chip dim"><?= h(conf_stage($s)) ?></span><?php endif; ?>
+              <?php if ($s['confidence'] !== 'field_checked'): ?><span class="chip dim"><?= h(conf_stage($s)) ?></span><?php endif; ?><?= photo_state_chip($s) ?>
               <?php if (!empty($s['ffc_registered'])): ?><span class="chip">FFC登録</span><?php endif; ?>
               <?php if (!empty($s['others'])): ?><span class="chip">ほか<?= (int)$s['others'] ?>か所</span><?php endif; ?>
             </div>
