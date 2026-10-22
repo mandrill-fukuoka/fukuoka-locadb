@@ -1,0 +1,21 @@
+# 写真候補の採否（人が決めたもの）の傾向を調べる（読み取りだけ。DBへは SELECT のみ）
+name: photo-analysis
+on: workflow_dispatch
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 調べる
+        shell: bash
+        run: |
+          python -m tools.photo_decision_analysis --out photo-analysis-out | tee analysis.log
+          { echo '## 写真の採否の傾向'; cat photo-analysis-out/summary.md; } >> "$GITHUB_STEP_SUMMARY"
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: photo-analysis, path: "photo-analysis-out/", retention-days: 30 }
