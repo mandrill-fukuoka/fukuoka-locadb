@@ -319,7 +319,7 @@ def test_C_deleted_then_restored(db, tmp_path):
 def test_C_no_longer_matching_is_archived_with_reason(db, tmp_path):
     w = World(); w.point(10, 130.39, 33.585, amenity="place_of_worship", name="寺A")
     w.run(db, tmp_path)
-    w.point(10, 130.39, 33.585, amenity="cafe", name="寺Aカフェ")               # OSMには残るが条件外
+    w.point(10, 130.39, 33.585, amenity="bench", name="寺Aベンチ")              # OSMには残るが条件外
     w.run(db, tmp_path)
     s = spots(db)[0]
     assert s["data_status"] == "archived" and "条件から外れた" in s["archived_reason"]

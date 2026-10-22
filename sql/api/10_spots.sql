@@ -116,6 +116,7 @@ with hits as (
      and (p_area is null or s.area_code = p_area)
      and (p_category is null or s.category = p_category or p_category = any (s.extra_categories))
      and (p_group is null or grp_match(p_group, sc.landscape_group))
+     and (sc.landscape_group <> 'shop' or p_group = 'shop' or p_category is not null or p_q is not null)   -- 店舗・飲食は、分類・種別・語で指定したときだけ出す（景観の検索に混ぜない）
      and (p_relief_min is null or s.relief_m >= p_relief_min)      -- 高台（周りより p_relief_min m 以上高い）
      and (p_open is null and p_water is null and p_road is null and p_built is null or exists (      -- 周辺の特徴（推定）。信頼度 low は対象外
             select 1 from spot_spatial x where x.spot_id = s.id and x.confidence = 'ok'
@@ -198,6 +199,7 @@ select coalesce(jsonb_agg(x order by x.meters), '[]'::jsonb) from (
       join spot_categories sc on sc.code = n.category
       join landscape_groups lg on lg.code = sc.landscape_group
      where s.id = p_id and n.name not like '（無名）%' and n.name <> s.name
+       and (sc.landscape_group <> 'shop' or exists (select 1 from spot_categories c0 where c0.code = s.category and c0.landscape_group = 'shop'))
      order by n.name, sc.landscape_group, ST_Distance(n.geom, s.geom)
   ) d
   order by d.meters
