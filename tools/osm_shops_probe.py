@@ -21,8 +21,10 @@ KINDS = {
     "cafe": ("カフェ", {"amenity": {"cafe", "ice_cream"}}),
     "bar": ("バー・居酒屋", {"amenity": {"bar", "pub", "biergarten"}}),
     "fashion": ("服飾店", {"shop": {"clothes", "shoes", "boutique", "jewelry", "bag", "fashion_accessories", "fashion", "tailor", "watches"}}),
-    "other_shop": ("その他の店", {"shop": {"bakery", "books", "florist", "second_hand", "antiques", "furniture", "interior_decoration",
-                                              "hairdresser", "beauty", "variety_store", "department_store", "mall", "art", "music", "records"}}),
+    "bookstore": ("書店", {"shop": {"books"}}),
+    "zakka": ("雑貨店", {"shop": {"variety_store", "gift", "houseware", "stationery", "general", "interior_decoration", "art", "second_hand", "antiques"}}),
+    "supermarket": ("スーパー", {"shop": {"supermarket", "greengrocer", "department_store", "mall", "wholesale"}}),
+    "other_shop": ("その他の店", {"shop": {"bakery", "florist", "furniture", "hairdresser", "beauty", "music", "records"}}),
 }
 
 
