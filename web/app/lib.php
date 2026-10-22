@@ -208,7 +208,8 @@ function photo_credit_html(array $p): string {
     }
     $src = (string)($p['source_url'] ?? '');
     if ($src !== '' && strpos($src, 'https://') === 0) {
-        $out .= '・<a href="' . h($src) . '" target="_blank" rel="noopener">Wikimedia Commons</a>';
+        $out .= '・<a href="' . h($src) . '" target="_blank" rel="noopener">'
+              . (strpos($src, 'https://www.mapillary.com/') === 0 ? 'Mapillary' : 'Wikimedia Commons') . '</a>';
     }
     return $out;
 }

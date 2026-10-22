@@ -120,7 +120,7 @@ page_header('地点の確認', 'spots.php');
     <input type="hidden" name="check" value="<?= h($check) ?>">
     <?php elseif ($queue === 'photos'): ?>
   <section class="card">
-    <p class="small muted">Wikimedia Commons の位置情報つき写真を、地点ごとの候補として自動で集めたものです（AIは使っていません）。「採用」を押した写真だけが、作者・ライセンス・出典つきで地点ページと一覧に出ます。
+    <p class="small muted">Wikimedia Commons と Mapillary（file名が mapillary: のもの＝街路写真）の写真を、地点ごとの候補として自動で集めたものです（AIは使っていません）。「採用」を押した写真だけが、作者・ライセンス・出典つきで地点ページと一覧に出ます。
       写っているものが地点と合っているか、人の顔・商標・私有地など配慮が要るものでないかを見て決めてください。候補は CC0・パブリックドメイン・CC BY・CC BY-SA のものだけです。</p>
     <nav class="tabs">
       <?php foreach (['candidate' => '候補', 'adopted' => '採用済み', 'rejected' => '不採用'] as $k => $v): ?>
