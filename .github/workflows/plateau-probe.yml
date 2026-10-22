@@ -1,0 +1,31 @@
+# PLATEAU（福岡市の3D都市モデル）の建築物に高さ・階数・用途の属性が入っているかを調べる（読み取りだけ。DBは触らない）
+name: plateau-probe
+on:
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: "G空間情報センターのデータセットID"
+        default: "plateau-40130-fukuoka-shi-2024"
+      files:
+        description: "抜き取る建築物ファイルの数"
+        default: "8"
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install requests remotezip
+      - name: 調べる
+        shell: bash
+        run: |
+          python tools/plateau_probe.py --dataset "$DATASET" --files "$FILES" --out plateau-out | tee plateau.log
+          { echo '## PLATEAU 建築物の属性'; cat plateau-out/summary.md; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATASET: ${{ inputs.dataset }}
+          FILES: ${{ inputs.files }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: plateau-probe, path: "plateau-out/", retention-days: 30 }
