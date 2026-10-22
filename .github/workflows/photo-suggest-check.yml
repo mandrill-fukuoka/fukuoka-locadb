@@ -1,0 +1,26 @@
+# 写真候補のおすすめ度とまとめて採用の状況を調べる（読み取りだけ。SELECT のみ）
+name: photo-suggest-check
+on: workflow_dispatch
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 調べる
+        shell: bash
+        run: |
+          python - <<'PY' | tee "$GITHUB_STEP_SUMMARY"
+          from locadb.db import connect
+          db = connect()
+          q = lambda s: db.execute(s).fetchall()
+          print("おすすめ度の件数:", db.execute("select photos_suggest_counts() r").fetchone()["r"])
+          print("関数:", [r["proname"] + "(" + r["args"] + ")" for r in q("select p.proname, pg_get_function_arguments(p.oid) args from pg_proc p where proname in ('photo_decide_bulk','photo_decide','photo_candidates_list')")])
+          print("reject_reason列:", q("select column_name from information_schema.columns where table_name='spot_photo_candidates' and column_name='reject_reason'"))
+          print("直近24時間の決定:", q("select status, decided_by, count(*) n, min(decided_at) a, max(decided_at) b from spot_photo_candidates where decided_at > now() - interval '24 hours' group by 1,2"))
+          print("不採用の理由:", q("select reject_reason, count(*) n from spot_photo_candidates where status='rejected' group by 1"))
+          PY
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
