@@ -300,6 +300,17 @@ function spatial_line(array $sp): string {
     if (!empty($sp['road'])) $parts[] = $sp['road'];
     return implode('・', $parts);
 }
+// ロジ情報・同録の騒音の目安（logistics_view）。OSMに載っていない施設は「近くにない」ではなく「見つからず」とする
+function logistics_line(array $lg): string {
+    $parts = [];
+    foreach (['toilet_m' => 'トイレ', 'convenience_m' => 'コンビニ', 'parking_m' => '駐車場'] as $k => $n) {
+        if (!isset($lg[$k])) continue;
+        $m = (int)$lg[$k];
+        if ($m > 2000) continue;
+        $parts[] = $n . ' 約' . ($m >= 1000 ? number_format($m / 1000, 1) . 'km' : $m . 'm');
+    }
+    return implode('・', $parts);
+}
 const BEARING_LABEL = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
 function bearing_label(int $deg): string { return BEARING_LABEL[(int)round(($deg % 360) / 45) % 8]; }
 // 景観グループ名（表示名）→ 色。表示名しか持たないデータ（ルートの地点など）用

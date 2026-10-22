@@ -155,6 +155,13 @@ page_header(nm($s['name']), '');
         <?php endif; ?>
       <?php endif; ?>
 
+      <?php if (!empty($s['logistics'])): $lgLine = logistics_line($s['logistics']); $lgNoise = $s['logistics']['noise'] ?? []; ?>
+        <?php if ($lgLine !== ''): ?><p class="small terrain">最寄りの施設（推定）：<?= h($lgLine) ?>
+          <span class="muted">（OpenStreetMapの直線距離。載っていない施設は出ません）</span></p><?php endif; ?>
+        <?php if ($lgNoise): ?><p class="small terrain">同録の注意（推定）：<?= h(implode('・', $lgNoise)) ?>
+          <span class="muted">（音は実際に確かめてください）</span></p><?php endif; ?>
+      <?php endif; ?>
+
       <?= summary_html($s, 'p', 'summary') ?>
       <?php // 自動チェックの未対応の指摘（ログイン時だけ。DB変更170）
         $openChecks = [];

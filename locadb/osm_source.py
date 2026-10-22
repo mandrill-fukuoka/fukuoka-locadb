@@ -207,10 +207,22 @@ class _Reader(osmium.SimpleHandler):
         if not len(n.tags):
             return
         t = self._tags(n)
+        self._poi(t, Point(*to_m(n.location.lon, n.location.lat)))
         cats = categories_of(t, "n", False)
         if cats:
             self.points.append(PointFeature(f"n{n.id}", "n", n.id, display_name(t, cats[0]), cats, t,
                                             n.location.lon, n.location.lat))
+
+    def _poi(self, t: dict, geom) -> None:
+        """ロジ情報の施設（トイレ・コンビニ・駐車場）。私有・立入不可は数えない"""
+        if t.get("access") in ("private", "no"):
+            return
+        if t.get("amenity") == "toilets":
+            self.spatial.add_poi("toilet", geom)
+        elif t.get("shop") == "convenience":
+            self.spatial.add_poi("convenience", geom)
+        elif t.get("amenity") == "parking" and t.get("parking") not in ("street_side", "lane", "on_kerb", "half_on_kerb"):
+            self.spatial.add_poi("parking", geom)
 
     def relation(self, r):
         if self.watch and f"r{r.id}" in self.watch:
@@ -239,6 +251,15 @@ class _Reader(osmium.SimpleHandler):
                 self.spatial.add_water(LineString([to_m(*c) for c in coords]), "coast")
             elif t.get("waterway") in ("river", "canal") and t.get("tunnel") in (None, "no"):
                 self.spatial.add_water(LineString([to_m(*c) for c in coords]), "river")
+        # ロジ（面・線の施設）と騒音源（地上の線路・滑走路）
+        if t.get("amenity") == "toilets" or t.get("shop") == "convenience" or t.get("amenity") == "parking":
+            ls = LineString([to_m(*c) for c in coords])
+            self._poi(t, ls.representative_point() if not (w.is_closed() and len(coords) >= 4) else Polygon(ls.coords).representative_point())
+        if t.get("railway") in ("rail", "light_rail", "tram") and t.get("tunnel") in (None, "no") \
+                and t.get("service") is None:
+            self.spatial.add_rail(LineString([to_m(*c) for c in coords]))
+        if t.get("aeroway") == "runway":
+            self.spatial.add_runway(LineString([to_m(*c) for c in coords]))
         if hw in WALKABLE or (t.get("bridge") and hw):
             self.walk.append(LineString([to_m(*c) for c in coords]))
         road = slopes.road_of(w.id, t, coords)
