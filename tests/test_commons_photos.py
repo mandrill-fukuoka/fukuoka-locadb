@@ -106,3 +106,45 @@ def test_photo_state_and_filter(db, tmp_path):
     db.execute("select photo_decide(%s,'adopt','hirata')", (cid,))
     assert state(b) == "has" and got("has") == {"寺B"}
     assert db.execute("select spot_detail(%s) r", (b["id"],)).fetchone()["r"]["photo_state"] == "has"
+
+
+def test_photo_suggest_bulk_and_reject_reason(db, tmp_path):
+    """おすすめ度（暫定ルール）・絞り込み・まとめて採用（見込み高だけ）・不採用の理由"""
+    sg = lambda *a: db.execute("select photo_suggest(%s,%s,%s,%s) r", a).fetchone()["r"]
+    assert sg("commons", True, "境内の風景", "File:a.jpg") == "high"
+    assert sg("commons", True, "駅名標の写真", "File:a.jpg") == "low"          # 看板類の語が優先
+    assert sg("commons", True, "A sign at the gate", "File:a.jpg") == "low"
+    assert sg("commons", False, "境内", "File:a.jpg") == "unknown"
+    assert sg("mapillary", False, None, None) == "unknown"
+    assert sg("commons", True, "design", "File:a.jpg") == "high"              # 語の途中（design の sign）は一致させない
+
+    w = World()
+    w.point(10, 130.39, 33.585, amenity="place_of_worship", name="警固神社")
+    w.run(db, tmp_path)
+    sid = spots(db)[0]["id"]
+    ids = {}
+    for key, nm, desc in [("hi", True, "境内"), ("lo", True, "案内看板"), ("un", False, "境内")]:
+        ids[key] = db.execute("""insert into spot_photo_candidates (spot_id, file_title, page_url, image_url, author, license, name_match, description, source)
+                                 values (%s,%s,%s,%s,'作者','CC BY 4.0',%s,%s,'commons') returning id""",
+                              (sid, f"File:{key}.jpg", f"https://c/{key}", f"https://c/{key}.jpg", nm, desc)).fetchone()["id"]
+    db.commit()
+    lst = db.execute("select photo_candidates_list() r").fetchone()["r"]
+    assert [c["suggest"] for c in lst] == ["high", "unknown", "low"]            # 見込み高→判断材料なし→見込み低
+    assert [c["id"] for c in db.execute("select photo_candidates_list(p_suggest => 'low') r").fetchone()["r"]] == [ids["lo"]]
+    assert db.execute("select photos_suggest_counts() r").fetchone()["r"] == {"high": 1, "unknown": 1, "low": 1}
+    # まとめて採用：名前が必要。見込み高だけ通り、ほかは変えない
+    assert not db.execute("select photo_decide_bulk(%s,'adopt','') r", ([ids["hi"]],)).fetchone()["r"]["ok"]
+    r = db.execute("select photo_decide_bulk(%s,'adopt','hirata') r", ([ids["hi"], ids["lo"], ids["un"]],)).fetchone()["r"]
+    assert r == {"ok": True, "decided": 1, "skipped": 2}
+    st = {r["id"]: r["status"] for r in db.execute("select id, status from spot_photo_candidates").fetchall()}
+    assert st == {ids["hi"]: "adopted", ids["lo"]: "candidate", ids["un"]: "candidate"}
+    # 決め済みは対象外（もう一度押しても変わらない）
+    assert db.execute("select photo_decide_bulk(%s,'adopt','hirata') r", ([ids["hi"]],)).fetchone()["r"]["decided"] == 0
+    # 不採用の理由：まとめて不採用／個別。正しくない理由は断る
+    assert not db.execute("select photo_decide(%s,'reject','hirata','bogus') r", (ids["un"],)).fetchone()["r"]["ok"]
+    assert db.execute("select photo_decide(%s,'reject','hirata','person') r", (ids["un"],)).fetchone()["r"]["ok"]
+    assert db.execute("select photo_decide_bulk(%s,'reject','hirata','sign') r", ([ids["lo"]],)).fetchone()["r"]["decided"] == 1
+    rr = {r["id"]: r["reject_reason"] for r in db.execute("select id, reject_reason from spot_photo_candidates").fetchall()}
+    assert rr[ids["un"]] == "person" and rr[ids["lo"]] == "sign" and rr[ids["hi"]] is None
+    db.execute("select photo_decide(%s,'reset','hirata')", (ids["un"],))
+    assert db.execute("select reject_reason from spot_photo_candidates where id=%s", (ids["un"],)).fetchone()["reject_reason"] is None

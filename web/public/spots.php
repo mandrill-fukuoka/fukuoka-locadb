@@ -27,9 +27,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             sb_rpc('check_close', ['p_id' => (int)$_POST['check_id'], 'p_user' => current_user(),
                                    'p_note' => trim((string)($_POST['note'] ?? '')) ?: null]);
             $msg = '「' . ($_POST['name'] ?? '') . '」の指摘を閉じました';
+        } elseif (($_POST['action'] ?? '') === 'photo_bulk' && in_array($_POST['decision'] ?? '', ['adopt', 'reject'], true)) {
+            // 写真候補のまとめて採否（人が一覧を見て押したとき。採用は「見込み高」だけ。サーバー側でも確かめる）
+            $ids = array_values(array_filter(array_map('intval', (array)($_POST['ids'] ?? []))));
+            if (!$ids) throw new RuntimeException('対象の写真がありません');
+            $reason = (string)($_POST['reason'] ?? '');
+            $r = sb_rpc('photo_decide_bulk', ['p_ids' => $ids, 'p_decision' => $_POST['decision'], 'p_user' => current_user(),
+                                              'p_reason' => array_key_exists($reason, PHOTO_REJECT_REASON) ? $reason : null]);
+            if (!empty($r['ok'])) {
+                $msg = $r['decided'] . '件を' . ($_POST['decision'] === 'adopt' ? '採用しました（地点ページに出ます）' : '不採用にしました')
+                     . ($r['skipped'] ? '（' . $r['skipped'] . '件は対象外のため変更していません）' : '');
+            } else { $error = $r['reason'] ?? '保存できませんでした'; }
         } elseif (($_POST['action'] ?? '') === 'photo_decide' && in_array($_POST['decision'] ?? '', ['adopt', 'reject', 'reset'], true)) {
-            // 写真候補の採否（採用すると出典つきで地点ページに出る。決めるのは人だけ）
-            $r = sb_rpc('photo_decide', ['p_id' => (int)$_POST['cand_id'], 'p_decision' => $_POST['decision'], 'p_user' => current_user()]);
+            // 写真候補の採否（採用すると出典つきで地点ページに出る。決めるのは人だけ。不採用は理由を選べる）
+            $reason = (string)($_POST['reason'] ?? '');
+            $r = sb_rpc('photo_decide', ['p_id' => (int)$_POST['cand_id'], 'p_decision' => $_POST['decision'], 'p_user' => current_user(),
+                                         'p_reason' => array_key_exists($reason, PHOTO_REJECT_REASON) ? $reason : null]);
             if (!empty($r['ok'])) {
                 $msg = '「' . ($_POST['name'] ?? '') . '」の写真を' . ['adopt' => '採用しました（地点ページに出ます）', 'reject' => '不採用にしました', 'reset' => '候補に戻しました'][$_POST['decision']];
             } else { $error = $r['reason'] ?? '保存できませんでした'; }
@@ -81,6 +94,8 @@ $facts = []; $fcount = ['items' => [], 'spots' => 0];
 $photos = []; $pcount = ['candidate' => 0, 'adopted' => 0, 'rejected' => 0, 'spots' => 0];
 $additions = []; $acount = ['candidate' => 0, 'adopted' => 0, 'rejected' => 0, 'wikipedia' => 0, 'commons' => 0]; $addCats = [];
 $asrc = in_array($_GET['asrc'] ?? '', ['wikipedia', 'commons'], true) ? $_GET['asrc'] : '';
+$psug = in_array($_GET['psug'] ?? '', ['high', 'unknown', 'low'], true) ? $_GET['psug'] : '';
+$psugCounts = [];
 $pstatus = in_array($_GET['pstatus'] ?? '', ['candidate', 'adopted', 'rejected'], true) ? $_GET['pstatus'] : 'candidate';
 try {
     if ($queue === 'drafts') {
@@ -97,7 +112,9 @@ try {
                                        'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
     } elseif ($queue === 'photos') {
         $pcount = sb_rpc('photos_counts') ?? $pcount;
-        $photos = sb_rpc('photo_candidates_list', ['p_status' => $pstatus, 'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
+        $photos = sb_rpc('photo_candidates_list', ['p_status' => $pstatus, 'p_offset' => $page * $per, 'p_limit' => $per,
+                                                   'p_suggest' => ($pstatus === 'candidate' && $psug !== '') ? $psug : null]) ?? [];
+        $psugCounts = sb_rpc('photos_suggest_counts') ?? [];
     } elseif ($queue === 'additions') {
         $acount = sb_rpc('additions_counts') ?? $acount;
         $additions = sb_rpc('additions_list', ['p_status' => $pstatus, 'p_source' => $asrc ?: null, 'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
@@ -114,7 +131,7 @@ try {
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
 $qs = fn(array $o) => '?' . http_build_query(array_merge(['queue' => $queue, 'area' => $area, 'status' => $status, 'q' => $q,
-                                                          'target' => $target, 'check' => $check, 'flag' => $flag, 'item' => $item, 'pstatus' => $pstatus, 'asrc' => $asrc], $o));
+                                                          'target' => $target, 'check' => $check, 'flag' => $flag, 'item' => $item, 'pstatus' => $pstatus, 'asrc' => $asrc, 'psug' => $psug], $o));
 $tabs = ['review' => '要確認', 'unreviewed' => '未確認', 'manual' => '手入力・人が直した', 'drafts' => '説明文の下書き',
          'checks' => '自動チェック', 'facts' => '事実カード', 'photos' => '写真候補', 'additions' => '追加候補', 'dups' => '重複の疑い', 'archived' => '対象外', 'all' => 'すべて'];
 $TARGET_LABEL = ['category' => '種別', 'address' => '住所', 'summary' => '説明文'];
@@ -145,6 +162,37 @@ page_header('地点の確認', 'spots.php');
       <?php endforeach; ?>
     </nav>
     <p class="small muted">候補のある地点：<?= number_format((int)$pcount['spots']) ?>か所</p>
+    <?php if ($pstatus === 'candidate'): ?>
+    <nav class="tabs">
+      <a href="<?= h($qs(['psug' => '', 'p' => 0])) ?>" class="<?= $psug === '' ? 'on' : '' ?>">おすすめ度：すべて</a>
+      <?php foreach (PHOTO_SUGGEST_LABEL as $k => $v): ?>
+        <a href="<?= h($qs(['psug' => $k, 'p' => 0])) ?>" class="<?= $psug === $k ? 'on' : '' ?>"><?= h($v) ?>（<?= number_format((int)($psugCounts[$k] ?? 0)) ?>）</a>
+      <?php endforeach; ?>
+    </nav>
+    <p class="small muted">おすすめ度は、これまでに人が決めた採否の傾向から作った暫定のルールによる目安です（AIは使っていません）。説明文・ファイル名に看板・標識・案内・地図などの語があるものは「不採用の見込み高」、Commons で地点名が一致するものは「採用の見込み高」、それ以外（Mapillary・名前が一致しない写真）は人が決めた例がまだないので「判断材料なし」です。決めるのは人です。</p>
+    <?php
+      $bulkHigh = array_values(array_map(fn($c) => (int)$c['id'], array_filter($photos, fn($c) => ($c['suggest'] ?? '') === 'high')));
+      $bulkLow  = array_values(array_map(fn($c) => (int)$c['id'], array_filter($photos, fn($c) => ($c['suggest'] ?? '') === 'low')));
+    ?>
+    <?php if ($bulkHigh || $bulkLow): ?>
+    <div class="row">
+      <?php if ($bulkHigh): ?>
+      <form method="post" action="<?= h($qs(['p' => $page])) ?>" onsubmit="return confirm('このページの「採用の見込み高」<?= count($bulkHigh) ?>件を採用します。写真を確かめましたか？（採用すると地点ページに出ます）');"><?= csrf_field() ?>
+        <input type="hidden" name="action" value="photo_bulk"><input type="hidden" name="decision" value="adopt">
+        <?php foreach ($bulkHigh as $id): ?><input type="hidden" name="ids[]" value="<?= $id ?>"><?php endforeach; ?>
+        <button class="small-btn">このページの「採用の見込み高」<?= count($bulkHigh) ?>件をまとめて採用</button>
+      </form>
+      <?php endif; ?>
+      <?php if ($bulkLow): ?>
+      <form method="post" action="<?= h($qs(['p' => $page])) ?>" onsubmit="return confirm('このページの「不採用の見込み高」<?= count($bulkLow) ?>件を不採用（理由：看板・標識・地図）にします。よろしいですか？');"><?= csrf_field() ?>
+        <input type="hidden" name="action" value="photo_bulk"><input type="hidden" name="decision" value="reject"><input type="hidden" name="reason" value="sign">
+        <?php foreach ($bulkLow as $id): ?><input type="hidden" name="ids[]" value="<?= $id ?>"><?php endforeach; ?>
+        <button class="secondary small-btn">このページの「不採用の見込み高」<?= count($bulkLow) ?>件をまとめて不採用</button>
+      </form>
+      <?php endif; ?>
+    </div>
+    <?php endif; ?>
+    <?php endif; ?>
   </section>
   <?php foreach ($photos as $c): ?>
     <article class="card check photocand">
@@ -154,7 +202,9 @@ page_header('地点の確認', 'spots.php');
           <span class="muted small"><?= h($c['category']) ?>・<?= h($c['address'] ?: '') ?>・<?= h($c['code']) ?></span></h3>
         <p class="small"><?= h($c['file_title']) ?>
           <span class="chip dim">地点から <?= (int)$c['dist_m'] ?>m</span>
-          <?php if (!empty($c['name_match'])): ?><span class="chip">名前が一致</span><?php endif; ?></p>
+          <?php if (!empty($c['name_match'])): ?><span class="chip">名前が一致</span><?php endif; ?>
+          <?php if ($c['status'] === 'candidate' && !empty($c['suggest'])): ?><span class="chip <?= $c['suggest'] === 'high' ? '' : 'dim' ?>"><?= h(PHOTO_SUGGEST_LABEL[$c['suggest']] ?? '') ?></span><?php endif; ?>
+          <?php if (!empty($c['reject_reason'])): ?><span class="chip dim">不採用の理由：<?= h(PHOTO_REJECT_REASON[$c['reject_reason']] ?? '') ?></span><?php endif; ?></p>
         <?php if (!empty($c['description'])): ?><p class="small muted"><?= h($c['description']) ?></p><?php endif; ?>
         <p class="small muted"><?= photo_credit_html(['author' => $c['author'], 'license' => $c['license'], 'license_url' => $c['license_url'], 'source_url' => $c['page_url']]) ?>
           <?php if (!empty($c['shot_at'])): ?>・撮影：<?= h($c['shot_at']) ?><?php endif; ?>
@@ -163,6 +213,8 @@ page_header('地点の確認', 'spots.php');
           <input type="hidden" name="action" value="photo_decide"><input type="hidden" name="cand_id" value="<?= (int)$c['id'] ?>"><input type="hidden" name="name" value="<?= h(nm($c['name'])) ?>">
           <?php if ($c['status'] === 'candidate'): ?>
             <button name="decision" value="adopt" class="small-btn">採用（公開）</button>
+            <label class="small">不採用の理由<select name="reason"><option value="">（選ばない）</option>
+              <?php foreach (PHOTO_REJECT_REASON as $rk => $rv): ?><option value="<?= h($rk) ?>" <?= ($c['suggest'] ?? '') === 'low' && $rk === 'sign' ? 'selected' : '' ?>><?= h($rv) ?></option><?php endforeach; ?></select></label>
             <button name="decision" value="reject" class="secondary small-btn">不採用</button>
           <?php else: ?>
             <button name="decision" value="reset" class="secondary small-btn"><?= $c['status'] === 'adopted' ? '採用を取り消す（候補に戻す）' : '候補に戻す' ?></button>
