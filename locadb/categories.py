@@ -36,6 +36,14 @@ CATEGORIES = {
     "warehouse":           ("倉庫・物流施設", "port_industrial", "point", 0),
     "vacant":              ("空き店舗・閉鎖施設", "vacant", "point", 0),
     "redevelopment_site":  ("工事中・再開発地", "vacant", "point", 0),
+    # 修正提案2A（2026-10-22）：撮影の需要がある種類を足す。いずれも景観グループは既存のものを使う
+    "level_crossing":      ("踏切", "transport", "point", 0),
+    "underpass":           ("トンネル・地下道", "transport", "point", 0),
+    "parking_multi":       ("立体駐車場", "urban_new", "point", 0),
+    "harbour_structure":   ("灯台・渡船場・フェリー乗り場", "sea", "point", 0),
+    "industrial_structure": ("給水塔・サイロ・タンク", "port_industrial", "point", 0),
+    "disused_railway":     ("廃線跡", "vacant", "point", 0),
+    "sento":               ("銭湯", "old_town", "point", 0),
     "shotengai":           ("商店街", "old_town", "line", 150),
     "alley":               ("細街路・路地・階段", "old_town", "line", 120),
     "public_space":        ("広場・歩行者空間", "urban_new", "line", 150),
@@ -138,6 +146,23 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
         out.append("vacant")
     if t.get("landuse") in ("construction", "brownfield"):
         out.append("redevelopment_site")
+
+    # 修正提案2A：新しい種類（撮影の需要がある構造物・施設）。名前のないものが大量に出る種類は、名前か条件で絞る
+    if osm_type == "n" and t.get("railway") == "level_crossing":
+        out.append("level_crossing")
+    if osm_type == "w" and t.get("tunnel") in ("yes", "building_passage") and (hw or t.get("railway")) and nm \
+            and not ROAD_NUMBER.match(nm):
+        out.append("underpass")                                   # 名前のあるトンネル・地下道だけ（道路の暗渠・番号だけの道は除く）
+    if a == "parking" and t.get("parking") == "multi-storey" or t.get("building") == "parking":
+        out.append("parking_multi")
+    if t.get("man_made") == "lighthouse" or (a == "ferry_terminal" and nm):
+        out.append("harbour_structure")
+    if t.get("man_made") in ("water_tower", "silo") or (t.get("man_made") == "storage_tank" and nm):
+        out.append("industrial_structure")
+    if osm_type == "w" and t.get("railway") in ("abandoned", "disused") and nm:
+        out.append("disused_railway")
+    if a == "public_bath" and nm:
+        out.append("sento")
 
     # ---- 線のもの（トンネル・暗渠・地下は除く。橋の上は橋として扱う） ----
     underground = t.get("tunnel") not in (None, "no") or t.get("indoor") not in (None, "no") \
