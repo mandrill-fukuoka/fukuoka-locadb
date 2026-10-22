@@ -143,7 +143,7 @@ page_header('地点の確認', 'spots.php');
   <nav class="tabs">
     <?php foreach ($tabs as $k => $v): ?><a href="<?= h($qs(['queue' => $k, 'p' => 0, 'target' => '', 'check' => '', 'flag' => '', 'item' => ''])) ?>" class="<?= $queue === $k ? 'on' : '' ?>"><?= $v ?></a><?php endforeach; ?>
   </nav>
-  <?php if (!in_array($queue, ['dups', 'additions'], true)): ?>
+  <?php if (!in_array($queue, ['dups', 'additions', 'photos'], true)): ?>
   <form class="row filters" method="get">
     <input type="hidden" name="queue" value="<?= h($queue) ?>">
     <label>エリア<select name="area"><option value="">すべて</option>
@@ -152,7 +152,26 @@ page_header('地点の確認', 'spots.php');
     <label>対象<select name="target"><option value="">すべて</option>
       <?php foreach ($TARGET_LABEL as $k => $v): ?><option value="<?= $k ?>" <?= $target === $k ? 'selected' : '' ?>><?= $v ?></option><?php endforeach; ?></select></label>
     <input type="hidden" name="check" value="<?= h($check) ?>">
-    <?php elseif ($queue === 'photos'): ?>
+<?php elseif ($queue === 'facts'): ?>
+    <label>項目<select name="item"><option value="">すべて</option>
+      <?php foreach (FACT_ITEMS as $v): ?><option value="<?= h($v) ?>" <?= $item === $v ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></label>
+    <?php elseif ($queue === 'drafts'): ?>
+    <label>自動チェック<select name="flag"><option value="">すべて（指摘のあるものが先）</option>
+      <option value="1" <?= $flag === '1' ? 'selected' : '' ?>>指摘あり</option><option value="0" <?= $flag === '0' ? 'selected' : '' ?>>指摘なし</option></select></label>
+    <?php else: ?>
+    <label>確認の状態<select name="status"><option value="">すべて</option>
+      <?php foreach (STATUS_LABEL as $k => $v): ?><option value="<?= $k ?>" <?= $status === $k ? 'selected' : '' ?>><?= $v ?></option><?php endforeach; ?></select></label>
+    <?php endif; ?>
+    <label>名称・住所<input name="q" value="<?= h($q) ?>" placeholder="部分一致"></label>
+    <button>絞り込み</button>
+  </form>
+  <?php endif; ?>
+</section>
+
+<?php if ($msg): ?><p class="ok"><?= h($msg) ?></p><?php endif; ?>
+<?php if ($error): ?><p class="error"><?= h($error) ?></p><?php endif; ?>
+
+<?php if ($queue === 'photos'): ?>
   <section class="card">
     <p class="small muted">Wikimedia Commons と Mapillary（file名が mapillary: のもの＝街路写真）の写真を、地点ごとの候補として自動で集めたものです（AIは使っていません）。「採用」を押した写真だけが、作者・ライセンス・出典つきで地点ページと一覧に出ます。
       写っているものが地点と合っているか、人の顔・商標・私有地など配慮が要るものでないかを見て決めてください。候補は CC0・パブリックドメイン・CC BY・CC BY-SA のものだけです。</p>
@@ -228,24 +247,7 @@ page_header('地点の確認', 'spots.php');
     <?php if ($page > 0): ?><a href="<?= h($qs(['p' => $page - 1])) ?>">← 前へ</a><?php endif; ?>
     <?php if (count($photos) === $per): ?><a href="<?= h($qs(['p' => $page + 1])) ?>">次へ →</a><?php endif; ?>
   </nav>
-<?php elseif ($queue === 'facts'): ?>
-    <label>項目<select name="item"><option value="">すべて</option>
-      <?php foreach (FACT_ITEMS as $v): ?><option value="<?= h($v) ?>" <?= $item === $v ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></label>
-    <?php elseif ($queue === 'drafts'): ?>
-    <label>自動チェック<select name="flag"><option value="">すべて（指摘のあるものが先）</option>
-      <option value="1" <?= $flag === '1' ? 'selected' : '' ?>>指摘あり</option><option value="0" <?= $flag === '0' ? 'selected' : '' ?>>指摘なし</option></select></label>
-    <?php else: ?>
-    <label>確認の状態<select name="status"><option value="">すべて</option>
-      <?php foreach (STATUS_LABEL as $k => $v): ?><option value="<?= $k ?>" <?= $status === $k ? 'selected' : '' ?>><?= $v ?></option><?php endforeach; ?></select></label>
-    <?php endif; ?>
-    <label>名称・住所<input name="q" value="<?= h($q) ?>" placeholder="部分一致"></label>
-    <button>絞り込み</button>
-  </form>
-  <?php endif; ?>
-</section>
-
-<?php if ($msg): ?><p class="ok"><?= h($msg) ?></p><?php endif; ?>
-<?php if ($error): ?><p class="error"><?= h($error) ?></p><?php endif; ?>
+<?php endif; ?>
 
 <?php if ($queue === 'drafts'): ?>
   <p class="small muted">AI（LAYA など）が作った説明文の下書きです。採用すると、その地点の説明文としてログインなしの画面にも出ます。直してから採用することもできます。却下した下書きは使われません。</p>
