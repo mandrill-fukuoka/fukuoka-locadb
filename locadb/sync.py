@@ -481,6 +481,24 @@ class Sync:
         self.c.execute("update features set missing_runs = missing_runs + 1 where last_seen_run is distinct from %s",
                        (self.run,))
 
+    def alt_names_from_tags(self) -> int:
+        """OSMの名前が「A;B」（複数の名前）の地点は、先頭を地点名にし、残りを別名（alt_names）に入れる（橋は除く）。
+        別名は検索（名前・別名）に使われる。すでにある別名・地点名と同じものは足さない"""
+        rows = self.c.execute("""
+            update spots s set alt_names = (select array_agg(distinct x) from unnest(s.alt_names || q.parts) x)
+              from (select sf.spot_id, array(select trim(x) from unnest(string_to_array(
+                                              coalesce(f.tags->>'name:ja', f.tags->>'name'), ';')) x
+                                             where trim(x) <> '') as parts
+                      from spot_features sf join features f on f.key = sf.feature_key
+                     where sf.role = 'primary' and coalesce(f.tags->>'name:ja', f.tags->>'name') like '%;%') q
+             where s.id = q.spot_id and s.category <> 'bridge_overpass' and s.data_status <> 'archived'
+               and exists (select 1 from unnest(q.parts) x where x <> s.name and not (x = any (s.alt_names)))
+            returning s.id""").fetchall()
+        # 地点名と同じ別名は持たない（先頭＝地点名が別名に入るのを取り除く）
+        self.c.execute("""update spots set alt_names = array_remove(alt_names, name)
+                           where name = any (alt_names) and id = any (%s)""", ([r["id"] for r in rows],))
+        return len(rows)
+
     def clusters(self):
         if not self.touched_spots:
             return 0
@@ -515,6 +533,7 @@ class Sync:
                 with self.c.cursor() as cur:
                     cur.executemany("update spots set osm_seen=%s::jsonb where id=%s", self._seen_updates)
             self.flush_history()
+        alt_named = self.alt_names_from_tags()
         clusters = self.clusters()
         n_after = self.c.execute("select count(*) n from spots where data_status <> 'archived'").fetchone()["n"]
         summary = {

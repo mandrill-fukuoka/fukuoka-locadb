@@ -482,3 +482,16 @@ def test_flows_record_only_multi_landscape_and_good_match(db, tmp_path):
     assert len(db.execute("select recommended_flows() r").fetchone()["r"]) == 1
     db.execute("update clusters set status='reviewed', saved_by='hirata' where route_key=%s", (key,)); db.commit()
     assert len(db.execute("select recommended_flows() r").fetchone()["r"]) == 2
+
+
+def test_semicolon_names_become_alt_names(db, tmp_path):
+    """OSMの名前が「A;B」の地点は、先頭が地点名・残りが別名になり、別名でも検索できる"""
+    from osmworld import World, spots
+    w = World()
+    w.point(30, 130.40, 33.59, railway="level_crossing", name="名島踏切;貝塚2号踏切")
+    w.run(db, tmp_path)
+    sp = [s for s in spots(db) if s["name"] == "名島踏切"]
+    assert len(sp) == 1
+    alts = db.execute("select alt_names a from spots where id=%s", (sp[0]["id"],)).fetchone()["a"]
+    assert alts == ["貝塚2号踏切"]
+    assert [r["name"] for r in db.execute("select search_spots(p_q => '貝塚2号踏切') r").fetchone()["r"]] == ["名島踏切"]

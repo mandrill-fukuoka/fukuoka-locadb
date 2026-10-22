@@ -31,3 +31,10 @@ def test_new_categories_use_existing_groups():
     for c in ("level_crossing", "underpass", "parking_multi", "harbour_structure", "industrial_structure", "disused_railway", "sento"):
         assert CATEGORIES[c][1] in LANDSCAPE_GROUPS and CATEGORIES[c][2] == "point"
         assert c in PRIORITY
+
+
+def test_semicolon_name_display():
+    from locadb.categories import display_name
+    assert display_name({"name": "名島踏切;貝塚2号踏切"}, "level_crossing") == "名島踏切"
+    assert display_name({"name": "和白踏切"}, "level_crossing") == "和白踏切"
+    assert display_name({"name": "箱崎橋;県道112号", "highway": "primary", "bridge": "yes"}, "bridge_overpass") == "箱崎橋"   # 橋は従来どおり
