@@ -14,6 +14,9 @@ def test_parse_tide_line():
     assert highs == [{"t": "08:29", "cm": 145}, {"t": "19:56", "cm": 174}]      # 欠測（9999・999）は除く
     assert lows == [{"t": "01:50", "cm": 15}, {"t": "13:34", "cm": 76}]
     assert parse_tide_line("short") is None
+    # 時刻の空白は0（「20 7」＝20:07）
+    day, highs, _ = parse_tide_line(LINE[:80] + "20 7145" + LINE[87:])
+    assert highs[0] == {"t": "20:07", "cm": 145}
 
 
 def rpc(db, fn, *a):
