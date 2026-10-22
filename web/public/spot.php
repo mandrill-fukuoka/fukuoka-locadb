@@ -356,4 +356,5 @@ page_header(nm($s['name']), '');
   </div>
 </article>
 <script src="assets/sun.js"></script>
+<script src="assets/lightbox.js"></script>
 <?php leaflet_script(false); page_footer();

@@ -337,4 +337,5 @@ page_header('地点の確認', 'spots.php');
     <?php if (count($rows) === $per): ?><a href="<?= h($qs(['p' => $page + 1])) ?>">次へ →</a><?php endif; ?>
   </nav>
 <?php endif; ?>
+<script src="assets/lightbox.js"></script>
 <?php page_footer();
