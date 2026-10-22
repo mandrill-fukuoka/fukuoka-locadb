@@ -27,6 +27,7 @@ jobs:
         with: { python-version: "3.12" }
       - run: pip install -r requirements.txt
       - name: 収集
+        shell: bash
         run: |
           python -m locadb.mapillary_photos --${MODE//_/-} --limit "${LIMIT}" --out mapillary-out | tee mapillary-out.log
           { echo '```json'; tail -1 mapillary-out.log; echo '```'; echo "モード：$MODE"; } >> "$GITHUB_STEP_SUMMARY"

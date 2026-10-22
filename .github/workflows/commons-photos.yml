@@ -27,6 +27,7 @@ jobs:
         with: { python-version: "3.12" }
       - run: pip install -r requirements.txt
       - name: 収集
+        shell: bash
         run: |
           python -m locadb.commons_photos --${MODE//_/-} --limit "${LIMIT}" --out commons-out | tee commons-out.log
           { echo '```json'; tail -1 commons-out.log; echo '```'; echo "モード：$MODE"; } >> "$GITHUB_STEP_SUMMARY"
