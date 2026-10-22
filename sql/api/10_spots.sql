@@ -142,6 +142,7 @@ select coalesce(jsonb_agg(x order by x.ord), '[]'::jsonb) from (
   select u.ord, s.id, s.code, s.name, s.area_code, s.address, sc.name as category, sc.landscape_group as grp_code,
          lg.name as grp, s.confidence, s.data_status, s.summary,
          (select count(*) from spot_facts f where f.spot_id = s.id and f.status = 'approved') as fact_count,
+         photo_state(s.id, s.category, s.name like '（無名）%') as photo_state,
          ST_Y(s.geom::geometry) as lat, ST_X(s.geom::geometry) as lon,
          exists (select 1 from change_risks rk where rk.spot_id = s.id and rk.risk_type <> 'none') as risk
     from unnest(p_ids) with ordinality u(id, ord)
