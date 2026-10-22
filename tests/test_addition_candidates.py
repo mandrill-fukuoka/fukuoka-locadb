@@ -21,7 +21,7 @@ def test_title_cleanup_admin_and_category_hints():
     assert not any(ac.is_admin_title(x) for x in ["博多駅", "警固神社", "大濠公園"])
     assert ac.suggest_category("土井駅") == "station" and ac.suggest_category("警固神社") == "shrine_temple"
     assert ac.suggest_category("福岡市立博多小学校") == "school" and ac.suggest_category("大濠公園") == "park"
-    assert ac.suggest_category("須玖遺跡群") is None            # 当たらなければ空欄（人が選ぶ）
+    assert ac.suggest_category("須玖遺跡群") == "heritage" and ac.suggest_category("図書館通り") is None   # 当たらなければ空欄（人が選ぶ）
     assert {c for _, c in ac.CATEGORY_HINTS} <= set(CATEGORIES)    # 種別の案は実在する種別だけ
 
 
