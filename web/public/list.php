@@ -18,13 +18,15 @@ if (($_GET['format'] ?? '') === 'csv' && $rows) {
     header('Content-Disposition: attachment; filename="locations-' . date('Ymd') . '.csv"');
     $out = fopen('php://output', 'w');
     fwrite($out, "\xEF\xBB\xBF");   // Excel で文字化けしないように
-    fputcsv($out, ['No', '名前', '種別', '景観', '区', '住所', '緯度', '経度', '確認状況', 'Googleマップ', 'ストリートビュー', '詳細ページ']);
+    $withPhoto = (bool)current_user();      // 写真の状態はログイン時だけ（候補は未公開のため）
+    fputcsv($out, array_merge(['No', '名前', '種別', '景観', '区', '住所', '緯度', '経度', '確認状況'], $withPhoto ? ['写真の状態'] : [],
+        ['Googleマップ', 'ストリートビュー', '詳細ページ']));
     foreach ($rows as $i => $s) {
-        fputcsv($out, [$i + 1, nm($s['name']), $s['category'], $s['grp'], AREA_LABEL[$s['area_code']] ?? '', $s['address'],
-            $s['lat'], $s['lon'], conf_stage($s),
+        fputcsv($out, array_merge([$i + 1, nm($s['name']), $s['category'], $s['grp'], AREA_LABEL[$s['area_code']] ?? '', $s['address'],
+            $s['lat'], $s['lon'], conf_stage($s)], $withPhoto ? [PHOTO_STATE_LABEL[$s['photo_state'] ?? ''] ?? ''] : [], [
             place_link_url($s),
             'https://www.google.com/maps/@?' . http_build_query(['api' => 1, 'map_action' => 'pano', 'viewpoint' => $s['lat'] . ',' . $s['lon']]),
-            $base . 'spot.php?id=' . $s['id']]);
+            $base . 'spot.php?id=' . $s['id']]));
     }
     exit;
 }
@@ -64,7 +66,7 @@ page_header('ロケハンリスト', 'list.php');
           <div class="place-body">
             <div><span class="num" style="background:<?= h(group_color($s['grp_code'])) ?>"><?= $i + 1 ?></span><strong><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h(nm($s['name'])) ?></a></strong>
               <span class="muted"><?= dot($s['grp_code']) ?><?= h($s['category']) ?>・<?= h($s['address'] ?: (AREA_LABEL[$s['area_code']] ?? '')) ?></span>
-              <?php if ($s['confidence'] !== 'field_checked'): ?><span class="chip dim"><?= h(conf_stage($s)) ?></span><?php endif; ?>
+              <?php if ($s['confidence'] !== 'field_checked'): ?><span class="chip dim"><?= h(conf_stage($s)) ?></span><?php endif; ?><?= photo_state_chip($s) ?>
               <?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?>
               <?php if ($s['data_status'] === 'archived'): ?><span class="chip warn">対象外</span><?php endif; ?></div>
             <div class="small actions noprint">
