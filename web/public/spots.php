@@ -50,6 +50,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             sb_rpc('set_spot_state', ['p_id' => (int)$_POST['id'], 'p_action' => $_POST['action'], 'p_user' => current_user(),
                                       'p_note' => trim($_POST['note'] ?? '') ?: null]);
             $msg = '「' . ($_POST['name'] ?? '') . '」を' . ($_POST['action'] === 'archive' ? '対象外にしました' : '掲載に戻しました');
+        } elseif (!isset($_POST['id'])) {
+            throw new RuntimeException('送信内容が正しくありません（操作を特定できません）');
         } else {
             sb_rpc('review_spot', [
                 'p_id' => (int)$_POST['id'],
@@ -143,7 +145,7 @@ page_header('地点の確認', 'spots.php');
           <?php if (!empty($c['shot_at'])): ?>・撮影：<?= h($c['shot_at']) ?><?php endif; ?>
           <?php if ($c['status'] !== 'candidate'): ?>・<?= h($c['decided_by']) ?> <?= h(substr((string)$c['decided_at'], 0, 10)) ?><?php endif; ?></p>
         <form method="post" action="<?= h($qs(['p' => $page])) ?>" class="row"><?= csrf_field() ?>
-          <input type="hidden" name="cand_id" value="<?= (int)$c['id'] ?>"><input type="hidden" name="name" value="<?= h(nm($c['name'])) ?>">
+          <input type="hidden" name="action" value="photo_decide"><input type="hidden" name="cand_id" value="<?= (int)$c['id'] ?>"><input type="hidden" name="name" value="<?= h(nm($c['name'])) ?>">
           <?php if ($c['status'] === 'candidate'): ?>
             <button name="decision" value="adopt" class="small-btn">採用（公開）</button>
             <button name="decision" value="reject" class="secondary small-btn">不採用</button>
