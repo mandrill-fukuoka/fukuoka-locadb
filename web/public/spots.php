@@ -172,6 +172,8 @@ page_header('地点の確認', 'spots.php');
 <?php if ($error): ?><p class="error"><?= h($error) ?></p><?php endif; ?>
 
 <?php if ($queue === 'photos'): ?>
+  <a href="#" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;" class="to-top" aria-label="ページの先頭へ">↑ 上へ</a>
+  <style>.to-top{position:fixed;right:20px;bottom:24px;z-index:50;background:#222;color:#fff;padding:10px 16px;border-radius:24px;text-decoration:none;font-size:14px;box-shadow:0 2px 8px rgba(0,0,0,.3)}</style>
   <section class="card">
     <p class="small muted">Wikimedia Commons と Mapillary（file名が mapillary: のもの＝街路写真）の写真を、地点ごとの候補として自動で集めたものです（AIは使っていません）。「採用」を押した写真だけが、作者・ライセンス・出典つきで地点ページと一覧に出ます。
       写っているものが地点と合っているか、人の顔・商標・私有地など配慮が要るものでないかを見て決めてください。候補は CC0・パブリックドメイン・CC BY・CC BY-SA のものだけです。</p>
@@ -193,7 +195,7 @@ page_header('地点の確認', 'spots.php');
       $bulkHigh = array_values(array_map(fn($c) => (int)$c['id'], array_filter($photos, fn($c) => ($c['suggest'] ?? '') === 'high')));
       $bulkLow  = array_values(array_map(fn($c) => (int)$c['id'], array_filter($photos, fn($c) => ($c['suggest'] ?? '') === 'low')));
     ?>
-    <?php if ($bulkHigh || $bulkLow): ?>
+    <?php ob_start(); if ($bulkHigh || $bulkLow): ?>
     <div class="row">
       <?php if ($bulkHigh): ?>
       <form method="post" action="<?= h($qs(['p' => $page])) ?>" onsubmit="return confirm('このページの「採用の見込み高」<?= count($bulkHigh) ?>件を採用します。写真を確かめましたか？（採用すると地点ページに出ます）');"><?= csrf_field() ?>
@@ -210,7 +212,7 @@ page_header('地点の確認', 'spots.php');
       </form>
       <?php endif; ?>
     </div>
-    <?php endif; ?>
+    <?php endif; $bulkHtml = ob_get_clean(); echo $bulkHtml; ?>
     <?php endif; ?>
   </section>
   <?php foreach ($photos as $c): ?>
@@ -243,6 +245,7 @@ page_header('地点の確認', 'spots.php');
     </article>
   <?php endforeach; ?>
   <?php if (!$photos && !$error): ?><p class="card">該当する写真はありません。</p><?php endif; ?>
+  <?php if (!empty($bulkHtml) && count($photos) > 3): ?><section class="card"><p class="small muted">ページの下までご覧になったら、ここからもまとめて決められます。</p><?= $bulkHtml ?></section><?php endif; ?>
   <nav class="pager">
     <?php if ($page > 0): ?><a href="<?= h($qs(['p' => $page - 1])) ?>">← 前へ</a><?php endif; ?>
     <?php if (count($photos) === $per): ?><a href="<?= h($qs(['p' => $page + 1])) ?>">次へ →</a><?php endif; ?>
