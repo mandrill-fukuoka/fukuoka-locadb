@@ -53,8 +53,9 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
 $$;
 
 -- 採否を決める。p_decision は 'adopt'（採用：spot_photos に出典つきで入れる）/ 'reject'（不採用）/ 'reset'（候補に戻す。採用済みなら写真を外す）
-create function photo_decide(p_id bigint, p_decision text, p_user text, p_reason text default null) returns jsonb language plpgsql as $$
-declare c spot_photo_candidates;
+-- p_archive：理由が closed（現存しない）のときだけ効く。地点を「対象外」にし、同じ地点の未決の候補もまとめて不採用にする（地点は消さない）
+create function photo_decide(p_id bigint, p_decision text, p_user text, p_reason text default null, p_archive boolean default false) returns jsonb language plpgsql as $$
+declare c spot_photo_candidates; archived boolean := false;
 begin
   select * into c from spot_photo_candidates where id = p_id;
   if not found then return jsonb_build_object('ok', false, 'reason', '候補がありません'); end if;
@@ -66,17 +67,24 @@ begin
     end if;
     update spot_photo_candidates set status = 'adopted', decided_by = p_user, decided_at = now() where id = p_id;
   elsif p_decision = 'reject' then
-    if coalesce(p_reason, '') not in ('', 'sign', 'person', 'quality', 'wrong_place', 'rights', 'other') then
+    if coalesce(p_reason, '') not in ('', 'sign', 'person', 'quality', 'wrong_place', 'rights', 'other', 'closed') then
       return jsonb_build_object('ok', false, 'reason', '不採用の理由が正しくありません');
     end if;
     update spot_photo_candidates set status = 'rejected', decided_by = p_user, decided_at = now(), reject_reason = nullif(p_reason, '') where id = p_id;
+    if p_reason = 'closed' and coalesce(p_archive, false) then
+      if coalesce(p_user, '') = '' then return jsonb_build_object('ok', false, 'reason', '地点を対象外にする人の名前が必要です'); end if;
+      perform set_spot_state(c.spot_id, 'archive', p_user, '現存しない（写真の確認で判明）');
+      update spot_photo_candidates set status = 'rejected', decided_by = p_user, decided_at = now(), reject_reason = 'closed'
+       where spot_id = c.spot_id and status = 'candidate';
+      archived := true;
+    end if;
   elsif p_decision = 'reset' then
     delete from spot_photos where spot_id = c.spot_id and source_url = c.page_url;
     update spot_photo_candidates set status = 'candidate', decided_by = null, decided_at = null, reject_reason = null where id = p_id;
   else
     return jsonb_build_object('ok', false, 'reason', '決め方が正しくありません');
   end if;
-  return jsonb_build_object('ok', true, 'spot_id', c.spot_id);
+  return jsonb_build_object('ok', true, 'spot_id', c.spot_id, 'archived', archived);
 end $$;
 
 -- おすすめ度ごとの件数（未決の候補）
