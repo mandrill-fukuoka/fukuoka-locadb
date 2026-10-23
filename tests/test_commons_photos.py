@@ -178,3 +178,39 @@ def test_reject_closed_archives_spot(db, tmp_path):
     # 戻せる
     db.execute("select set_spot_state(%s,'restore','hirata')", (by["警固神社"]["id"],))
     assert db.execute("select data_status from spots where id=%s", (by["警固神社"]["id"],)).fetchone()["data_status"] == "current"
+
+
+def test_photo_suggest_v2_rules_and_auto_reason(db, tmp_path):
+    """改訂したおすすめ度（種別・距離を見る）と、まとめて不採用の自動の理由"""
+    sg = lambda *a: db.execute("select photo_suggest(%s,%s,%s,%s,%s,%s) r", a).fetchone()["r"]
+    assert sg("commons", True, "境内", "File:a.jpg", "heritage", 20) == "high"            # 名前一致は種別・距離によらず見込み高
+    assert sg("commons", False, "境内", "File:a.jpg", "station", 50) == "low"             # 名前不一致で30m以上
+    assert sg("commons", False, "境内", "File:a.jpg", "school", 5) == "low"               # 名前不一致の学校
+    assert sg("commons", False, "境内", "File:a.jpg", "heritage", 5) == "low"
+    assert sg("commons", False, "境内", "File:a.jpg", "station", 5) == "unknown"          # 近くて学校・史跡以外は要確認
+    assert sg("mapillary", False, None, None, "heritage", 5) == "low"
+    assert sg("mapillary", False, None, None, "commercial_facility", 5) == "unknown"
+    assert sg("mapillary", False, None, None, None, None) == "unknown"                              # 種別が分からなければ見ない
+    rs = lambda *a: db.execute("select photo_suggest_reason(%s,%s,%s) r", a).fetchone()["r"]
+    assert rs("commons", "駅名標", "File:a.jpg") == "sign" and rs("mapillary", "x", "File:m.jpg") == "quality"
+    assert rs("commons", "境内", "File:a.jpg") == "wrong_place"
+
+    w = World()
+    w.point(10, 130.39, 33.585, amenity="school", name="A小学校")
+    w.run(db, tmp_path)
+    sp = spots(db)[0]
+    ids = []
+    for k, nm, src in [("a", False, "commons"), ("b", True, "commons")]:
+        ids.append(db.execute("""insert into spot_photo_candidates (spot_id, file_title, page_url, image_url, author, license, name_match, source, dist_m)
+                                 values (%s,%s,%s,%s,'作者','CC BY 4.0',%s,%s,10) returning id""",
+                              (sp["id"], f"File:{k}.jpg", f"https://c/{k}", f"https://c/{k}.jpg", nm, src)).fetchone()["id"])
+    db.commit()
+    cat = sp["category"]
+    got = {c["id"]: c["suggest"] for c in db.execute("select photo_candidates_list() r").fetchone()["r"]}
+    assert got[ids[1]] == "high" and (got[ids[0]] == "low" if cat in ("school", "civic", "heritage") else True)
+    if cat in ("school", "civic", "heritage"):
+        # まとめて不採用は「見込み低」だけ。理由は自動（別の場所）。見込み高は不採用にできない
+        r = db.execute("select photo_decide_bulk(%s,'reject','hirata') r", ([ids[0], ids[1]],)).fetchone()["r"]
+        assert r == {"ok": True, "decided": 1, "skipped": 1}
+        row = db.execute("select status, reject_reason from spot_photo_candidates where id=%s", (ids[0],)).fetchone()
+        assert (row["status"], row["reject_reason"]) == ("rejected", "wrong_place")
