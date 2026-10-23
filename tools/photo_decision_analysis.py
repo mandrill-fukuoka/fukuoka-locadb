@@ -13,7 +13,7 @@ from pathlib import Path
 from locadb.db import connect
 
 SQL = """
-select c.id, c.spot_id, c.source, c.file_title, c.description, c.dist_m, c.name_match, c.license, c.status, c.shot_at,
+select c.id, c.spot_id, c.source, c.file_title, c.description, c.dist_m, c.name_match, c.license, c.status, c.shot_at, c.reject_reason,
        s.category, s.name as spot_name, sc.landscape_group,
        (select count(*) from spot_photo_candidates x where x.spot_id = c.spot_id) as n_cands
   from spot_photo_candidates c
@@ -76,12 +76,24 @@ def main():
     md.append(table("ファイル名の型", agg(lambda r: title_kind(r["file_title"]))))
     md.append(table("説明文の特徴", agg(lambda r: desc_flags(r["description"]), multi=True)))
     md.append(table("同じ地点の候補の数", agg(lambda r: "1件" if r["n_cands"] == 1 else "2件" if r["n_cands"] == 2 else "3件〜")))
+    REASON = {"sign": "看板・標識・地図", "person": "人が写っている", "quality": "画質・構図", "wrong_place": "別の場所", "rights": "商標・権利",
+              "other": "その他", "closed": "現存しない", None: "（理由なし）"}
+    rej = [r for r in rows if r["status"] == "rejected"]
+    md.append("### 不採用の理由\n| 理由 | 件数 |\n|---|---|\n" + "\n".join(
+        f"| {REASON.get(k, k)} | {n} |" for k, n in collections.Counter(r["reject_reason"] for r in rej).most_common()))
+    for key, label in (("wrong_place", "別の場所"), ("quality", "画質・構図")):
+        sub = [r for r in rej if r["reject_reason"] == key]
+        g = collections.defaultdict(lambda: [0, 0])
+        for r in rows:       # 採用された写真を分母に、各区分で「その理由で不採用」になった割合を見る
+            g[(r["source"], "一致" if r["name_match"] else "不一致", r["landscape_group"])][1 if r in sub else 0] += 1
+        lines = [f"| {'/'.join(k)} | {v[1]} | {v[0]} |" for k, v in sorted(g.items(), key=lambda kv: -kv[1][1]) if v[1]]
+        md.append(f"### 「{label}」で不採用（由来/名前/景観グループ別。左：その理由の件数、右：それ以外の決定の件数）\n| 区分 | {label} | その他 |\n|---|---|---|\n" + "\n".join(lines[:15]))
     md.append(table("ライセンス", agg(lambda r: re.sub(r"\s*\d(\.\d)?.*$", "", r["license"] or ""))))
     (out / "summary.md").write_text("\n".join(md), encoding="utf-8")
     with open(out / "decided.csv", "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f); w.writerow(["結果", "由来", "地点", "種別", "ファイル", "距離m", "名前一致", "説明"])
+        w = csv.writer(f); w.writerow(["結果", "理由", "由来", "地点", "種別", "ファイル", "距離m", "名前一致", "説明"])
         for r in rows:
-            w.writerow([r["status"], r["source"], r["spot_name"], r["category"], r["file_title"], round(r["dist_m"] or 0),
+            w.writerow([r["status"], r["reject_reason"] or "", r["source"], r["spot_name"], r["category"], r["file_title"], round(r["dist_m"] or 0),
                         "○" if r["name_match"] else "", (r["description"] or "")[:80]])
     print("\n".join(md))
 
