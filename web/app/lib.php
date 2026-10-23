@@ -201,7 +201,7 @@ function conf_stage(array $s): string {
 // 写真候補のおすすめ度（photo_suggest の値）と、不採用の理由（photo_decide の p_reason）
 const PHOTO_SUGGEST_LABEL = ['high' => '採用の見込み高', 'unknown' => '判断材料なし（要確認）', 'low' => '不採用の見込み高'];
 const PHOTO_REJECT_REASON = ['sign' => '看板・標識・地図', 'person' => '人が写っている', 'quality' => '画質・構図', 'wrong_place' => '別の場所',
-                             'rights' => '商標・権利', 'other' => 'その他'];
+                             'rights' => '商標・権利', 'other' => 'その他', 'closed' => '現存しない（地点を対象外にする）'];
 const PHOTO_STATE_LABEL = ['has' => '写真あり', 'cand' => '写真候補あり（未確認）', 'none' => '写真候補なし（探索済み）', 'todo' => '写真は未探索'];
 function photo_state_chip(array $s): string {
     if (!current_user()) return '';

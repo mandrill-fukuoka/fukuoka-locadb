@@ -148,3 +148,33 @@ def test_photo_suggest_bulk_and_reject_reason(db, tmp_path):
     assert rr[ids["un"]] == "person" and rr[ids["lo"]] == "sign" and rr[ids["hi"]] is None
     db.execute("select photo_decide(%s,'reset','hirata')", (ids["un"],))
     assert db.execute("select reject_reason from spot_photo_candidates where id=%s", (ids["un"],)).fetchone()["reject_reason"] is None
+
+
+def test_reject_closed_archives_spot(db, tmp_path):
+    """理由「現存しない」で不採用＋確認ずみなら、地点を対象外にし、同じ地点の未決の候補もまとめて不採用にする。戻せる"""
+    w = World()
+    w.point(10, 130.39, 33.585, amenity="place_of_worship", name="警固神社")
+    w.point(11, 130.40, 33.590, amenity="place_of_worship", name="寺B")
+    w.run(db, tmp_path)
+    by = {s["name"]: s for s in spots(db)}
+    ids = []
+    for sp, k in [(by["警固神社"], "a"), (by["警固神社"], "b"), (by["寺B"], "c")]:
+        ids.append(db.execute("""insert into spot_photo_candidates (spot_id, file_title, page_url, image_url, author, license)
+                                 values (%s,%s,%s,%s,'作者','CC BY 4.0') returning id""",
+                              (sp["id"], f"File:{k}.jpg", f"https://c/{k}", f"https://c/{k}.jpg")).fetchone()["id"])
+    db.commit()
+    # 確認なし（p_archive=false）では、理由だけを記録して地点はそのまま
+    assert db.execute("select photo_decide(%s,'reject','hirata','closed') r", (ids[0],)).fetchone()["r"]["archived"] is False
+    assert db.execute("select data_status from spots where id=%s", (by["警固神社"]["id"],)).fetchone()["data_status"] != "archived"
+    r = db.execute("select photo_decide(%s,'reject','hirata','closed',true) r", (ids[1],)).fetchone()["r"]
+    assert r["ok"] and r["archived"] is True
+    sp = db.execute("select data_status, archived_reason from spots where id=%s", (by["警固神社"]["id"],)).fetchone()
+    assert sp["data_status"] == "archived" and "現存しない" in sp["archived_reason"]
+    st = {r["id"]: (r["status"], r["reject_reason"]) for r in db.execute("select id, status, reject_reason from spot_photo_candidates").fetchall()}
+    assert st[ids[0]] == ("rejected", "closed") and st[ids[1]] == ("rejected", "closed") and st[ids[2]][0] == "candidate"
+    # 理由が closed 以外なら p_archive は効かない
+    db.execute("select photo_decide(%s,'reject','hirata','person',true)", (ids[2],))
+    assert db.execute("select data_status from spots where id=%s", (by["寺B"]["id"],)).fetchone()["data_status"] != "archived"
+    # 戻せる
+    db.execute("select set_spot_state(%s,'restore','hirata')", (by["警固神社"]["id"],))
+    assert db.execute("select data_status from spots where id=%s", (by["警固神社"]["id"],)).fetchone()["data_status"] == "current"

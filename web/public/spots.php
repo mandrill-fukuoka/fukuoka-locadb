@@ -42,9 +42,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // 写真候補の採否（採用すると出典つきで地点ページに出る。決めるのは人だけ。不採用は理由を選べる）
             $reason = (string)($_POST['reason'] ?? '');
             $r = sb_rpc('photo_decide', ['p_id' => (int)$_POST['cand_id'], 'p_decision' => $_POST['decision'], 'p_user' => current_user(),
-                                         'p_reason' => array_key_exists($reason, PHOTO_REJECT_REASON) ? $reason : null]);
+                                         'p_reason' => array_key_exists($reason, PHOTO_REJECT_REASON) ? $reason : null,
+                                         'p_archive' => $_POST['decision'] === 'reject' && $reason === 'closed']);
             if (!empty($r['ok'])) {
-                $msg = '「' . ($_POST['name'] ?? '') . '」の写真を' . ['adopt' => '採用しました（地点ページに出ます）', 'reject' => '不採用にしました', 'reset' => '候補に戻しました'][$_POST['decision']];
+                $msg = '「' . ($_POST['name'] ?? '') . '」の写真を' . ['adopt' => '採用しました（地点ページに出ます）', 'reject' => '不採用にしました', 'reset' => '候補に戻しました'][$_POST['decision']]
+                     . (!empty($r['archived']) ? '。地点を対象外にしました（「対象外」タブから戻せます）' : '');
             } else { $error = $r['reason'] ?? '保存できませんでした'; }
         } elseif (($_POST['action'] ?? '') === 'addition_decide' && in_array($_POST['decision'] ?? '', ['adopt', 'reject', 'reset'], true)) {
             // 追加候補の採否（採用すると手入力の地点ができる。名前・種別は人が確かめた値。決めるのは人だけ）
@@ -230,7 +232,7 @@ page_header('地点の確認', 'spots.php');
         <p class="small muted"><?= photo_credit_html(['author' => $c['author'], 'license' => $c['license'], 'license_url' => $c['license_url'], 'source_url' => $c['page_url']]) ?>
           <?php if (!empty($c['shot_at'])): ?>・撮影：<?= h($c['shot_at']) ?><?php endif; ?>
           <?php if ($c['status'] !== 'candidate'): ?>・<?= h($c['decided_by']) ?> <?= h(substr((string)$c['decided_at'], 0, 10)) ?><?php endif; ?></p>
-        <form method="post" action="<?= h($qs(['p' => $page])) ?>" class="row"><?= csrf_field() ?>
+        <form method="post" action="<?= h($qs(['p' => $page])) ?>" class="row" onsubmit="var s=this.querySelector('select[name=reason]'),b=event.submitter;return !(s && s.value==='closed' && b && b.value==='reject') || confirm('この地点を「対象外」にします（検索・地図・ロケハンリストから消えます。対象外タブから戻せます）。同じ地点の他の写真候補もまとめて不採用になります。よろしいですか？');"><?= csrf_field() ?>
           <input type="hidden" name="action" value="photo_decide"><input type="hidden" name="cand_id" value="<?= (int)$c['id'] ?>"><input type="hidden" name="name" value="<?= h(nm($c['name'])) ?>">
           <?php if ($c['status'] === 'candidate'): ?>
             <button name="decision" value="adopt" class="small-btn">採用（公開）</button>
