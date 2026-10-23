@@ -38,6 +38,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $msg = $r['decided'] . '件を' . ($_POST['decision'] === 'adopt' ? '採用しました（地点ページに出ます）' : '不採用にしました')
                      . ($r['skipped'] ? '（' . $r['skipped'] . '件は対象外のため変更していません）' : '');
             } else { $error = $r['reason'] ?? '保存できませんでした'; }
+        } elseif (($_POST['action'] ?? '') === 'photo_move') {
+            // 別の場所の写真を、手がかりのある別の地点の候補に移す（採用は移し先で人が決める）
+            $r = sb_rpc('photo_move', ['p_id' => (int)$_POST['cand_id'], 'p_target' => (int)$_POST['target_id'], 'p_user' => current_user()]);
+            $msg = !empty($r['ok']) ? '「' . ($_POST['name'] ?? '') . '」の写真を、「' . ($_POST['target_name'] ?? '') . '」の候補に移しました（ここでは「別の場所」で不採用）' : '';
+            if (empty($r['ok'])) $error = $r['reason'] ?? '移せませんでした';
         } elseif (($_POST['action'] ?? '') === 'photo_decide' && in_array($_POST['decision'] ?? '', ['adopt', 'reject', 'reset'], true)) {
             // 写真候補の採否（採用すると出典つきで地点ページに出る。決めるのは人だけ。不採用は理由を選べる）
             $reason = (string)($_POST['reason'] ?? '');
@@ -243,6 +248,16 @@ page_header('地点の確認', 'spots.php');
             <button name="decision" value="reset" class="secondary small-btn"><?= $c['status'] === 'adopted' ? '採用を取り消す（候補に戻す）' : '候補に戻す' ?></button>
           <?php endif; ?>
         </form>
+        <?php if (!empty($c['targets']) && ($c['status'] === 'candidate' || $c['reject_reason'] === 'wrong_place')): ?>
+        <p class="small muted">この写真のファイル名・説明に、近くの別の地点の名前があります。その地点の候補に移せます（ここでは「別の場所」で不採用になり、移し先では候補として追加。採用は移し先で決めます）：</p>
+        <?php foreach ($c['targets'] as $t): ?>
+          <form method="post" action="<?= h($qs(['p' => $page])) ?>" class="row" style="display:inline-block"><?= csrf_field() ?>
+            <input type="hidden" name="action" value="photo_move"><input type="hidden" name="cand_id" value="<?= (int)$c['id'] ?>"><input type="hidden" name="target_id" value="<?= (int)$t['id'] ?>">
+            <input type="hidden" name="name" value="<?= h(nm($c['name'])) ?>"><input type="hidden" name="target_name" value="<?= h(nm($t['name'])) ?>">
+            <button class="secondary small-btn">「<?= h(nm($t['name'])) ?>」（<?= h($t['code']) ?>）の候補にする</button>
+          </form>
+        <?php endforeach; ?>
+        <?php endif; ?>
       </div>
     </article>
   <?php endforeach; ?>

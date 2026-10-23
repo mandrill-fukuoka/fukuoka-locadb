@@ -214,3 +214,31 @@ def test_photo_suggest_v2_rules_and_auto_reason(db, tmp_path):
         assert r == {"ok": True, "decided": 1, "skipped": 1}
         row = db.execute("select status, reject_reason from spot_photo_candidates where id=%s", (ids[0],)).fetchone()
         assert (row["status"], row["reject_reason"]) == ("rejected", "wrong_place")
+
+
+def test_photo_move_to_named_neighbour(db, tmp_path):
+    """ファイル名・説明に近くの別の地点の名前がある写真を、その地点の候補に移す。手がかりのない移し先は断る"""
+    w = World()
+    w.point(10, 130.39, 33.585, amenity="place_of_worship", name="警固神社")
+    w.point(11, 130.3905, 33.5852, amenity="place_of_worship", name="天満宮")
+    w.point(12, 130.3908, 33.5854, amenity="place_of_worship", name="八幡宮")
+    w.run(db, tmp_path)
+    by = {s["name"]: s for s in spots(db)}
+    cid = db.execute("""insert into spot_photo_candidates (spot_id, file_title, page_url, image_url, author, license, description, dist_m, name_match)
+                        values (%s,'File:x.jpg','https://c/x','https://c/x.jpg','作者','CC BY 4.0','天満宮の拝殿',20,false) returning id""",
+                     (by["警固神社"]["id"],)).fetchone()["id"]
+    db.commit()
+    lst = db.execute("select photo_candidates_list() r").fetchone()["r"]
+    assert [t["name"] for t in lst[0]["targets"]] == ["天満宮"]
+    assert not db.execute("select photo_move(%s,%s,'hirata') r", (cid, by["八幡宮"]["id"])).fetchone()["r"]["ok"]       # 手がかりにない地点
+    assert not db.execute("select photo_move(%s,%s,'') r", (cid, by["天満宮"]["id"])).fetchone()["r"]["ok"]           # 名前が必要
+    assert db.execute("select photo_move(%s,%s,'hirata') r", (cid, by["天満宮"]["id"])).fetchone()["r"]["ok"]
+    old = db.execute("select status, reject_reason from spot_photo_candidates where id=%s", (cid,)).fetchone()
+    assert (old["status"], old["reject_reason"]) == ("rejected", "wrong_place")
+    new = db.execute("select status, name_match from spot_photo_candidates where spot_id=%s", (by["天満宮"]["id"],)).fetchone()
+    assert new["status"] == "candidate" and new["name_match"] is True
+    # 二重に移しても増えない。採用済みは移せない
+    assert db.execute("select photo_move(%s,%s,'hirata') r", (cid, by["天満宮"]["id"])).fetchone()["r"]["ok"]
+    assert db.execute("select count(*) n from spot_photo_candidates where spot_id=%s", (by["天満宮"]["id"],)).fetchone()["n"] == 1
+    db.execute("select photo_decide(%s,'adopt','hirata')", (cid,))
+    assert not db.execute("select photo_move(%s,%s,'hirata') r", (cid, by["天満宮"]["id"])).fetchone()["r"]["ok"]
