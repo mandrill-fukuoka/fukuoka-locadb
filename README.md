@@ -107,3 +107,8 @@ TEST_PG=postgresql://user:pass@localhost:5432 pytest -q tests
 - 移動時間は直線距離×1.3からの目安（実際の道のりの所要時間ではない）
 - OSM データは ODbL。出典は地点ページと画面下部に表示
 - 秘密情報（キー・パスワード）はチャットやリポジトリに置かない。config.php はサーバーにだけ置く
+
+## ライセンス
+
+- コード：MIT（[LICENSE](LICENSE)）。© 2026 マンドリル
+- データの一部（Wikipedia 由来の事実・説明文の材料）は CC BY-SA 4.0。詳しくは [NOTICE.md](NOTICE.md)
