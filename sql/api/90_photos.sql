@@ -4,7 +4,7 @@ do $$
 declare f record;
 begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-            where n.nspname = 'public' and p.proname in ('photos_counts','photo_candidates_list','photo_decide','photo_suggest','photo_suggest_reason','photos_suggest_counts','photo_decide_bulk')
+            where n.nspname = 'public' and p.proname in ('photos_counts','photo_candidates_list','photo_targets','photo_move','photo_decide','photo_suggest','photo_suggest_reason','photos_suggest_counts','photo_decide_bulk')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
@@ -49,6 +49,18 @@ select jsonb_build_object(
                  where c.status = 'candidate' and s.data_status <> 'archived'));
 $$;
 
+-- 「別の場所」の写真の移し先の手がかり：ファイル名・説明文に、近く（800m以内）の別の地点の名前が入っているもの（Commons のみ。名前は3文字以上）
+create function photo_targets(p_source text, p_file_title text, p_description text, p_spot_id bigint) returns jsonb
+language sql stable as $$
+select coalesce(jsonb_agg(jsonb_build_object('id', t.id, 'code', t.code, 'name', t.name) order by t.id), '[]'::jsonb)
+  from spots s join spots t on t.id <> s.id and t.data_status <> 'archived' and t.name is not null
+                           and st_dwithin(t.geom, s.geom, 800)
+ where p_source = 'commons' and s.id = p_spot_id
+   and length(regexp_replace(lower(t.name), '[\s・\-_.()（）]+', '', 'g')) >= 3
+   and position(regexp_replace(lower(t.name), '[\s・\-_.()（）]+', '', 'g') in
+                regexp_replace(lower(coalesce(p_file_title, '') || ' ' || coalesce(p_description, '')), '[\s・\-_.()（）]+', '', 'g')) > 0;
+$$;
+
 -- 候補の一覧（地点ごとにまとめて見られるよう、地点・距離の順）
 create function photo_candidates_list(p_status text default 'candidate', p_limit int default 30, p_offset int default 0,
                                      p_suggest text default null)
@@ -57,7 +69,8 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
   select c.id, c.spot_id, s.name, s.code, sc.name as category, s.address,
          c.file_title, c.page_url, c.image_url, c.author, c.license, c.license_url, c.description, c.shot_at,
          round(c.dist_m::numeric) as dist_m, c.name_match, c.status, c.decided_by, c.decided_at, c.reject_reason,
-         photo_suggest(c.source, c.name_match, c.description, c.file_title, s.category, c.dist_m::numeric) as suggest
+         photo_suggest(c.source, c.name_match, c.description, c.file_title, s.category, c.dist_m::numeric) as suggest,
+         case when c.status = 'adopted' then '[]'::jsonb else photo_targets(c.source, c.file_title, c.description, c.spot_id) end as targets
     from spot_photo_candidates c
     join spots s on s.id = c.spot_id and s.data_status <> 'archived'
     join spot_categories sc on sc.code = s.category
@@ -132,4 +145,23 @@ begin
     if (r->>'ok')::boolean then n_ok := n_ok + 1; else n_skip := n_skip + 1; end if;
   end loop;
   return jsonb_build_object('ok', true, 'decided', n_ok, 'skipped', n_skip);
+end $$;
+
+-- 写真を別の地点の候補に移す（人が移し先を選んだとき）。元の地点では「別の場所」で不採用、移し先では候補として追加する（採用は移し先で人が決める）
+--  移し先は photo_targets の手がかりにある地点だけ。採用済みの写真は移さない（先に採用を取り消す）
+create function photo_move(p_id bigint, p_target bigint, p_user text) returns jsonb language plpgsql as $$
+declare c spot_photo_candidates; ok boolean;
+begin
+  if coalesce(p_user, '') = '' then return jsonb_build_object('ok', false, 'reason', '決める人の名前が必要です'); end if;
+  select * into c from spot_photo_candidates where id = p_id;
+  if not found then return jsonb_build_object('ok', false, 'reason', '候補がありません'); end if;
+  if c.status = 'adopted' then return jsonb_build_object('ok', false, 'reason', '採用済みの写真は、先に採用を取り消してください'); end if;
+  select exists (select 1 from jsonb_array_elements(photo_targets(c.source, c.file_title, c.description, c.spot_id)) x
+                  where (x->>'id')::bigint = p_target) into ok;
+  if not ok then return jsonb_build_object('ok', false, 'reason', '移し先が手がかりと合いません'); end if;
+  insert into spot_photo_candidates (spot_id, source, file_title, page_url, image_url, author, license, license_url, description, shot_at, dist_m, name_match)
+  values (p_target, c.source, c.file_title, c.page_url, c.image_url, c.author, c.license, c.license_url, c.description, c.shot_at, null, true)
+  on conflict (spot_id, file_title) do nothing;
+  update spot_photo_candidates set status = 'rejected', decided_by = p_user, decided_at = now(), reject_reason = 'wrong_place' where id = p_id;
+  return jsonb_build_object('ok', true, 'spot_id', c.spot_id, 'target', p_target);
 end $$;
