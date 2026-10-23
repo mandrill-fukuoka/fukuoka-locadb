@@ -190,7 +190,7 @@ def test_photo_suggest_v2_rules_and_auto_reason(db, tmp_path):
     assert sg("commons", False, "境内", "File:a.jpg", "station", 5) == "unknown"          # 近くて学校・史跡以外は要確認
     assert sg("mapillary", False, None, None, "heritage", 5) == "low"
     assert sg("mapillary", False, None, None, "commercial_facility", 5) == "unknown"
-    assert sg("mapillary", False, None, None) == "unknown"                              # 種別が分からなければ見ない
+    assert sg("mapillary", False, None, None, None, None) == "unknown"                              # 種別が分からなければ見ない
     rs = lambda *a: db.execute("select photo_suggest_reason(%s,%s,%s) r", a).fetchone()["r"]
     assert rs("commons", "駅名標", "File:a.jpg") == "sign" and rs("mapillary", "x", "File:m.jpg") == "quality"
     assert rs("commons", "境内", "File:a.jpg") == "wrong_place"
