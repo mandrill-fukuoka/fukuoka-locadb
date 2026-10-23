@@ -1,0 +1,21 @@
+# 「別の場所」の写真の手がかり調べ（読み取りだけ。DBへは SELECT のみ）
+name: photo-misplaced-probe
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 調べる
+        shell: bash
+        run: |
+          python -m tools.photo_misplaced_probe --out photo-misplaced-out | tee probe.log
+          { echo '## 別の場所の写真の手がかり'; cat photo-misplaced-out/summary.md; } >> "$GITHUB_STEP_SUMMARY"
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: photo-misplaced, path: "photo-misplaced-out/", retention-days: 30 }
