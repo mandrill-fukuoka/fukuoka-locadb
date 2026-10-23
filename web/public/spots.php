@@ -192,7 +192,7 @@ page_header('地点の確認', 'spots.php');
         <a href="<?= h($qs(['psug' => $k, 'p' => 0])) ?>" class="<?= $psug === $k ? 'on' : '' ?>"><?= h($v) ?>（<?= number_format((int)($psugCounts[$k] ?? 0)) ?>）</a>
       <?php endforeach; ?>
     </nav>
-    <p class="small muted">おすすめ度は、これまでに人が決めた採否の傾向から作った暫定のルールによる目安です（AIは使っていません）。説明文・ファイル名に看板・標識・案内・地図などの語があるものは「不採用の見込み高」、Commons で地点名が一致するものは「採用の見込み高」、それ以外（Mapillary・名前が一致しない写真）は人が決めた例がまだないので「判断材料なし」です。決めるのは人です。</p>
+    <p class="small muted">おすすめ度は、これまでに人が決めた約1,000件の傾向から作った暫定のルールによる目安です（AIは使っていません）。「採用の見込み高」＝Commons で地点名が一致（採用96%）。「不採用の見込み高」＝看板・標識・地図などの語がある／名前が一致せず30m以上離れている／名前が一致しない史跡・学校・官公庁／Mapillary の街路写真（いずれも採用は2割以下）。それ以外は「判断材料なし」です。決めるのは人です。</p>
     <?php
       $bulkHigh = array_values(array_map(fn($c) => (int)$c['id'], array_filter($photos, fn($c) => ($c['suggest'] ?? '') === 'high')));
       $bulkLow  = array_values(array_map(fn($c) => (int)$c['id'], array_filter($photos, fn($c) => ($c['suggest'] ?? '') === 'low')));
@@ -207,8 +207,8 @@ page_header('地点の確認', 'spots.php');
       </form>
       <?php endif; ?>
       <?php if ($bulkLow): ?>
-      <form method="post" action="<?= h($qs(['p' => $page])) ?>" onsubmit="return confirm('このページの「不採用の見込み高」<?= count($bulkLow) ?>件を不採用（理由：看板・標識・地図）にします。よろしいですか？');"><?= csrf_field() ?>
-        <input type="hidden" name="action" value="photo_bulk"><input type="hidden" name="decision" value="reject"><input type="hidden" name="reason" value="sign">
+      <form method="post" action="<?= h($qs(['p' => $page])) ?>" onsubmit="return confirm('このページの「不採用の見込み高」<?= count($bulkLow) ?>件を不採用にします。理由は写真ごとに自動で付きます（看板類＝看板・標識・地図／Mapillary＝画質・構図／それ以外＝別の場所）。よろしいですか？');"><?= csrf_field() ?>
+        <input type="hidden" name="action" value="photo_bulk"><input type="hidden" name="decision" value="reject">
         <?php foreach ($bulkLow as $id): ?><input type="hidden" name="ids[]" value="<?= $id ?>"><?php endforeach; ?>
         <button class="secondary small-btn">このページの「不採用の見込み高」<?= count($bulkLow) ?>件をまとめて不採用</button>
       </form>
