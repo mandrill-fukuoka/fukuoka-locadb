@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import address, build_clusters, monitor_risk, osm_source, ruletags, slopes, spatial, terrain
+from . import address, build_clusters, containment, monitor_risk, osm_source, ruletags, slopes, spatial, terrain
 from .categories import RULES_VERSION
 from .db import code_version, connect
 from .sync import MAX_ARCHIVE_RATIO, Sync
@@ -64,6 +64,22 @@ def write_slopes_csv(snap, path: Path) -> None:
                         f"&heading={a['slope_bearing']}"])
 
 
+def containment_report(cont: dict) -> str:
+    L = ["", "## 境内・敷地内の地点（親子）",
+         f"- 容れ物（寺社・2ha以上の公園・大学の形）: {cont['containers']}",
+         f"- 親のある地点: {cont['children']}（親 {cont['parents']}・一覧でまとめる {cont['grouped']}・今回変わった {cont['changed']}）"]
+    if cont["top"]:
+        L += ["", "### 子の多い親（最大40件）"] + [f"- {x}" for x in cont["top"]]
+    return "\n".join(L)
+
+
+def write_groups_csv(rows, path: Path) -> None:
+    with path.open("w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(["親", "親ID", "子", "子ID", "子の種別", "一覧"])
+        w.writerows(rows)
+
+
 def run_sync(conn, snap_loader, mode: str, allow_large_change: bool = False) -> dict:
     """取得→反映→判定→（試し・停止なら取り消し）。結果 {run_id, status, summary, report}"""
     # 前回が途中で止まった（キャンセル・時間切れ）記録を片付ける（同時に2つは動かない設定）
@@ -78,7 +94,10 @@ def run_sync(conn, snap_loader, mode: str, allow_large_change: bool = False) -> 
         print(f"[3] 地点の反映（{'本番' if mode == 'apply' else '試し'}）")
         sync = Sync(conn, snap, run_id, allow_large_change=allow_large_change)
         summary = sync.run_all(snap.present)
-        report = sync.report(summary)
+        cont = containment.apply(conn, snap, osm_source.to_m)          # 境内・敷地内の地点の親子
+        summary["contained"] = {k: v for k, v in cont.items() if k not in ("top", "rows")}
+        report = sync.report(summary) + containment_report(cont)
+        write_groups_csv(cont["rows"], Path(os.environ.get("GROUPS_CSV", "groups.csv")))
 
         stop = []
         live = max(summary["spots_before"], 1)

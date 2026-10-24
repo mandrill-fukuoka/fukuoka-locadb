@@ -30,7 +30,7 @@ from shapely.prepared import prep
 from shapely.strtree import STRtree
 
 from .categories import CATEGORIES, WALKABLE, categories_of, display_name
-from . import slopes, spatial
+from . import containment, slopes, spatial
 
 GEOFABRIK_URL = "https://download.geofabrik.de/asia/japan/kyushu-latest.osm.pbf"
 
@@ -180,6 +180,7 @@ class Snapshot:
     meta: dict
     present: set = field(default_factory=set)   # DBにある要素のうち、ファイルに存在したもの（条件に合わなくても）
     spatial: object = None                      # 建物・車道・水辺の形（空間特徴の計算用。spatial.Spatial）
+    containers: list = field(default_factory=list)   # 境内・敷地の形（containment.Container。中の地点を親子でまとめる）
 
 
 class _Reader(osmium.SimpleHandler):
@@ -195,6 +196,7 @@ class _Reader(osmium.SimpleHandler):
         self.wkb = osmium.geom.WKBFactory()
         self.n_nodes = self.n_ways = self.n_rels = 0
         self.spatial = spatial.Spatial()                              # 建物・車道・水辺の形
+        self.containers: list = []                                    # 境内・敷地の形（寺社・大きな公園・大学）
 
     @staticmethod
     def _tags(o) -> dict:
@@ -286,6 +288,9 @@ class _Reader(osmium.SimpleHandler):
                     self.spatial.add_water(poly, c)
             rp = poly.representative_point() if not poly.is_empty else line_m.interpolate(0.5, normalized=True)
             extent = math.sqrt(max(poly.area, 0) / math.pi)
+            cont = containment.container_of(f"w{w.id}", point_cats, t, poly)
+            if cont:
+                self.containers.append(cont)
         else:
             rp = line_m.interpolate(0.5, normalized=True)       # 橋など開いた線は中点
             extent = line_m.length / 2
@@ -317,6 +322,9 @@ class _Reader(osmium.SimpleHandler):
         rp = gm.representative_point()
         lon, lat = to_ll(rp.x, rp.y)
         self.n_rels += 1
+        cont = containment.container_of(f"r{rid}", cats, t, gm)
+        if cont:
+            self.containers.append(cont)
         self.points.append(PointFeature(f"r{rid}", "r", rid, display_name(t, cats[0]), cats, t, lon, lat,
                                         round(math.sqrt(gm.area / math.pi), 1)))
 
@@ -457,7 +465,8 @@ def read(pbf: Path, watch: set[str] | None = None, detect_slopes: bool = True) -
     areas = {code: {"name": AREAS[code][0], "wkt": ward_ll[code].wkt} for code in AREAS}
     sp = r.spatial.build()
     meta["spatial"] = sp.counts()
-    return Snapshot(areas, points, samples, meta, r.present, sp)
+    meta["containers"] = len(r.containers)
+    return Snapshot(areas, points, samples, meta, r.present, sp, r.containers)
 
 
 if __name__ == "__main__":

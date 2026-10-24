@@ -125,7 +125,7 @@ page_header('場所を探す', 'index.php');
       <h2>検索結果 <?= count($rows) ?>件<?= count($rows) === $per ? '（このページ）' : '' ?></h2>
       <?php overview_map(array_map(fn($s) => ['lat' => $s['lat'], 'lon' => $s['lon'], 'name' => nm($s['name']), 'grp' => $s['grp_code'] ?? '',
             'sub' => $s['category'] . '・' . (AREA_LABEL[$s['area_code']] ?? '')], $rows), 'ovmap'); ?>
-      <p class="small muted">ピン、または一覧の「全体地図で表示」を押すと、その地点に寄ります。各候補の右の地図は周辺地図です（押すとGoogleマップで開きます）。川・線路など長いものは、同じ区の地点を「ほか○か所」として1件にまとめています（詳細ページで流域の地点を確認できます）。</p>
+      <p class="small muted">ピン、または一覧の「全体地図で表示」を押すと、その地点に寄ります。各候補の右の地図は周辺地図です（押すとGoogleマップで開きます）。川・線路など長いものは、同じ区の地点を「ほか○か所」として1件にまとめています（詳細ページで流域の地点を確認できます）。寺社の境内、大きな公園・大学の敷地内の地点も、同じ景観のものは代表の地点に「ほか○か所」としてまとめています（詳細ページで敷地内の地点を確認できます）。</p>
       <ol class="places">
         <?php foreach ($rows as $i => $s): ?>
           <li id="ovmap-item-<?= $i + 1 ?>" class="place-item">
@@ -136,7 +136,8 @@ page_header('場所を探す', 'index.php');
               <?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?>
               <?php if ($s['confidence'] !== 'field_checked'): ?><span class="chip dim"><?= h(conf_stage($s)) ?></span><?php endif; ?><?= photo_state_chip($s) ?>
               <?php if (!empty($s['ffc_registered'])): ?><span class="chip">FFC登録</span><?php endif; ?>
-              <?php if (!empty($s['others'])): ?><span class="chip">ほか<?= (int)$s['others'] ?>か所</span><?php endif; ?>
+              <?php if (!empty($s['others'])): ?><span class="chip"><?= !empty($s['precinct_group']) ? '境内・敷地内 ' : '' ?>ほか<?= (int)$s['others'] ?>か所</span><?php endif; ?>
+              <?php if (!empty($s['parent']['id'])): ?><span class="small muted"><a class="plain" href="spot.php?id=<?= (int)$s['parent']['id'] ?>"><?= h(nm($s['parent']['name'])) ?></a>の<?= h($s['parent']['word']) ?></span><?php endif; ?>
             </div>
             <?php if (!empty($s['tags'])): ?><div class="small"><?php foreach ($s['tags'] as $t): ?><span class="chip"><?= h($t) ?></span><?php endforeach; ?></div><?php endif; ?>
             <?php if (!empty($s['rule_tags'])): ?><div class="small"><?php foreach ($s['rule_tags'] as $t): ?><span class="chip dim"><?= h($t) ?>（推定）</span><?php endforeach; ?></div><?php endif; ?>
