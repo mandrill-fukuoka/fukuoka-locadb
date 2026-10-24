@@ -20,6 +20,8 @@ from .categories import CATEGORIES
 
 CONTAINER_MIN_M2 = {"park": 20_000}        # 公園は2ha以上だけ（小さな公園の中の遊具などは対象外のため）
 CHILD_KINDS = ("point", "area", "manual")  # 線の地点（line_sample / standpoint）は子にしない
+NOT_CHILD_CATS = {"underpass", "level_crossing", "station"}   # 地下のトンネル・踏切・駅は敷地の一部として扱わない
+PART_NEAR_M = 50                           # 離れた飛び地（マルチポリゴンの別の部分）は、親の位置から50m以内の部分だけ使う
 MIN_RATIO = 1.5                            # 容れ物は子の面の1.5倍以上の大きさのときだけ
 
 
@@ -58,7 +60,18 @@ def compute(spots: list[dict], containers: list[Container], to_m) -> dict[int, i
     for s in spots:
         for k in s["features"]:
             owner.setdefault(k, s["id"])
-    conts = [c for c in containers if c.key in owner]
+    pos = {s["id"]: Point(*to_m(s["lon"], s["lat"])) for s in spots}
+    conts = []
+    for c in containers:
+        if c.key not in owner:
+            continue
+        poly = c.poly
+        if poly.geom_type == "MultiPolygon" and len(poly.geoms) > 1:     # 例：香椎宮の形に約850m離れた頓宮の形が入っている
+            at = pos[owner[c.key]]
+            parts = [g for g in poly.geoms if g.distance(at) <= PART_NEAR_M] or [max(poly.geoms, key=lambda g: g.area)]
+            poly = parts[0] if len(parts) == 1 else poly.__class__(parts)
+            c = Container(c.key, c.cat, poly, float(poly.area))
+        conts.append(c)
     own_area = {}                                # 地点自身の面の大きさ（容れ物として持つ形の最大）
     for c in conts:
         sid = owner[c.key]
@@ -69,9 +82,9 @@ def compute(spots: list[dict], containers: list[Container], to_m) -> dict[int, i
     preps = [prep(c.poly) for c in conts]
     out = {}
     for s in spots:
-        if s["position_kind"] not in CHILD_KINDS:
+        if s["position_kind"] not in CHILD_KINDS or s["category"] in NOT_CHILD_CATS:
             continue
-        pt = Point(*to_m(s["lon"], s["lat"]))
+        pt = pos[s["id"]]
         best = None
         for i in tree.query(pt):
             c = conts[int(i)]
