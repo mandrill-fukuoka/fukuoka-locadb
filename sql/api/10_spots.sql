@@ -442,9 +442,9 @@ begin
   update change_risks set spot_id = p_keep where spot_id = p_drop;
   update cluster_spots set spot_id = p_keep where spot_id = p_drop
      and not exists (select 1 from cluster_spots c2 where c2.cluster_id = cluster_spots.cluster_id and c2.spot_id = p_keep);
-  update spots set alt_names = (select array_agg(distinct x) from unnest(spots.alt_names ||
+  update spots set alt_names = coalesce((select array_agg(distinct x) from unnest(spots.alt_names ||   -- 同じ名前どうしだと空 → null になり、alt_names（not null）に入れられず失敗していた
                                  (select array[name] || alt_names from spots where id = p_drop)) x
-                                 where x <> spots.name)
+                                 where x <> spots.name), '{}')
    where id = p_keep;
   update spots set data_status = 'archived', archived_reason = 'manual:merged into ' || p_keep, archived_at = now()
    where id = p_drop;
