@@ -101,3 +101,22 @@ def test_dry_run_rolls_back(db, tmp_path):
     assert res["summary"]["contained"]["children"] >= 5
     assert "境内・敷地内の地点" in res["report"]
     assert db.execute("select count(*) n from spots").fetchone()["n"] == 0
+
+
+def test_far_part_and_excluded_kinds(db, tmp_path):
+    """離れた飛び地（マルチポリゴンの別の部分）の中の地点は子にしない。踏切・駅・トンネルは子にしない"""
+    w = World()
+    w.area(3101, 130.44, 33.59, size=0.0009)                              # 本体（約185m四方）
+    w.area(3102, 130.45, 33.595, size=0.0002)                             # 約1km離れた飛び地
+    w.rels[5001] = ([("way", 3101, "outer"), ("way", 3102, "outer")],
+                    {"type": "multipolygon", "amenity": "place_of_worship", "name": "大社"})
+    w.point(4101, 130.4402, 33.5902, historic="yes", name="本殿")
+    w.point(4102, 130.4500, 33.5950, amenity="place_of_worship", name="頓宮")      # 飛び地の中
+    w.point(4103, 130.4405, 33.5895, railway="level_crossing", name="参道踏切")
+    w.point(4104, 130.4395, 33.5895, railway="station", name="大社前駅")
+    w.run(db, tmp_path)
+    root = spot(db, name="大社")["id"]
+    assert spot(db, name="本殿")["parent_id"] == root
+    assert spot(db, name="頓宮")["parent_id"] is None
+    assert spot(db, name="参道踏切")["parent_id"] is None
+    assert spot(db, name="大社前駅")["parent_id"] is None
