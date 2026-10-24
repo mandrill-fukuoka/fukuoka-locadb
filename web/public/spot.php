@@ -107,6 +107,7 @@ page_header(nm($s['name']), '');
     ／ <a href="index.php?area=<?= h($s['area_code']) ?>"><?= h(AREA_LABEL[$s['area_code']] ?? '') ?></a>
     <span class="code"><?= h($s['code']) ?></span></p>
   <h1><?= h(nm($s['name'])) ?></h1>
+  <?php if (!empty($s['parent']['id'])): ?><p class="small muted"><a href="spot.php?id=<?= (int)$s['parent']['id'] ?>"><?= h(nm($s['parent']['name'])) ?></a>の<?= h($s['parent']['word']) ?></p><?php endif; ?>
   <p class="lead">
     <?php if ($s['address']): ?><span><?= h($s['address']) ?></span><?php endif; ?>
     <?php foreach ($s['extra_categories'] ?? [] as $x): ?><span class="chip"><?= h($x) ?></span><?php endforeach; ?>
@@ -284,6 +285,19 @@ page_header(nm($s['name']), '');
           </figure>
         <?php endforeach; ?>
       </section><?php endif; ?>
+      <?php if (!empty($s['children'])): ?>
+      <section class="block">
+        <h2><?= h($s['children_word']) ?>の地点（<?= count($s['children']) ?>）</h2>
+        <ul class="nearby compact">
+          <?php foreach ($s['children'] as $c): ?>
+            <li><?= dot($c['grp_code'] ?? '') ?><a class="plain" href="spot.php?id=<?= (int)$c['id'] ?>"><?= h(nm($c['name'])) ?></a>
+              <span class="muted small"><?= h($c['category']) ?>・<?= (int)$c['meters'] ?>m</span></li>
+          <?php endforeach; ?>
+        </ul>
+        <p class="small muted">OpenStreetMapの<?= h($s['children_word']) ?>の形の中にある地点です（一覧では同じ景観のものをこの地点にまとめています）。</p>
+      </section>
+      <?php endif; ?>
+
       <section class="block">
         <h2>周辺の景観（600m）</h2>
         <?php if (!$nearby): ?><p class="muted small">周辺に登録地点がありません。</p><?php else: ?>

@@ -55,6 +55,7 @@ begin
                         from spot_tags t where t.spot_id = s.id and v_tags ? t.tag_code) / v_tagw end, 0) as tag
               from spots s join spot_categories sc on sc.code = s.category
              where s.data_status <> 'archived'
+               and (p_start is not null or live_root(s.group_root_id) is null)   -- 境内・敷地内でまとめた地点は親で代表させる
                and case when p_start is not null then s.id = p_start
                         else grp_match(v_seq[1], sc.landscape_group) and (p_area is null or s.area_code = p_area) end
              order by tag desc, checked desc, unnamed, random()
@@ -80,6 +81,7 @@ begin
                and ST_DWithin(s.geom, p.last_geom, v_maxm - p.meters)
                and grp_match(v_seq[p.step + 1], sc.landscape_group)
                and s.data_status <> 'archived'
+               and live_root(s.group_root_id) is null                          -- 境内・敷地内でまとめた地点は親で代表させる
                and not (s.id = any (p.ids))
                and ST_Distance(s.geom, p.last_geom) > 30
              order by s.geom <-> p.last_geom

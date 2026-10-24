@@ -19,6 +19,8 @@ def load_spots(conn) -> list[tuple[Spot, str]]:
            join spot_categories sc on sc.code = s.category
            join landscape_groups lg on lg.code = sc.landscape_group
            where s.data_status <> 'archived' and sc.landscape_group <> 'shop'      -- 店舗・飲食は景観の流れには使わない
+             and (s.group_root_id is null or not exists (                          -- 境内・敷地内でまとめた地点は親で代表させる
+                    select 1 from spots r where r.id = s.group_root_id and r.data_status <> 'archived'))
              and (s.name not like '（無名）%%'
                   or sc.landscape_group in ('port_industrial','vacant','river','sea','beach','lake','old_town','slope'))""",
     ).fetchall()

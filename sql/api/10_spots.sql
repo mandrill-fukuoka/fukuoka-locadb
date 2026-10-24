@@ -5,7 +5,7 @@ begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname in (
               'grp_match','search_spots','spots_nearby','spot_detail','review_queue','review_spot',
-              'photo_state','spatial_view','logistics_view','drone_view','tide_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids')
+              'photo_state','spatial_view','logistics_view','drone_view','tide_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids','live_root','precinct_word')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
@@ -91,6 +91,16 @@ select case when sc.landscape_group in ('sea','beach') or s.category in ('port',
   from spots s join spot_categories sc on sc.code = s.category where s.id = p_id;
 $$;
 
+-- 一覧でまとめる先（境内・敷地内の地点。DB変更208）。まとめる先が対象外なら null（まとめない）
+create function live_root(p_root bigint) returns bigint language sql stable as $$
+  select p_root where p_root is not null and exists (select 1 from spots r where r.id = p_root and r.data_status <> 'archived');
+$$;
+
+-- 敷地の呼び方（寺社は境内、それ以外は敷地内）
+create function precinct_word(p_cat text) returns text language sql immutable as $$
+  select case when p_cat = 'shrine_temple' then '境内' else '敷地内' end;
+$$;
+
 -- 場所を探す。川・線路などの「線」の地点は、同じ線ごとに1件にまとめて「ほか○か所」を返す
 -- （名前が同じでも別の施設＝点の地点はまとめない）
 create function search_spots(
@@ -106,7 +116,8 @@ with hits as (
          s.data_status, s.summary, s.ffc_registered, s.geom, s.line_key, s.position_kind,
          s.relief_m, s.slope_grade_pct, s.slope_rise_m,
          (s.name like '（無名）%') as unnamed,
-         (select count(*) from spot_facts f where f.spot_id = s.id and f.status = 'approved') as fact_count
+         (select count(*) from spot_facts f where f.spot_id = s.id and f.status = 'approved') as fact_count,
+         live_root(s.group_root_id) as groot, s.parent_id
     from spots s
     join spot_categories sc on sc.code = s.category
     join landscape_groups lg on lg.code = sc.landscape_group
@@ -132,13 +143,17 @@ with hits as (
 grouped as (
   select h.*,
          count(*) over w as same_line_count,
-         row_number() over (w order by (h.confidence in ('desk_checked','field_checked')) desc,
+         row_number() over (w order by (h.id = h.gkey_root) desc,      -- 境内・敷地内：親（まとめる先）を代表に
+                                       (h.confidence in ('desk_checked','field_checked')) desc,
                                        (h.position_kind = 'standpoint') desc, h.id) as rn
-    from hits h
+    from (select h0.*, coalesce(h0.groot, case when exists (select 1 from spots c where c.group_root_id = h0.id and c.data_status <> 'archived') then h0.id end) as gkey_root
+            from hits h0) h
   -- 線の地点は同じ線ごと。名前のない地点と坂道は、同じ名前・同じ区ごとに代表点1件にまとめて「ほか○か所」（詳細で展開）
+  -- 境内・敷地内の地点は、まとめる先（同じ景観の親）ごとに1件（DB変更208）
   window w as (partition by coalesce(h.line_key || '|' || h.area_code,
                                      case when h.unnamed or h.cat = 'slope_street'
                                           then h.cat || '|' || h.name || '|' || h.area_code end,
+                                     'root:' || h.gkey_root,
                                      h.id::text))
 )
 select coalesce(jsonb_agg(x), '[]'::jsonb) from (
@@ -147,6 +162,9 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
          g.position_kind, ST_Y(g.geom::geometry) as lat, ST_X(g.geom::geometry) as lon,
          g.relief_m, g.slope_grade_pct, g.slope_rise_m, g.fact_count,
          g.same_line_count - 1 as others,
+         (g.gkey_root is not null) as precinct_group,                                       -- 「ほか○か所」が境内・敷地内のまとまり
+         (select jsonb_build_object('id', p.id, 'name', p.name, 'word', precinct_word(p.category))
+            from spots p where p.id = g.parent_id and p.data_status <> 'archived') as parent,   -- 「○○の境内」
          (select jsonb_agg(t.name order by st.score desc) from spot_tags st join tags t on t.code = st.tag_code
            where st.spot_id = g.id and st.score >= 0.5 and st.origin = 'human') as tags,   -- 公開の検索結果は人のタグだけ
          (select jsonb_agg(t.name order by t.code) from spot_tags st join tags t on t.code = st.tag_code
@@ -199,6 +217,8 @@ select coalesce(jsonb_agg(x order by x.meters), '[]'::jsonb) from (
       join spot_categories sc on sc.code = n.category
       join landscape_groups lg on lg.code = sc.landscape_group
      where s.id = p_id and n.name not like '（無名）%' and n.name <> s.name
+       and live_root(n.group_root_id) is null                                   -- 境内・敷地内でまとめた地点は親だけ出す
+       and n.parent_id is distinct from s.id and n.id is distinct from s.parent_id   -- 自分の敷地内・親は別の欄に出す
        and (sc.landscape_group <> 'shop' or exists (select 1 from spot_categories c0 where c0.code = s.category and c0.landscape_group = 'shop'))
      order by n.name, sc.landscape_group, ST_Distance(n.geom, s.geom)
   ) d
@@ -262,6 +282,16 @@ select jsonb_build_object(
   'slope_len_m', s.slope_len_m, 'slope_grade_pct', s.slope_grade_pct, 'slope_rise_m', s.slope_rise_m,
   'slope_bearing', s.slope_bearing, 'slope_kind', s.slope_kind,
   'spatial', spatial_view(s.id),
+  'parent', (select jsonb_build_object('id', p.id, 'name', p.name, 'word', precinct_word(p.category),
+                                       'source', s.parent_source)
+               from spots p where p.id = s.parent_id and p.data_status <> 'archived'),
+  'children_word', precinct_word(s.category),
+  'children', (select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'category', cc.name,
+                                                             'grp_code', cc.landscape_group,
+                                                             'meters', round(ST_Distance(c.geom, s.geom)))
+                                          order by c.name like '（無名）%', ST_Distance(c.geom, s.geom)), '[]')
+                 from spots c join spot_categories cc on cc.code = c.category
+                where c.parent_id = s.id and c.data_status <> 'archived'),
   'logistics', logistics_view(s.id),
   'drone', drone_view(s.id),
   'tide', tide_view(s.id),

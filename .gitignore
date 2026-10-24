@@ -7,3 +7,4 @@ __pycache__/
 web/app/config.php
 tools/laya/laya_batch/
 laya_batch/
+groups.csv
