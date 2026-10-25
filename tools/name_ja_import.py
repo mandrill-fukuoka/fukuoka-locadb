@@ -54,9 +54,10 @@ def run(conn, path, apply: bool, log=print) -> dict:
                              (r["id"], "name-ja-import", json.dumps({"from": r["name"], "to": o["name_ja"], "source": Path(str(path)).name},
                                                                    ensure_ascii=False)))
     if apply:
-        conn.executemany("""insert into feature_name_overrides (feature_key, name_ja, source) values (%s,%s,%s)
+        for k, o in want.items():
+            conn.execute("""insert into feature_name_overrides (feature_key, name_ja, source) values (%s,%s,%s)
                             on conflict (feature_key) do update set name_ja = excluded.name_ja, source = excluded.source""",
-                         [(k, o["name_ja"], Path(str(path)).name) for k, o in want.items()])
+                         (k, o["name_ja"], Path(str(path)).name))
         conn.commit()
     else:
         conn.rollback()
