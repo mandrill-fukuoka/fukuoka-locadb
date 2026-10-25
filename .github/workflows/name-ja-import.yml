@@ -1,0 +1,35 @@
+# 日本語名の取り込み（人が直した name:ja。OSMChange 形式のファイル）
+#  dry_run は読み取りのみ（何件が直るか・地点にならないものを出す）。apply は上書きの表に保存し、地点名を直す（何度実行しても同じ結果）
+name: name-ja-import
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "リポジトリ内のファイル"
+        default: data/name_ja/2026-10-25_osm_name_ja_changes.osc
+      mode:
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+concurrency:
+  group: ${{ inputs.mode == 'apply' && 'database' || format('name-ja-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 取り込み
+        shell: bash
+        run: |
+          python -m tools.name_ja_import "$FILE" ${APPLY_FLAG} | tee import.log
+          { echo '## 日本語名の取り込み（'"$MODE"'）'; echo '```'; cat import.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          FILE: ${{ inputs.file }}
+          MODE: ${{ inputs.mode }}
+          APPLY_FLAG: ${{ inputs.mode == 'apply' && '--apply' || '' }}
