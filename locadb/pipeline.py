@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import address, build_clusters, containment, monitor_risk, osm_source, ruletags, slopes, spatial, terrain
+from . import address, build_clusters, containment, monitor_risk, name_overrides, osm_source, ruletags, slopes, spatial, terrain
 from .categories import RULES_VERSION
 from .db import code_version, connect
 from .sync import MAX_ARCHIVE_RATIO, Sync
@@ -91,6 +91,9 @@ def run_sync(conn, snap_loader, mode: str, allow_large_change: bool = False) -> 
     try:
         watch = {r["key"] for r in conn.execute("select key from features where kind='element'")}
         snap, src = snap_loader(watch)
+        n_ov = name_overrides.apply_to_snapshot(conn, snap)            # 人が直した日本語名（OSM に name:ja が無い要素だけ）
+        if n_ov:
+            print(f"    日本語名の上書き：{n_ov}件")
         print(f"[3] 地点の反映（{'本番' if mode == 'apply' else '試し'}）")
         sync = Sync(conn, snap, run_id, allow_large_change=allow_large_change)
         summary = sync.run_all(snap.present)
