@@ -61,3 +61,14 @@ def test_keywords_rail_and_station():
     assert php_interpret("高架下の線路沿いを歩き、踏切を渡る")["sequence"] == ["rail"]
     assert php_interpret("団地から公園を抜けて駅へ向かう")["sequence"] == ["residential", "green", "transport"]
     assert php_interpret("川沿いから線路沿いへ")["sequence"] == ["river", "rail"]
+
+
+def test_dry_run_with_railway(db, tmp_path, monkeypatch):
+    """坂道の一覧（slopes.csv）を書く dry_run が、線路の形の attrs で止まらない（2026-10-29 の不具合）"""
+    from locadb import pipeline
+    monkeypatch.setenv("SLOPES_CSV", str(tmp_path / "slopes.csv"))
+    w = World()
+    w.line(10, [(130.381, 33.590), (130.419, 33.590)], railway="rail", name="JR筑肥線")
+    p = w.write(tmp_path / "a.osm")
+    snap, meta = pipeline.get_snapshot(str(p), set(), True)
+    assert any(s.attrs and "rail_form" in s.attrs for s in snap.samples)

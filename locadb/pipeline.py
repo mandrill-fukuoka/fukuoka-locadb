@@ -49,7 +49,7 @@ def get_snapshot(pbf: str | None, watch: set[str], detect_slopes: bool = True):
 
 def write_slopes_csv(snap, path: Path) -> None:
     """坂道の候補の一覧（確認用。Actions の成果物 pipeline-log に入る）。勾配の大きい順"""
-    rows = sorted((s for s in snap.samples if s.attrs), key=lambda s: -s.attrs["slope_grade_pct"])
+    rows = sorted((s for s in snap.samples if s.attrs and "slope_grade_pct" in s.attrs), key=lambda s: -s.attrs["slope_grade_pct"])
     with path.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f)
         w.writerow(["キー", "名前", "区", "道の種類", "坂/階段", "長さm", "平均勾配%", "高低差m", "上りの方角", "緯度", "経度",
