@@ -1,0 +1,22 @@
+# 雰囲気の目安（流れ検索 段階2、DB変更210）を付け直す：周りの店の数・タグの当てはまり度・景観らしさ
+# dry_run（分布だけ。書き込みなし）/ apply（spot_spatial に保存）。自動収集（pipeline apply）でも毎回付け直す
+name: vibe-apply
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+concurrency: { group: database, cancel-in-progress: false }
+jobs:
+  vibe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 雰囲気の目安
+        run: python -m locadb.vibe --${{ inputs.mode == 'apply' && 'apply' || 'dry-run' }} | tee -a "$GITHUB_STEP_SUMMARY"
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }

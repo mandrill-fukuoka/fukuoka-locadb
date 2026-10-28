@@ -21,11 +21,17 @@ function scene_group_words(): array {
     ];
 }
 
+// 雰囲気の語 → タグ（段階2：データで測れるタグ night_ok・lonely・narrow_street などに結びつける）
 function scene_tag_words(): array {
     return [
-        'lonely' => '寂し|孤独|一人|ひとり', 'lively' => '賑や|活気', 'nostalgic' => '懐かし|昭和|レトロ',
-        'night_ok' => '夜|深夜', 'dawn_ok' => '早朝|明け方', 'sunset_ok' => '夕方|夕景|夕日',
-        'sea_view' => '海', 'river_view' => '川', 'low_traffic' => '人気のない|静か|誰もいない',
+        'lonely' => '寂し|孤独|一人|ひとり|人気のない|誰もいない', 'low_traffic' => '人気のない|静か|誰もいない|一人|ひとり',
+        'calm' => '静か|穏やか|のどか', 'lively' => '賑や|活気|人混み|雑踏', 'high_traffic' => '人混み|雑踏|人通りの多い',
+        'nostalgic' => '懐かし|昭和|レトロ',
+        'night_ok' => '夜|深夜|終電|夜の街', 'neon' => 'ネオン|飲み屋|歓楽街', 'dawn_ok' => '早朝|明け方', 'sunset_ok' => '夕方|夕景|夕日',
+        'narrow_street' => '路地|細い道|狭い道|裏通り', 'wide_open' => '見下ろ|開けた|見晴らし|広々',
+        'sea_view' => '海沿い|海辺|海を|海が見え', 'river_view' => '川沿い|川べり|川辺|河川敷',
+        'skyline' => '高層|ビル群|摩天楼', 'industrial_structure' => '工場|倉庫|コンテナ|クレーン',
+        'slope_stairs' => '坂|階段|石段', 'greenery' => '公園|緑|木々|森',
         'tense' => '緊張|追われ|逃げ', 'romantic' => '恋|デート|告白', 'futuristic' => '近未来|未来',
     ];
 }

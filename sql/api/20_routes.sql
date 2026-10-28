@@ -16,10 +16,11 @@ create function route_name_key(p_name text) returns text language sql immutable 
               else regexp_replace(lower(p_name), '[[:space:]　・･\-－ー]|（[^）]*）|\([^)]*\)', '', 'g') end;
 $$;
 
--- 流れの点数（段階1、2026-10-28）。各項目は 0〜1、使えない項目（null）は重みを残りに割り戻す。
+-- 流れの点数（2026-10-28 段階2）。各項目は 0〜1、使えない項目（null）は重みを残りに割り戻す。
+--  signal＝シーンの条件の当てはまり（tag_signal）、typical＝景観らしさ（group_typicality）、short＝短さ、named＝名前のある地点、checked＝確認済み
 --  重みはこの関数だけに書く。返す値：{"match": 合計, "parts": {項目: 値}, "weights": {項目: 割り戻し後の重み}}
 create function route_score(p_parts jsonb) returns jsonb language sql immutable as $$
-  with w(k, base) as (values ('tag', 0.45), ('short', 0.30), ('named', 0.15), ('checked', 0.10)),
+  with w(k, base) as (values ('signal', 0.35), ('typical', 0.25), ('short', 0.20), ('named', 0.10), ('checked', 0.10)),
   u as (select k, base, (p_parts ->> k)::numeric as v from w where p_parts ->> k is not null),
   t as (select coalesce(sum(base), 0) as tot from u)
   select jsonb_build_object(
@@ -39,7 +40,9 @@ declare
   v_maxm   real;
   v_seq    text[] := coalesce(p_seq, '{}');
   v_tags   jsonb;
-  v_tagw   real;
+  v_human  bigint[];
+  v_anychk boolean;
+  v_cats   jsonb;
   v_sgrp   text;
   v_n      int;
   v_seed   text;
@@ -60,12 +63,15 @@ begin
   end if;
 
   v_maxm := v_budget * v_speed / 1.3;    -- 直線距離 × 迂回係数1.3 で概算
-  -- 雰囲気タグは、人かルールで付いたタグが DB に1件でもあるものだけ使う（AIのタグは使わない。データのないタグで点数を下げない）
+  -- シーンの条件（タグ）：重みが正のものだけ。当てはまり度は tag_signal（人のタグ優先・なければ計算済みの推定。AIのタグは使わない）
   select coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb) into v_tags
     from jsonb_each(coalesce(p_tags, '{}'::jsonb)) e
-   where jsonb_typeof(e.value) = 'number' and (e.value::text)::real > 0
-     and exists (select 1 from spot_tags t where t.tag_code = e.key and t.origin in ('human','rule'));
-  select coalesce(sum(value::real), 0) into v_tagw from jsonb_each_text(v_tags);
+   where jsonb_typeof(e.value) = 'number' and (e.value::text)::real > 0;
+  -- 指定タグに人のタグが付いている地点（この地点だけ tag_signal で人のタグを引く。ほかは保存した推定値）
+  select coalesce(array_agg(distinct t.spot_id), '{}') into v_human
+    from spot_tags t where t.origin = 'human' and v_tags ? t.tag_code;
+  -- 確認済みの地点が1件もなければ「確認済み」の項目は使わない（全部の流れが同じだけ下がるだけなので）
+  v_anychk := exists (select 1 from spots where confidence in ('desk_checked','field_checked') and data_status <> 'archived');
 
   if p_start is not null then
     select sc.landscape_group into v_sgrp
@@ -75,46 +81,50 @@ begin
   end if;
   v_n := cardinality(v_seq);
   if v_n = 0 then return '[]'::jsonb; end if;
+  -- 各段の景観に当たる種別（近傍探しで、重い距離の計算より先に種別で絞る）
+  select jsonb_agg(coalesce((select jsonb_agg(sc.code) from spot_categories sc where grp_match(g, sc.landscape_group)), '[]'::jsonb) order by o)
+    into v_cats from unnest(v_seq) with ordinality u(g, o);
   v_seed := array_to_string(v_seq, ',') || '|' || p_mode || '|' || coalesce(p_area, '');   -- 同じ条件なら同じ順（random() は使わない）
 
   with recursive base as (
-    select s.id, s.geom, s.area_code, sc.landscape_group as grp,
+    select s.id, s.geom,
            (s.name like '（無名）%') as unnamed,
            (s.confidence in ('desk_checked','field_checked')) as checked,
            route_name_key(s.name) as nkey,
            array_remove(array[s.id, s.parent_id, live_root(s.group_root_id)], null) as fam,
            coalesce('L:' || s.line_key, 'G:' || live_root(s.group_root_id), 'P:' || s.parent_id, 'S:' || s.id) as place,
-           live_root(s.group_root_id) as groot
+           scene_signal(s.id, ss.signals, v_tags, s.id = any (v_human)) as sig,
+           ss.typicality as typ
       from spots s join spot_categories sc on sc.code = s.category
+      left join spot_spatial ss on ss.spot_id = s.id
      where s.data_status <> 'archived'
+       and case when p_start is not null then s.id = p_start
+                else live_root(s.group_root_id) is null   -- 境内・敷地内でまとめた地点は親で代表させる
+                 and grp_match(v_seq[1], sc.landscape_group) and (p_area is null or s.area_code = p_area) end
   ),
   paths as (
-    -- 起点
+    -- 起点（条件の当てはまりと景観らしさの高い順に150件）
     select 1 as step, array[c.id] as ids, c.geom as last_geom, 0::real as meters,
-           c.tag as tagsum, (case when c.unnamed then 1 else 0 end) as unnamed_n,
+           coalesce(c.sig, 0) as sig_sum, (c.sig is not null)::int as sig_n,
+           coalesce(c.typ, 0) as typ_sum, (c.typ is not null)::int as typ_n, c.typ as typ_min,
+           (case when c.unnamed then 1 else 0 end) as unnamed_n,
            (case when c.checked then 1 else 0 end) as checked_n,
            array[c.nkey] as nkeys, c.fam as fams, array[c.place] as places
-      from (select b.*,
-                   case when v_tagw <= 0 then 0 else coalesce(
-                     (select sum((v_tags ->> t.tag_code)::real * least(coalesce(t.score, 1), 1))
-                        from spot_tags t where t.spot_id = b.id and t.origin in ('human','rule') and v_tags ? t.tag_code), 0) / v_tagw end as tag
-              from base b
-             where case when p_start is not null then b.id = p_start
-                        else b.groot is null   -- 境内・敷地内でまとめた地点は親で代表させる
-                         and grp_match(v_seq[1], b.grp) and (p_area is null or b.area_code = p_area) end
-             order by tag desc, checked desc, unnamed, md5(b.id::text || v_seed)
+      from (select b.* from base b
+             order by coalesce(b.sig, 0.5) + coalesce(b.typ, 0.5) desc, b.checked desc, b.unnamed, md5(b.id::text || v_seed)
              limit 150) c
     union all
-    -- 次の景観へ（近くて雰囲気の合う地点を最大3件ずつ。空間インデックスで近傍だけを探す）
-    select p.step + 1, p.ids || n.id, n.geom, p.meters + n.d, p.tagsum + n.tag,
+    -- 次の景観へ（近い30件から、条件と景観らしさの合う地点を最大3件ずつ。空間インデックスで近傍だけを探す）
+    select p.step + 1, p.ids || n.id, n.geom, p.meters + n.d,
+           p.sig_sum + coalesce(n.sig, 0), p.sig_n + (n.sig is not null)::int,
+           p.typ_sum + coalesce(n.typ, 0), p.typ_n + (n.typ is not null)::int,
+           case when p.typ_min is null then n.typ when n.typ is null then p.typ_min else least(p.typ_min, n.typ) end,
            p.unnamed_n + (case when n.unnamed then 1 else 0 end),
            p.checked_n + (case when n.checked then 1 else 0 end),
            p.nkeys || n.nkey, p.fams || n.fam, p.places || n.place
       from paths p
       cross join lateral (
-        select k.*, case when v_tagw <= 0 then 0 else coalesce(
-                 (select sum((v_tags ->> t.tag_code)::real * least(coalesce(t.score, 1), 1))
-                    from spot_tags t where t.spot_id = k.id and t.origin in ('human','rule') and v_tags ? t.tag_code), 0) / v_tagw end as tag
+        select k.*, scene_signal(k.id, ss.signals, v_tags, k.id = any (v_human)) as sig, ss.typicality as typ
           from (
             -- 近い順に30件まで（空間インデックスで高速に絞る）
             select s.id, s.geom,
@@ -124,10 +134,10 @@ begin
                    array_remove(array[s.id, s.parent_id, live_root(s.group_root_id)], null) as fam,
                    coalesce('L:' || s.line_key, 'G:' || live_root(s.group_root_id), 'P:' || s.parent_id, 'S:' || s.id) as place,
                    ST_Distance(s.geom, p.last_geom)::real as d
-              from spots s join spot_categories sc on sc.code = s.category
+              from spots s
              where p.step < v_n
+               and s.category in (select jsonb_array_elements_text(v_cats -> p.step))   -- 次の段の景観の種別（v_cats は0始まり）
                and ST_DWithin(s.geom, p.last_geom, v_maxm - p.meters)
-               and grp_match(v_seq[p.step + 1], sc.landscape_group)
                and s.data_status <> 'archived'
                and live_root(s.group_root_id) is null                          -- 境内・敷地内でまとめた地点は親で代表させる
                and not (s.id = any (p.ids))
@@ -136,19 +146,23 @@ begin
              order by s.geom <-> p.last_geom
              limit 30
           ) k
+          left join spot_spatial ss on ss.spot_id = k.id
          where (k.nkey = '' or not (k.nkey = any (p.nkeys)))                  -- 同じ名前の地点は並べない
            and not (k.place = any (p.places))                                  -- 同じ川・同じ敷地は並べない
-         order by tag desc, k.checked desc, k.unnamed, k.d
+         order by coalesce(scene_signal(k.id, ss.signals, v_tags, k.id = any (v_human)), 0.5) + coalesce(ss.typicality, 0.5) desc,
+                  k.checked desc, k.unnamed, k.d
          limit 3
       ) n
   ),
   done as (
     select ids, places, round((meters * 1.3 / v_speed)::numeric, 1) as minutes,
            route_score(jsonb_build_object(
-             'tag',     case when v_tagw > 0 then least(tagsum / v_n, 1) end,
+             'signal',  case when sig_n > 0 then sig_sum / sig_n end,
+             -- 景観らしさは平均と最小の中間（いちばん弱いカットが流れ全体の使いやすさを決めるため）
+             'typical', case when typ_n > 0 then 0.5 * typ_sum / typ_n + 0.5 * typ_min end,
              'short',   case when v_n > 1 then 1 - least(meters * 1.3 / v_speed / v_budget, 1) end,
              'named',   1 - unnamed_n::real / v_n,
-             'checked', checked_n::real / v_n)) as sc
+             'checked', case when v_anychk then checked_n::real / v_n end)) as sc
       from paths
      where step = v_n
   ),
@@ -204,7 +218,7 @@ begin
                                 round((ST_Distance(w.geom, w.prev_geom) * 1.3 / v_speed)::numeric, 1) end,
                              'grp_code', w.grp_code, 'confidence', w.confidence, 'summary', w.summary,
                              'fact_count', (select count(*) from spot_facts f where f.spot_id = w.id and f.status = 'approved'),
-                             'address', w.address, 'data_status', w.data_status,
+                             'address', w.address, 'data_status', w.data_status, 'vibe', vibe_line(w.id),
                              'risk', exists (select 1 from change_risks rk where rk.spot_id = w.id and rk.risk_type <> 'none'))
                            order by w.ord)
                            from (select s.id, s.code, s.name, s.geom, s.confidence, s.summary, lg.name as grp,
