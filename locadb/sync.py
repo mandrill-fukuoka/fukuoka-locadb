@@ -434,7 +434,14 @@ class Sync:
         # 坂道の測定値（長さ・勾配・高低差・上りの方角）。人が直した地点でも測定値は最新にする
         attrs = [(a["slope_len_m"], a["slope_grade_pct"], a["slope_rise_m"], a["slope_bearing"], a["slope_kind"],
                   self.by_sample[smp.key])
-                 for smp in self.snap.samples if (a := smp.attrs) and smp.key in self.by_sample]
+                 for smp in self.snap.samples if (a := smp.attrs) and "slope_len_m" in a and smp.key in self.by_sample]
+        # 線路の形（高架・盛土・切り通し・地上。DB変更211）
+        forms = [(a["rail_form"], self.by_sample[smp.key])
+                 for smp in self.snap.samples if (a := smp.attrs) and "rail_form" in a and smp.key in self.by_sample]
+        if forms:
+            with self.c.cursor() as cur:
+                cur.executemany("update spots set rail_form=%s where id=%s and rail_form is distinct from %s",
+                                [(f, i, f) for f, i in forms])
         if attrs:
             with self.c.cursor() as cur:
                 cur.executemany("""update spots set slope_len_m=%s, slope_grade_pct=%s, slope_rise_m=%s,

@@ -55,6 +55,7 @@ CHECKS = {
     "sum_number":        ("summary", WARN, "標高・勾配などの数値がDBの値と違う"),
     "sum_forbidden":     ("summary", WARN, "書いてはいけない話題（治安・営業時間・撮影の可否など）"),
     "sum_needs_source":  ("summary", INFO, "出典が必要な記述（年代・最大・有名など）"),
+    "sum_unsupported":   ("summary", WARN, "根拠のない様子の記述（賑わい・人通り・静かさ・時間帯など）"),
     "sum_template":      ("summary", INFO, "定型の書き出し"),
     "sum_duplicate":     ("summary", WARN, "ほかの地点と同じ文章"),
 }
@@ -213,6 +214,10 @@ def check_regeo(rows, lookup, workers=4) -> list[Finding]:
 SIMPLIFIED = set("这们个说时为发对现实经动进车东门问间关开长马鸟鱼见贝页头买卖两乐书认识让话谈请读语记样么吗呢啊过还没给从并应该业产术际计设历岁华丽众优这边轻场处网电视风饭")
 FOREIGN_RE = re.compile(r"[，；]|[가-힣]")          # 「，」は中国語の読点（日本語は「、」）
 GARBLED = re.compile(r"\ufffd|\?{2,}|[\u0080-\u009f]")          # 文字化け（置換文字・「??」・制御文字）
+# 根拠を示せない様子・時間帯の記述（2026-10-29。例：「日中は多くの通勤客や観光客で賑わい、夜間も…人通りは比較的多い」）
+UNSUPPORTED = re.compile(r"賑わ|にぎわ|人通り|通勤客|観光客|買い物客|利用客|多くの人|人が多|人気が(?:高|あ)|人気の(?:高|あ)|"
+                         r"活気|閑静|静かな|静寂|ひっそり|落ち着いた雰囲気|穏やかな雰囲気|日中は|昼間は|夜間も|夜は|週末は|"
+                         r"混み合|込み合|行き交")
 FORBIDDEN = re.compile(r"治安|営業時間|定休日|混雑|撮影許可|撮影可能|撮影でき|許可不要|許可は不要|自由に撮影|口コミ|評判")
 NEEDS_SOURCE = re.compile(r"[0-9０-９]{3,4}年|明治|大正|昭和[0-9０-９一二三四五六七八九十]+年|江戸時代|室町|鎌倉時代|"
                           r"創建|建立|開山|開業|竣工|築[0-9０-９]+年|創業|日本一|最古|最大|唯一|有名|人気の|名所|絶景|"
@@ -301,6 +306,9 @@ def check_summary(s, note, places: PlaceIndex) -> list[Finding]:
     m = NEEDS_SOURCE.search(plain)
     if m:
         f("sum_needs_source", _around(plain, m))
+    m = UNSUPPORTED.search(plain)
+    if m:
+        f("sum_unsupported", _around(plain, m))
 
     for rx, col, tol, label in NUM_CLAIMS:
         for m in rx.finditer(body):
@@ -405,6 +413,12 @@ select distinct on (n.spot_id) n.spot_id, n.id note_id, n.source, n.prompt_versi
  where n.status = 'draft' and s.data_status <> 'archived'
  order by n.spot_id, n.created_at desc, n.id desc
 """
+# 公開中の説明文（人が書いた・採用したもの）も同じ規則で見る（2026-10-29。これまでは下書きだけだった）
+PUBLISHED_SQL = """
+select s.id spot_id, null::bigint note_id, 'published' source, null prompt_version, s.summary body
+  from spots s
+ where s.summary is not null and s.data_status <> 'archived'
+"""
 PAIRS_SQL = """
 select a.id a_id, b.id b_id, a.name, a.category a_cat, b.category b_cat, a.slope_kind a_kind, b.slope_kind b_kind,
        round(ST_Distance(a.geom, b.geom))::int d
@@ -420,6 +434,7 @@ def load(conn):
     spots = conn.execute(SPOTS_SQL).fetchall()
     has_notes = conn.execute("select to_regclass('public.spot_ai_notes') is not null x").fetchone()["x"]
     notes = conn.execute(NOTES_SQL).fetchall() if has_notes else []
+    notes += conn.execute(PUBLISHED_SQL).fetchall()
     pairs = conn.execute(PAIRS_SQL, (100,)).fetchall()
     return spots, notes, pairs
 
@@ -451,7 +466,7 @@ def run_checks(spots, notes, pairs, regeo=None) -> list[Finding]:
     sp = [(by_id[n["spot_id"]], n) for n in notes if n["spot_id"] in by_id and n["body"]]
     for s, n in sp:
         found += check_summary(s, n, places)
-    found += check_summary_corpus(sp)
+    found += check_summary_corpus([(a, n) for a, n in sp if n.get("source") != "published"])   # 定型・重複は下書きだけ
     # 同じ地点・同じチェック・同じ内容は1つに
     uniq, seen = [], set()
     for x in found:
@@ -467,8 +482,8 @@ def run_checks(spots, notes, pairs, regeo=None) -> list[Finding]:
 def write_outputs(found, spots, notes, out_dir: Path, web_base: str) -> str:
     out_dir.mkdir(parents=True, exist_ok=True)
     by_id = {s["id"]: s for s in spots}
-    note_ver = {n["note_id"]: f"{n['source']}:{n['prompt_version'] or '-'}" for n in notes}
-    note_body = {n["note_id"]: (n["body"] or "").replace("\n", " ")[:200] for n in notes}
+    note_ver = {n["note_id"]: f"{n['source']}:{n['prompt_version'] or '-'}" for n in notes if n["note_id"]}
+    note_body = {n["note_id"]: (n["body"] or "").replace("\n", " ")[:200] for n in notes if n["note_id"]}
     order = {c: i for i, c in enumerate(CHECKS)}
     found = sorted(found, key=lambda x: (order[x.check], by_id[x.spot_id]["code"] or ""))
     with open(out_dir / "findings.csv", "w", newline="", encoding="utf-8-sig") as fp:

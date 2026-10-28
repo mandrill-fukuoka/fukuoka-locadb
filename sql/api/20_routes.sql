@@ -86,6 +86,27 @@ begin
     into v_cats from unnest(v_seq) with ordinality u(g, o);
   v_seed := array_to_string(v_seq, ',') || '|' || p_mode || '|' || coalesce(p_area, '');   -- 同じ条件なら同じ順（random() は使わない）
 
+  -- 2段目以降の候補を先に1回だけ集める（平面直角座標 II系 で距離を測る。検索ごとの一時表。2026-10-29 速さの改善）
+  if to_regclass('pg_temp._route_cand') is not null then drop table pg_temp._route_cand; end if;
+  create temp table _route_cand on commit drop as
+  select st.o::int as stage, s.id, s.geom, ST_Transform(s.geom::geometry, 6670) as g,
+         (s.name like '（無名）%') as unnamed,
+         (s.confidence in ('desk_checked','field_checked')) as checked,
+         route_name_key(s.name) as nkey,
+         array_remove(array[s.id, s.parent_id], null) as self_fam,
+         array_remove(array[s.id, s.parent_id, live_root(s.group_root_id)], null) as fam,
+         coalesce('L:' || s.line_key, 'G:' || live_root(s.group_root_id), 'P:' || s.parent_id, 'S:' || s.id) as place,
+         scene_signal(s.id, ss.signals, v_tags, s.id = any (v_human)) as sig,
+         ss.typicality as typ
+    from unnest(v_seq) with ordinality st(grp, o)
+    join spots s on s.category in (select jsonb_array_elements_text(v_cats -> (st.o::int - 1)))
+    left join spot_spatial ss on ss.spot_id = s.id
+   where st.o > 1
+     and s.data_status <> 'archived'
+     and live_root(s.group_root_id) is null;                                 -- 境内・敷地内でまとめた地点は親で代表させる
+  create index on _route_cand using gist (g);
+  analyze _route_cand;
+
   with recursive base as (
     select s.id, s.geom,
            (s.name like '（無名）%') as unnamed,
@@ -104,7 +125,7 @@ begin
   ),
   paths as (
     -- 起点（条件の当てはまりと景観らしさの高い順に150件）
-    select 1 as step, array[c.id] as ids, c.geom as last_geom, 0::real as meters,
+    select 1 as step, array[c.id] as ids, ST_Transform(c.geom::geometry, 6670) as last_g, 0::real as meters,
            coalesce(c.sig, 0) as sig_sum, (c.sig is not null)::int as sig_n,
            coalesce(c.typ, 0) as typ_sum, (c.typ is not null)::int as typ_n, c.typ as typ_min,
            (case when c.unnamed then 1 else 0 end) as unnamed_n,
@@ -114,8 +135,8 @@ begin
              order by coalesce(b.sig, 0.5) + coalesce(b.typ, 0.5) desc, b.checked desc, b.unnamed, md5(b.id::text || v_seed)
              limit 150) c
     union all
-    -- 次の景観へ（近い30件から、条件と景観らしさの合う地点を最大3件ずつ。空間インデックスで近傍だけを探す）
-    select p.step + 1, p.ids || n.id, n.geom, p.meters + n.d,
+    -- 次の景観へ（近い30件から、条件と景観らしさの合う地点を最大3件ずつ）
+    select p.step + 1, p.ids || n.id, n.g, p.meters + n.d,
            p.sig_sum + coalesce(n.sig, 0), p.sig_n + (n.sig is not null)::int,
            p.typ_sum + coalesce(n.typ, 0), p.typ_n + (n.typ is not null)::int,
            case when p.typ_min is null then n.typ when n.typ is null then p.typ_min else least(p.typ_min, n.typ) end,
@@ -124,33 +145,22 @@ begin
            p.nkeys || n.nkey, p.fams || n.fam, p.places || n.place
       from paths p
       cross join lateral (
-        select k.*, scene_signal(k.id, ss.signals, v_tags, k.id = any (v_human)) as sig, ss.typicality as typ
-          from (
-            -- 近い順に30件まで（空間インデックスで高速に絞る）
-            select s.id, s.geom,
-                   (s.name like '（無名）%') as unnamed,
-                   (s.confidence in ('desk_checked','field_checked')) as checked,
-                   route_name_key(s.name) as nkey,
-                   array_remove(array[s.id, s.parent_id, live_root(s.group_root_id)], null) as fam,
-                   coalesce('L:' || s.line_key, 'G:' || live_root(s.group_root_id), 'P:' || s.parent_id, 'S:' || s.id) as place,
-                   ST_Distance(s.geom, p.last_geom)::real as d
-              from spots s
+        select k.* from (
+            -- 近い順に30件まで（一時表の空間インデックスで近傍だけを探す）
+            select r.*, ST_Distance(r.g, p.last_g)::real as d
+              from _route_cand r
              where p.step < v_n
-               and s.category in (select jsonb_array_elements_text(v_cats -> p.step))   -- 次の段の景観の種別（v_cats は0始まり）
-               and ST_DWithin(s.geom, p.last_geom, v_maxm - p.meters)
-               and s.data_status <> 'archived'
-               and live_root(s.group_root_id) is null                          -- 境内・敷地内でまとめた地点は親で代表させる
-               and not (s.id = any (p.ids))
-               and not (array_remove(array[s.id, s.parent_id], null) && p.fams)  -- 親子・同じまとめ先は並べない
-               and ST_Distance(s.geom, p.last_geom) >= v_mind
-             order by s.geom <-> p.last_geom
+               and r.stage = p.step + 1
+               and ST_DWithin(r.g, p.last_g, v_maxm - p.meters)
+               and not (r.id = any (p.ids))
+               and not (r.self_fam && p.fams)                                  -- 親子・同じまとめ先は並べない
+               and ST_Distance(r.g, p.last_g) >= v_mind
+             order by r.g <-> p.last_g
              limit 30
           ) k
-          left join spot_spatial ss on ss.spot_id = k.id
          where (k.nkey = '' or not (k.nkey = any (p.nkeys)))                  -- 同じ名前の地点は並べない
            and not (k.place = any (p.places))                                  -- 同じ川・同じ敷地は並べない
-         order by coalesce(scene_signal(k.id, ss.signals, v_tags, k.id = any (v_human)), 0.5) + coalesce(ss.typicality, 0.5) desc,
-                  k.checked desc, k.unnamed, k.d
+         order by coalesce(k.sig, 0.5) + coalesce(k.typ, 0.5) desc, k.checked desc, k.unnamed, k.d
          limit 3
       ) n
   ),
@@ -213,6 +223,7 @@ begin
                                       join landscape_groups lg on lg.code = sc.landscape_group),
                'spots', (select jsonb_agg(jsonb_build_object(
                              'id', w.id, 'code', w.code, 'name', w.name, 'group', w.grp,
+                             'label', spot_label(w.name, w.category, w.address, w.rail_form),
                              'lat', ST_Y(w.geom::geometry), 'lon', ST_X(w.geom::geometry),
                              'minutes_from_prev', case when w.prev_geom is null then null else
                                 round((ST_Distance(w.geom, w.prev_geom) * 1.3 / v_speed)::numeric, 1) end,
@@ -221,7 +232,7 @@ begin
                              'address', w.address, 'data_status', w.data_status, 'vibe', vibe_line(w.id),
                              'risk', exists (select 1 from change_risks rk where rk.spot_id = w.id and rk.risk_type <> 'none'))
                            order by w.ord)
-                           from (select s.id, s.code, s.name, s.geom, s.confidence, s.summary, lg.name as grp,
+                           from (select s.id, s.code, s.name, s.category, s.rail_form, s.geom, s.confidence, s.summary, lg.name as grp,
                                         lg.code as grp_code, s.address, s.data_status, u.ord,
                                         lag(s.geom) over (order by u.ord) as prev_geom
                                    from unnest(pk.ids) with ordinality u(id, ord)
@@ -301,6 +312,7 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
          round(coalesce(c.transition_score, 0)::numeric, 3) as match,
          (select jsonb_agg(jsonb_build_object(
                    'id', s.id, 'code', s.code, 'name', s.name, 'group', lg.name, 'grp_code', lg.code,
+                   'label', spot_label(s.name, s.category, s.address, s.rail_form),
                    'address', s.address, 'data_status', s.data_status,
                    'lat', ST_Y(s.geom::geometry), 'lon', ST_X(s.geom::geometry),
                    'minutes_from_prev', cs.minutes_from_prev, 'confidence', s.confidence, 'summary', s.summary,

@@ -37,7 +37,7 @@ CATEGORIES = {
     "vacant":              ("空き店舗・閉鎖施設", "vacant", "point", 0),
     "redevelopment_site":  ("工事中・再開発地", "vacant", "point", 0),
     # 修正提案2A（2026-10-22）：撮影の需要がある種類を足す。いずれも景観グループは既存のものを使う
-    "level_crossing":      ("踏切", "transport", "point", 0),
+    "level_crossing":      ("踏切", "rail", "point", 0),
     "underpass":           ("トンネル・地下道", "transport", "point", 0),
     "parking_multi":       ("立体駐車場", "urban_new", "point", 0),
     "harbour_structure":   ("灯台・渡船場・フェリー乗り場", "sea", "point", 0),
@@ -58,16 +58,23 @@ CATEGORIES = {
     "public_space":        ("広場・歩行者空間", "urban_new", "line", 150),
     "river":               ("河川・運河", "river", "line", 400),
     "coast":               ("海岸・護岸・干潟", "sea", "line", 400),
-    "railway":             ("線路沿い", "transport", "line", 600),
+    "railway":             ("線路沿い", "rail", "line", 600),
     "slope_street":        ("坂道・階段坂", "slope", "line", 80),      # 道路×標高から検出（locadb/slopes.py）
 }
 PRIORITY = {code: i for i, code in enumerate(CATEGORIES)}
+
+# 工場・倉庫に入れない名前（2026-10-29）：工業用地の中にあっても、営業所・研修所・バスの車庫などは工場・倉庫の景観ではない。
+#  ただし名前に工場・倉庫・物流などがあれば工場・倉庫のまま（例：高砂倉庫 那ノ津営業所）。車両基地は工業的な景観なので残す
+NOT_INDUSTRIAL_NAME = re.compile(r"営業所|研修所|研修センター|社員寮|独身寮|事務所|本社|支社|支店|ショールーム|"
+                                 r"乗馬|クラブ|クリニック|医院|歯科|保育|幼稚園|スクール|消防|警察|交番|"
+                                 r"バス(?:営業所|車庫|センター|ターミナル)|自動車学校|教習所")
+INDUSTRIAL_NAME = re.compile(r"工場|製作所|製造所|倉庫|物流|運輸|ロジ|貨物ターミナル|コンテナターミナル|発電所|処理場|プラント")
 
 LANDSCAPE_GROUPS = {
     "urban_new": "新しい都市景観", "old_town": "古い街並み・路地", "commercial": "繁華街・商業",
     "residential": "住宅地・団地", "institution": "学校・病院・公共施設", "transport": "交通インフラ・駅",
     "port_industrial": "港湾・工業・倉庫", "river": "川・河川", "sea": "海・海辺", "beach": "砂浜",
-    "lake": "池・湖", "green": "公園・丘陵・自然", "historic": "歴史・寺社", "vacant": "空き施設・再開発地", "slope": "坂道・高低差", "shop": "店舗・飲食",
+    "lake": "池・湖", "green": "公園・丘陵・自然", "historic": "歴史・寺社", "vacant": "空き施設・再開発地", "slope": "坂道・高低差", "shop": "店舗・飲食", "rail": "線路沿い",
     "water": "水辺（川・海・砂浜・池のどれでも）",
 }
 
@@ -157,11 +164,12 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
     if (osm_type == "w" and t.get("building") and _levels(t) >= 20) \
             or (t.get("tourism") == "hotel" and _levels(t) >= 10):
         out.append("new_building")
-    if t.get("man_made") == "works" or (t.get("landuse") == "industrial" and nm and
-                                        not re.search(r"warehouse|logistics", t.get("industrial", ""))):
+    not_industrial = bool(NOT_INDUSTRIAL_NAME.search(nm)) and not INDUSTRIAL_NAME.search(nm)
+    if not not_industrial and (t.get("man_made") == "works" or (t.get("landuse") == "industrial" and nm and
+                                        not re.search(r"warehouse|logistics", t.get("industrial", "")))):
         out.append("factory")
-    if (osm_type == "w" and t.get("building") == "warehouse" and nm) \
-            or (t.get("landuse") == "industrial" and re.search(r"warehouse|logistics", t.get("industrial", ""))):
+    if not not_industrial and ((osm_type == "w" and t.get("building") == "warehouse" and nm)
+            or (t.get("landuse") == "industrial" and re.search(r"warehouse|logistics", t.get("industrial", "")))):
         out.append("warehouse")
     if t.get("disused:shop") or t.get("abandoned:building") or (t.get("building") and t.get("disused") == "yes"):
         out.append("vacant")

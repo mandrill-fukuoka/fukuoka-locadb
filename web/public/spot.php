@@ -99,14 +99,14 @@ $osmUrl = fn($f) => $f['kind'] === 'element'
     : (!empty($f['way_ids'][0]) ? 'https://www.openstreetmap.org/way/' . $f['way_ids'][0] : '');
 $lineName = ($s['shape'] ?? '') === 'line' ? preg_replace('/^（無名）.*/u', '', (string)($s['osm'][0]['name'] ?? '')) : '';
 
-page_header(nm($s['name']), '');
+page_header(sn($s), '');
 ?>
 <article class="spotpage">
   <p class="crumb small muted"><a href="index.php?grp=<?= h($s['grp_code']) ?>"><?= dot($s['grp_code']) ?><?= h($s['grp']) ?></a>
     ／ <a href="index.php?cat=<?= h($s['category']) ?>"><?= h($s['category_name']) ?></a>
     ／ <a href="index.php?area=<?= h($s['area_code']) ?>"><?= h(AREA_LABEL[$s['area_code']] ?? '') ?></a>
     <span class="code"><?= h($s['code']) ?></span></p>
-  <h1><?= h(nm($s['name'])) ?></h1>
+  <h1><?= h(sn($s)) ?></h1>
   <?php if (!empty($s['parent']['id'])): ?><p class="small muted"><a href="spot.php?id=<?= (int)$s['parent']['id'] ?>"><?= h(nm($s['parent']['name'])) ?></a>の<?= h($s['parent']['word']) ?></p><?php endif; ?>
   <p class="lead">
     <?php if ($s['address']): ?><span><?= h($s['address']) ?></span><?php endif; ?>
@@ -303,7 +303,7 @@ page_header(nm($s['name']), '');
         <?php if (!$nearby): ?><p class="muted small">周辺に登録地点がありません。</p><?php else: ?>
         <ul class="nearby compact">
           <?php foreach (array_slice($nearby, 0, 14) as $n): ?>
-            <li><?= dot($n['grp_code'] ?? $n['grp']) ?><a class="plain" href="spot.php?id=<?= (int)$n['id'] ?>"><?= h(nm($n['name'])) ?></a>
+            <li><?= dot($n['grp_code'] ?? $n['grp']) ?><a class="plain" href="spot.php?id=<?= (int)$n['id'] ?>"><?= h(sn($n)) ?></a>
               <span class="muted small"><?= (int)$n['meters'] ?>m</span></li>
           <?php endforeach; ?>
         </ul>

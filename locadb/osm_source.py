@@ -191,6 +191,7 @@ class _Reader(osmium.SimpleHandler):
         self.wards: dict[int, object] = {}
         self.points: list[PointFeature] = []
         self.lines: dict[tuple[str, str], list] = defaultdict(list)   # (cat, 名前) -> [(way_id, [(lon,lat)...])]
+        self.rail_form: dict[int, str] = {}                            # 線路の区間（way）-> 形（DB変更211）
         self.walk: list = []                                           # 立てる場所の候補（歩ける道・橋）
         self.roads: list = []                                          # 坂道の検出に使う道（slopes.Road）
         self.wkb = osmium.geom.WKBFactory()
@@ -274,6 +275,8 @@ class _Reader(osmium.SimpleHandler):
         for c in cats:
             if CATEGORIES[c][2] == "line" and not (w.is_closed() and t.get("area") == "yes"):
                 self.lines[(c, display_name(t, c))].append((w.id, coords))
+                if c == "railway":
+                    self.rail_form[w.id] = rail_form(t)
             else:
                 point_cats.append(c)
         if not point_cats:
@@ -360,6 +363,17 @@ def _grid_samples(line_m, spacing: float):
 STANDPOINT_MAX_M = {"river": 80, "coast": 100, "railway": 60}
 
 
+def rail_form(t: dict) -> str:
+    """線路の形（DB変更211）：高架 elevated / 盛土 embankment / 切り通し cutting / 地上 ground"""
+    if t.get("bridge") not in (None, "no"):
+        return "elevated"
+    if t.get("embankment") not in (None, "no"):
+        return "embankment"
+    if t.get("cutting") not in (None, "no"):
+        return "cutting"
+    return "ground"
+
+
 def read(pbf: Path, watch: set[str] | None = None, detect_slopes: bool = True) -> Snapshot:
     """watch: DBにある要素のキー。ファイルに存在したかどうか（削除か、条件から外れただけか）を記録する"""
     ward_ids = {rel for _, rel in AREAS.values()}
@@ -425,8 +439,12 @@ def read(pbf: Path, watch: set[str] | None = None, detect_slopes: bool = True) -
                 ac = area_of(lon, lat)
             if not ac:
                 continue
+            attrs = None
+            if cat == "railway":                         # 線路の形：格子の位置に最も近い区間のタグ（DB変更211）
+                near = min(ways, key=lambda wc: LineString([to_m(*c) for c in wc[1]]).distance(pt))
+                attrs = {"rail_form": r.rail_form.get(near[0], "ground")}
             samples.append(LineSample(f"{line_key}#{int(spacing)}:{cx}_{cy}", line_key, cat, name or "",
-                                      lon, lat, llon, llat, kind, way_ids, ac))
+                                      lon, lat, llon, llat, kind, way_ids, ac, attrs))
 
     # 坂道：市内の道に沿って標高を読み、急な区間を線の地点として置く（キーは位置の格子で固定）
     city_prep = prep(unary_union(list(ward_ll.values())))
