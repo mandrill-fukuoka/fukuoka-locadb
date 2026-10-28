@@ -10,9 +10,9 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq php-cli
-      - run: pip install "psycopg[binary]>=3.2"
+      - run: pip install "psycopg[binary]>=3.2" "openpyxl>=3.1"
       - name: 確認用シーン文で検索
-        run: python tools/flow_eval.py --json flow-eval.json | tee -a "$GITHUB_STEP_SUMMARY"
+        run: python tools/flow_eval.py --json flow-eval.json --xlsx flow-eval.xlsx | tee -a "$GITHUB_STEP_SUMMARY"
         env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
       - uses: actions/upload-artifact@v4
-        with: { name: flow-eval, path: flow-eval.json, retention-days: 30 }
+        with: { name: flow-eval, path: "flow-eval.*", retention-days: 30 }
