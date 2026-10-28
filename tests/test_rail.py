@@ -74,3 +74,13 @@ def test_dry_run_with_railway(db, tmp_path, monkeypatch):
     p = w.write(tmp_path / "a.osm")
     snap, meta = pipeline.get_snapshot(str(p), set(), True)
     assert any(s.attrs and "rail_form" in s.attrs for s in snap.samples)
+
+
+def test_keywords_stage3_scenes():
+    from test_routes import php_interpret
+    q = php_interpret("自転車で坂道を下り、踏切を渡って商店街に入る")
+    assert q["sequence"] == ["slope", "rail", "old_town"] and q["travel_mode"] == "walk"   # 自転車は車にしない
+    assert php_interpret("刑事が車で港湾道路を流しながら、コンテナヤードを見回る")["sequence"] == ["port_industrial"]
+    assert php_interpret("再開発の工事現場の前を通り、まだ残る古い路地に入っていく")["sequence"] == ["vacant", "old_town"]
+    assert php_interpret("放課後、高校から川沿いの土手を二人で歩いて帰る")["sequence"] == ["institution", "river"]
+    assert php_interpret("島へ渡るフェリー乗り場から、漁港の路地を歩いて丘の上へ")["sequence"] == ["port_industrial", "sea", "old_town", "green"]
