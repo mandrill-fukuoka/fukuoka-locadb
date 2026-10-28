@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import address, build_clusters, containment, monitor_risk, name_overrides, osm_source, ruletags, slopes, spatial, terrain
+from . import address, build_clusters, containment, monitor_risk, name_overrides, osm_source, ruletags, slopes, spatial, terrain, vibe
 from .categories import RULES_VERSION
 from .db import code_version, connect
 from .sync import MAX_ARCHIVE_RATIO, Sync
@@ -181,6 +181,8 @@ def main() -> int:
     if not a.skip_spatial:
         print("[4d] ルールのタグ（種別・空間特徴から）")
         ruletags.run(run_id)
+        print("[4e] 雰囲気の目安（周りの店の数・条件の当てはまり・景観らしさ）")
+        vibe.run(run_id)
     if not a.skip_extras:
         print("[5] 流れの自動生成")
         build_clusters.run_all(run_id)

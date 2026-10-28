@@ -121,7 +121,10 @@ function interpret_scene(string $scene, array $tags, array $groups): array {
 
     $prompt = "映像のシーン要件をロケ地検索条件に変換してください。JSONのみ出力。\n\n# シーン\n$scene\n\n"
         . "# 景観グループ\n" . json_encode($groups, JSON_UNESCAPED_UNICODE) . "\n\n"
-        . "# タグ\n" . json_encode($tags, JSON_UNESCAPED_UNICODE) . "\n\n"
+        . "# タグ\n" . json_encode($tags, JSON_UNESCAPED_UNICODE) . "\n"
+        . "データで測れるタグ：night_ok・neon（周りのバー・飲食店の多さ）、lively・high_traffic（店の多さ）、lonely・low_traffic・calm（店が少ない・住宅地や水辺）、"
+        . "narrow_street（狭い道・路地）、wide_open（開けた場所）、river_view・sea_view（川・海のそば）、skyline・futuristic（高層ビル）、"
+        . "industrial_structure・inorganic・gritty（工場・港湾・倉庫）、slope_stairs（坂・階段）、greenery（公園・緑）。シーンに合うものを選ぶ。\n\n"
         . "# 出力形式\n{\"sequence\": [\"commercial\",\"water\"], \"tags\": {\"lonely\": 1.0}, "
         . "\"travel_mode\": \"walk|car|any\", \"notes\": \"解釈の要点を1文で\"}\n"
         . "sequence はシーン内で景観が移り変わる順（1〜4個）。川は river、海・海辺・港の水際は sea、砂浜は beach、池・湖・お堀は lake を使い分け、"
@@ -420,6 +423,7 @@ function render_route_card(array $r, int $i, array $opt = []): void {
               <span class="grp"><i class="dot" aria-hidden="true"></i><?= h($s['group'] ?? '') ?></span>
               <strong class="name"><?php if (!empty($s['id'])): ?><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h(nm($s['name'])) ?></a><?php else: ?><?= h(nm($s['name'])) ?><?php endif; ?></strong>
               <span class="flags"><?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?><?php if (($s['data_status'] ?? '') === 'archived'): ?><span class="chip warn">対象外</span><?php endif; ?><?php if (($s['confidence'] ?? '') !== 'field_checked'): ?><span class="chip dim"><?= h(conf_stage($s)) ?></span><?php endif; ?></span>
+              <?php if (!empty($s['vibe'])): ?><span class="small muted vibe"><?= h($s['vibe']) ?></span><?php endif; ?>
               <?= summary_html($s, 'span', 'desc') ?>
               <?php if (!empty($s['id'])): ?><span class="links"><a href="spot.php?id=<?= (int)$s['id'] ?>">詳細</a><a href="index.php?near=<?= (int)$s['id'] ?>">周辺の景観</a><a href="#" class="addlist" data-id="<?= (int)$s['id'] ?>">＋リスト</a></span><?php endif; ?>
             </div>

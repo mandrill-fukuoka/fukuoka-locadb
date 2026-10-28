@@ -85,15 +85,15 @@ def test_score_parts_sum_to_match_and_untagged_search_can_score_high(db):
     assert float(best["match"]) >= 0.7
 
 
-def test_rule_tag_is_used_when_requested(db):
+def test_human_tag_is_used_when_requested(db):
     a = add(db, "公園A", "park", 0, 0)
     add(db, "公園B", "park", 0, 300)
     add(db, "川", "river", 150, 150)
-    db.execute("insert into spot_tags (spot_id, tag_code, origin, score) values (%s, 'greenery', 'rule', 1)", [a])
+    db.execute("insert into spot_tags (spot_id, tag_code, origin, score) values (%s, 'nostalgic', 'human', 1)", [a])
     db.commit()
-    rs = routes(db, ["green", "river"], tags={"greenery": 1.0})
+    rs = routes(db, ["green", "river"], tags={"nostalgic": 1.0})
     assert names(rs[0])[0] == "公園A"
-    assert "tag" in rs[0]["score_parts"]
+    assert rs[0]["score_parts"]["signal"] == 1.0
 
 
 def test_same_query_gives_same_result(db):
@@ -120,3 +120,100 @@ def test_keywords_port_is_read_in_order():
     assert q["sequence"] == ["beach", "sea"]
     q = php_interpret("神社の参道から坂道を上がり、高台から海を見下ろす")
     assert q["sequence"][:2] == ["historic", "slope"] and q["sequence"][-1] == "sea"
+
+
+# ---------- 段階2：雰囲気の目安（DB変更210） ----------
+def shop_categories(db):
+    for code, name in (("bar", "バー・居酒屋"), ("restaurant", "飲食店"), ("cafe", "カフェ"), ("other_shop", "その他の店")):
+        db.execute("insert into spot_categories (code, name, landscape_group) values (%s, %s, 'shop') on conflict do nothing", [code, name])
+    db.commit()
+
+
+def spatial(db, sid, **kw):
+    v = {"open_ratio": 0.5, "building_cover_100": 0.3, "water_dist_m": None, "water_kind": None,
+         "road_class": "residential", "road_width_m": 5.5, "confidence": "ok", **kw}
+    db.execute("""insert into spot_spatial (spot_id, spatial_version, open_ratio, building_cover_100, water_dist_m, water_kind,
+                  road_class, road_width_m, confidence) values (%s, 'test', %s, %s, %s, %s, %s, %s, %s)""",
+               [sid, v["open_ratio"], v["building_cover_100"], v["water_dist_m"], v["water_kind"],
+                v["road_class"], v["road_width_m"], v["confidence"]])
+    db.commit()
+
+
+def bars_around(db, dx, dy, n, cat="bar"):
+    for i in range(n):
+        add(db, f"店{dx}_{dy}_{i}", cat, dx + (i % 5) * 15 - 30, dy + (i // 5) * 15 - 30)
+
+
+def downtown_and_mall(db):
+    """中洲（飲み屋街・バー12軒）、郊外の商業施設（周りに店なし）、路地、川"""
+    shop_categories(db)
+    naka = add(db, "中洲の飲み屋街", "eatery_street", 0, 0)
+    spatial(db, naka, road_width_m=6.0)
+    bars_around(db, 0, 0, 12)
+    mall = add(db, "長尾センタープラザ", "commercial_facility", 5000, 0)
+    spatial(db, mall, building_cover_100=0.1, open_ratio=0.8)
+    for sid, dx in ((naka, 0), (mall, 5000)):
+        alley = add(db, f"路地{dx}", "alley", dx + 150, 120)
+        spatial(db, alley, road_width_m=3.0)
+    near = add(db, "那珂川（中洲）", "river", 300, 250)
+    spatial(db, near, water_dist_m=5, water_kind="river")
+    far = add(db, "郊外の川", "river", 5300, 250)
+    spatial(db, far, water_dist_m=5, water_kind="river")
+    db.execute("select vibe_apply()")
+    db.commit()
+    return naka, mall
+
+
+def test_vibe_counts_and_tag_signal(db):
+    naka, mall = downtown_and_mall(db)
+    home = add(db, "住宅地", "housing_estate", 9000, 9000)
+    spatial(db, home, road_width_m=3.5)
+    db.execute("select vibe_apply()")
+    db.commit()
+    row = db.execute("select bars_150, shops_150 from spot_spatial where spot_id = %s", [naka]).fetchone()
+    assert row["bars_150"] == 12 and row["shops_150"] == 12
+    sig = lambda sid, tag: db.execute("select tag_signal(%s, %s) v", [sid, tag]).fetchone()["v"]
+    assert sig(naka, "night_ok") >= 0.8
+    assert sig(home, "lonely") >= 0.8
+    assert sig(naka, "lonely") < 0.3
+    assert sig(naka, "nostalgic") is None                      # データで測れないタグは null
+    # 人のタグが優先
+    db.execute("insert into spot_tags (spot_id, tag_code, origin, score) values (%s, 'nostalgic', 'human', 1)", [naka])
+    db.execute("insert into spot_tags (spot_id, tag_code, origin, score) values (%s, 'lonely', 'ai', 1)", [mall])
+    db.commit()
+    assert sig(naka, "nostalgic") == 1.0
+    # AIのタグは使わない（推定値のまま）
+    assert db.execute("select tag_signal(%s, 'lonely') v", [mall]).fetchone()["v"] == \
+        db.execute("select (signals ->> 'lonely')::real v from spot_spatial where spot_id = %s", [mall]).fetchone()["v"]
+
+
+def test_group_typicality_commercial(db):
+    naka, mall = downtown_and_mall(db)
+    typ = lambda sid: db.execute("select group_typicality(%s, 'commercial') v", [sid]).fetchone()["v"]
+    assert typ(mall) < typ(naka)
+    assert typ(naka) >= 0.8 and typ(mall) <= 0.2
+
+
+def test_night_scene_starts_downtown_and_river_cut_is_by_the_water(db):
+    downtown_and_mall(db)
+    tags = {"lonely": 1, "low_traffic": 1, "night_ok": 1, "narrow_street": 1, "river_view": 1}
+    rs = routes(db, ["commercial", "old_town", "river"], tags=tags, mode="walk")
+    assert rs
+    assert names(rs[0])[0] == "中洲の飲み屋街"
+    mall = [r for r in rs if names(r)[0] == "長尾センタープラザ"]
+    assert mall and float(mall[0]["match"]) <= float(rs[0]["match"]) - 0.15   # 周りに店のない商業施設は大きく下がる
+    for r in rs:
+        if names(r)[0] != "中洲の飲み屋街":
+            continue
+        assert "signal" in r["score_parts"] and "typical" in r["score_parts"]
+        river = r["spots"][-1]
+        d = db.execute("select water_dist_m from spot_spatial where spot_id = %s", [river["id"]]).fetchone()["water_dist_m"]
+        assert d < 50
+        assert "バー・居酒屋12軒" in (r["spots"][0]["vibe"] or "")
+        assert abs(sum(r["score_parts"][k] * r["score_weights"][k] for k in r["score_parts"]) - float(r["match"])) < 0.005
+
+
+def test_vibe_stats_reads_without_writing(db):
+    downtown_and_mall(db)
+    st = db.execute("select vibe_stats() s").fetchone()["s"]
+    assert st["spots"] >= 4 and len(st["percentiles_10_50_90_99"]["bars_150"]) == 4
