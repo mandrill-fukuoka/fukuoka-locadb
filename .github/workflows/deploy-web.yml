@@ -69,6 +69,7 @@ jobs:
           mirror -R --verbose --no-perms --exclude-glob _app/ --exclude-glob config.php --exclude-glob make_hash.php web/public/ $DIR/
           mkdir -pf $DIR/_app
           put -O $DIR/_app web/app/lib.php
+          put -O $DIR/_app web/app/scene.php
           put -O $DIR/_app web/app/.htaccess
           rm -f $DIR/make_hash.php
           bye

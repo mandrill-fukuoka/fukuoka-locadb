@@ -125,7 +125,8 @@ function interpret_scene(string $scene, array $tags, array $groups): array {
         . "# 出力形式\n{\"sequence\": [\"commercial\",\"water\"], \"tags\": {\"lonely\": 1.0}, "
         . "\"travel_mode\": \"walk|car|any\", \"notes\": \"解釈の要点を1文で\"}\n"
         . "sequence はシーン内で景観が移り変わる順（1〜4個）。川は river、海・海辺・港の水際は sea、砂浜は beach、池・湖・お堀は lake を使い分け、"
-        . "どの水辺でもよい場合だけ water を使う。tags の重みは0〜1。";
+        . "どの水辺でもよい場合だけ water を使う。「港」は、倉庫・コンテナ・埠頭・工場の港なら port_industrial、"
+        . "漁港・岸壁・堤防など水際なら sea。単独の「港」は port_industrial。sequence はシーン文に出てくる順に並べる。tags の重みは0〜1。";
     $ch = curl_init('https://api.anthropic.com/v1/messages');
     curl_setopt_array($ch, [
         CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 60,
@@ -146,36 +147,8 @@ function interpret_scene(string $scene, array $tags, array $groups): array {
     return $q;
 }
 
-// APIキー未設定時の簡易解釈
-function interpret_by_keywords(string $scene): array {
-    $groupWords = [
-        'urban_new' => '高層|再開発|オフィス|近代|ビル街|都会', 'old_town' => '路地|下町|古い街|商店街|細い道',
-        'commercial' => '繁華街|飲み屋|ネオン|中洲|天神|賑やか', 'residential' => '住宅|団地|マンション|家の前',
-        'institution' => '学校|病院|役所|図書館|大学', 'transport' => '駅|線路|高架|歩道橋|橋',
-        'port_industrial' => '倉庫|工場|コンテナ|ふ頭|埠頭|港湾',
-        'river' => '川|河川|河原|河川敷|運河|川沿い|川べり',
-        'sea' => '海(?!水浴)|海辺|海岸|岸壁|堤防|防波堤|漁港|干潟|湾|港',
-        'beach' => '砂浜|ビーチ|浜辺|海水浴|波打ち際',
-        'lake' => '池|湖|ため池|溜池|貯水池|ダム湖|お堀|堀端',
-        'water' => '水辺|水際',
-        'green' => '公園|山|丘|森|緑', 'historic' => '神社|寺|歴史|城', 'vacant' => '廃墟|空き|廃校|閉鎖',
-        'slope' => '坂道|坂の|坂を|急な坂|上り坂|下り坂|階段|石段|高低差|高台|見下ろ|見晴らし',
-    ];
-    $tagWords = [
-        'lonely' => '寂し|孤独|一人|ひとり', 'lively' => '賑や|活気', 'nostalgic' => '懐かし|昭和|レトロ',
-        'night_ok' => '夜|深夜', 'dawn_ok' => '早朝|明け方', 'sunset_ok' => '夕方|夕景|夕日',
-        'sea_view' => '海', 'river_view' => '川', 'low_traffic' => '人気のない|静か|誰もいない',
-        'tense' => '緊張|追われ|逃げ', 'romantic' => '恋|デート|告白', 'futuristic' => '近未来|未来',
-    ];
-    $hits = [];
-    foreach ($groupWords as $g => $re) if (preg_match("/($re)/u", $scene, $m, PREG_OFFSET_CAPTURE)) $hits[$g] = $m[0][1];
-    asort($hits);
-    $tags = [];
-    foreach ($tagWords as $t => $re) if (preg_match("/($re)/u", $scene)) $tags[$t] = 1.0;
-    $mode = preg_match('/(車|ドライブ|運転)/u', $scene) ? 'car' : (preg_match('/(歩|散歩)/u', $scene) ? 'walk' : 'any');
-    return ['sequence' => array_slice(array_keys($hits), 0, 4), 'tags' => $tags ?: ['lonely' => 0.1],
-            'travel_mode' => $mode, 'notes' => 'キーワードから簡易的に解釈しました'];
-}
+// APIキー未設定時の簡易解釈は scene.php（副作用のない関数だけ。ci で php-cli から検査する）
+require_once __DIR__ . '/scene.php';
 
 // ---------- 表示用ラベル ----------
 const STATUS_LABEL = ['candidate' => '候補', 'ai_tagged' => 'AI分類済み', 'scouted' => 'ロケハン済み',
@@ -378,6 +351,17 @@ function place_link_url(array $s): string {
     return 'https://www.google.com/maps/search/?' . http_build_query(['api' => 1, 'query' => $s['lat'] . ',' . $s['lon']]);
 }
 
+// 流れの点数の内訳（ログイン時だけ表示）。例：「短さ 0.8・名前 1.0」
+const SCORE_PART_LABEL = ['signal' => '条件', 'typical' => '景観らしさ', 'tag' => '雰囲気', 'short' => '短さ',
+                          'named' => '名前', 'checked' => '確認'];
+function score_parts_line(array $parts): string {
+    $out = [];
+    foreach (SCORE_PART_LABEL as $k => $label) {
+        if (isset($parts[$k])) $out[] = $label . ' ' . number_format((float)$parts[$k], 1);
+    }
+    return $out ? '（' . implode('・', $out) . '）' : '';
+}
+
 // ---------- ルートカード（流れで探す・おすすめの流れで共通） ----------
 // $opt: save_key（保存ボタン）, saved（保存済み表示）, archive_id（外すボタン）, extra（メタ情報の追記）
 function render_route_card(array $r, int $i, array $opt = []): void {
@@ -402,7 +386,7 @@ function render_route_card(array $r, int $i, array $opt = []): void {
             <span><?= h(AREA_LABEL[$r['area_code'] ?? ''] ?? '') ?></span>
             <span><?= h($modeLabel) ?><?php if (count($spots) > 1): ?> 約<?= h(round((float)($r['total_minutes'] ?? 0))) ?>分<span class="muted">（直線距離からの目安）</span><?php else: ?>（単独の地点）<?php endif; ?></span>
             <?php if (!empty($r['needs_review'])): ?><span class="chip warn" title="<?= h($r['review_note'] ?? '') ?>">地点に変化あり・要再確認</span><?php endif; ?>
-            <?php if (isset($r['match'])): ?><span>適合度 <?= h(round((float)$r['match'] * 100)) ?>%</span><?php endif; ?>
+            <?php if (isset($r['match'])): ?><span>適合度 <?= h(round((float)$r['match'] * 100)) ?>%<?php if (current_user() && !empty($r['score_parts'])): ?> <span class="muted small" title="各項目は0〜1。データのない項目は除き、重みを残りに割り戻しています"><?= h(score_parts_line((array)$r['score_parts'])) ?></span><?php endif; ?></span><?php endif; ?>
             <?= $opt['extra'] ?? '' ?></p>
         </div>
         <div class="head-actions">
