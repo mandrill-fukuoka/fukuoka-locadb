@@ -43,6 +43,8 @@ def test_not_industrial_names():
     assert ind("高砂倉庫 那ノ津営業所") == ["factory"]       # 倉庫の会社の営業所は残す
     assert ind("橋本車両基地") == ["factory"]
     assert ind("パナソニック福岡工場") == ["factory"]
+    assert ind("日本通運 福岡海運支店") == ["factory"]          # 物流の拠点は残す
+    assert ind("九州産直クラブ") == ["factory"]
     assert categories_of({"building": "warehouse", "name": "○○運輸 福岡営業所"}, "w", True) == ["warehouse"]
 
 
