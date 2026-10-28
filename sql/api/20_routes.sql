@@ -5,10 +5,28 @@ declare f record;
 begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname in (
-              'build_routes','upsert_route','record_route_search','recommended_flows','popular_sequences',
+              'build_routes','route_name_key','route_score','upsert_route','record_route_search','recommended_flows','popular_sequences',
               'archive_flow','clear_flow_review')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
+
+-- 同じ場所の判定に使う名前（空白・括弧書き・記号を除く）。無名の地点は空（名前では比べない）
+create function route_name_key(p_name text) returns text language sql immutable as $$
+  select case when p_name is null or p_name like '（無名）%' then ''
+              else regexp_replace(lower(p_name), '[[:space:]　・･\-－ー]|（[^）]*）|\([^)]*\)', '', 'g') end;
+$$;
+
+-- 流れの点数（段階1、2026-10-28）。各項目は 0〜1、使えない項目（null）は重みを残りに割り戻す。
+--  重みはこの関数だけに書く。返す値：{"match": 合計, "parts": {項目: 値}, "weights": {項目: 割り戻し後の重み}}
+create function route_score(p_parts jsonb) returns jsonb language sql immutable as $$
+  with w(k, base) as (values ('tag', 0.45), ('short', 0.30), ('named', 0.15), ('checked', 0.10)),
+  u as (select k, base, (p_parts ->> k)::numeric as v from w where p_parts ->> k is not null),
+  t as (select coalesce(sum(base), 0) as tot from u)
+  select jsonb_build_object(
+           'match',   coalesce((select round(sum(u.base / t.tot * u.v), 3) from u, t where t.tot > 0), 0),
+           'parts',   coalesce((select jsonb_object_agg(k, round(v, 3)) from u), '{}'::jsonb),
+           'weights', coalesce((select jsonb_object_agg(u.k, round(u.base / t.tot, 3)) from u, t where t.tot > 0), '{}'::jsonb));
+$$;
 
 create function build_routes(
   p_seq text[], p_tags jsonb default '{}'::jsonb, p_mode text default 'walk',
@@ -16,22 +34,38 @@ create function build_routes(
 ) returns jsonb language plpgsql volatile as $$
 declare
   v_speed  real := case when p_mode = 'car' then 300 else 80 end;   -- m/分
+  v_mind   real := case when p_mode = 'car' then 300 else 60 end;   -- 地点どうしの最短距離（m）。これより近い地点は同じ場所とみなす
   v_budget real := 15;                                              -- 合計の上限（分）
   v_maxm   real;
   v_seq    text[] := coalesce(p_seq, '{}');
-  v_tags   jsonb  := coalesce(p_tags, '{}'::jsonb);
+  v_tags   jsonb;
   v_tagw   real;
   v_sgrp   text;
   v_n      int;
+  v_seed   text;
+  v_cand   jsonb;
+  v_kept   jsonb := '[]'::jsonb;
+  v_keys   jsonb := '[]'::jsonb;    -- 残した流れの「場所の鍵」の配列の配列
+  c        jsonb;
+  k        jsonb;
+  v_ok     boolean;
   v_out    jsonb;
 begin
-  if p_mode = 'any' then
-    return coalesce(build_routes(p_seq, p_tags, 'walk', p_area, p_start, greatest(p_limit - p_limit / 2, 1)), '[]'::jsonb)
-        || coalesce(build_routes(p_seq, p_tags, 'car',  p_area, p_start, greatest(p_limit / 2, 1)), '[]'::jsonb);
+  if p_mode = 'any' then        -- 徒歩と車を半分ずつ求め、適合度の高い順に並べる
+    return (select coalesce(jsonb_agg(e.value order by (e.value ->> 'match')::numeric desc, e.ord), '[]'::jsonb)
+              from jsonb_array_elements(
+                     coalesce(build_routes(p_seq, p_tags, 'walk', p_area, p_start, greatest(p_limit - p_limit / 2, 1)), '[]'::jsonb)
+                  || coalesce(build_routes(p_seq, p_tags, 'car',  p_area, p_start, greatest(p_limit / 2, 1)), '[]'::jsonb))
+                   with ordinality e(value, ord));
   end if;
 
   v_maxm := v_budget * v_speed / 1.3;    -- 直線距離 × 迂回係数1.3 で概算
-  select greatest(coalesce(sum(value::real), 0), 0.0001) into v_tagw from jsonb_each_text(v_tags);
+  -- 雰囲気タグは、人かルールで付いたタグが DB に1件でもあるものだけ使う（AIのタグは使わない。データのないタグで点数を下げない）
+  select coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb) into v_tags
+    from jsonb_each(coalesce(p_tags, '{}'::jsonb)) e
+   where jsonb_typeof(e.value) = 'number' and (e.value::text)::real > 0
+     and exists (select 1 from spot_tags t where t.tag_code = e.key and t.origin in ('human','rule'));
+  select coalesce(sum(value::real), 0) into v_tagw from jsonb_each_text(v_tags);
 
   if p_start is not null then
     select sc.landscape_group into v_sgrp
@@ -41,40 +75,54 @@ begin
   end if;
   v_n := cardinality(v_seq);
   if v_n = 0 then return '[]'::jsonb; end if;
+  v_seed := array_to_string(v_seq, ',') || '|' || p_mode || '|' || coalesce(p_area, '');   -- 同じ条件なら同じ順（random() は使わない）
 
-  with recursive paths as (
+  with recursive base as (
+    select s.id, s.geom, s.area_code, sc.landscape_group as grp,
+           (s.name like '（無名）%') as unnamed,
+           (s.confidence in ('desk_checked','field_checked')) as checked,
+           route_name_key(s.name) as nkey,
+           array_remove(array[s.id, s.parent_id, live_root(s.group_root_id)], null) as fam,
+           coalesce('L:' || s.line_key, 'G:' || live_root(s.group_root_id), 'P:' || s.parent_id, 'S:' || s.id) as place,
+           live_root(s.group_root_id) as groot
+      from spots s join spot_categories sc on sc.code = s.category
+     where s.data_status <> 'archived'
+  ),
+  paths as (
     -- 起点
     select 1 as step, array[c.id] as ids, c.geom as last_geom, 0::real as meters,
            c.tag as tagsum, (case when c.unnamed then 1 else 0 end) as unnamed_n,
-           (case when c.checked then 1 else 0 end) as checked_n
-      from (select s.id, s.geom,
-                   (s.name like '（無名）%') as unnamed,
-                   (s.confidence in ('desk_checked','field_checked')) as checked,
-                   coalesce(case when v_tagw < 0.001 then 0 else
-                     (select sum((v_tags ->> t.tag_code)::real * t.score)
-                        from spot_tags t where t.spot_id = s.id and v_tags ? t.tag_code) / v_tagw end, 0) as tag
-              from spots s join spot_categories sc on sc.code = s.category
-             where s.data_status <> 'archived'
-               and (p_start is not null or live_root(s.group_root_id) is null)   -- 境内・敷地内でまとめた地点は親で代表させる
-               and case when p_start is not null then s.id = p_start
-                        else grp_match(v_seq[1], sc.landscape_group) and (p_area is null or s.area_code = p_area) end
-             order by tag desc, checked desc, unnamed, random()
+           (case when c.checked then 1 else 0 end) as checked_n,
+           array[c.nkey] as nkeys, c.fam as fams, array[c.place] as places
+      from (select b.*,
+                   case when v_tagw <= 0 then 0 else coalesce(
+                     (select sum((v_tags ->> t.tag_code)::real * least(coalesce(t.score, 1), 1))
+                        from spot_tags t where t.spot_id = b.id and t.origin in ('human','rule') and v_tags ? t.tag_code), 0) / v_tagw end as tag
+              from base b
+             where case when p_start is not null then b.id = p_start
+                        else b.groot is null   -- 境内・敷地内でまとめた地点は親で代表させる
+                         and grp_match(v_seq[1], b.grp) and (p_area is null or b.area_code = p_area) end
+             order by tag desc, checked desc, unnamed, md5(b.id::text || v_seed)
              limit 150) c
     union all
     -- 次の景観へ（近くて雰囲気の合う地点を最大3件ずつ。空間インデックスで近傍だけを探す）
     select p.step + 1, p.ids || n.id, n.geom, p.meters + n.d, p.tagsum + n.tag,
            p.unnamed_n + (case when n.unnamed then 1 else 0 end),
-           p.checked_n + (case when n.checked then 1 else 0 end)
+           p.checked_n + (case when n.checked then 1 else 0 end),
+           p.nkeys || n.nkey, p.fams || n.fam, p.places || n.place
       from paths p
       cross join lateral (
-        select k.*, coalesce(case when v_tagw < 0.001 then 0 else
-                 (select sum((v_tags ->> t.tag_code)::real * t.score)
-                    from spot_tags t where t.spot_id = k.id and v_tags ? t.tag_code) / v_tagw end, 0) as tag
+        select k.*, case when v_tagw <= 0 then 0 else coalesce(
+                 (select sum((v_tags ->> t.tag_code)::real * least(coalesce(t.score, 1), 1))
+                    from spot_tags t where t.spot_id = k.id and t.origin in ('human','rule') and v_tags ? t.tag_code), 0) / v_tagw end as tag
           from (
             -- 近い順に30件まで（空間インデックスで高速に絞る）
             select s.id, s.geom,
                    (s.name like '（無名）%') as unnamed,
                    (s.confidence in ('desk_checked','field_checked')) as checked,
+                   route_name_key(s.name) as nkey,
+                   array_remove(array[s.id, s.parent_id, live_root(s.group_root_id)], null) as fam,
+                   coalesce('L:' || s.line_key, 'G:' || live_root(s.group_root_id), 'P:' || s.parent_id, 'S:' || s.id) as place,
                    ST_Distance(s.geom, p.last_geom)::real as d
               from spots s join spot_categories sc on sc.code = s.category
              where p.step < v_n
@@ -83,41 +131,66 @@ begin
                and s.data_status <> 'archived'
                and live_root(s.group_root_id) is null                          -- 境内・敷地内でまとめた地点は親で代表させる
                and not (s.id = any (p.ids))
-               and ST_Distance(s.geom, p.last_geom) > 30
+               and not (array_remove(array[s.id, s.parent_id], null) && p.fams)  -- 親子・同じまとめ先は並べない
+               and ST_Distance(s.geom, p.last_geom) >= v_mind
              order by s.geom <-> p.last_geom
              limit 30
           ) k
+         where (k.nkey = '' or not (k.nkey = any (p.nkeys)))                  -- 同じ名前の地点は並べない
+           and not (k.place = any (p.places))                                  -- 同じ川・同じ敷地は並べない
          order by tag desc, k.checked desc, k.unnamed, k.d
          limit 3
       ) n
   ),
   done as (
-    select ids, meters,
-           round((meters * 1.3 / v_speed)::numeric, 1) as minutes,
-           ( 0.45 * least(tagsum / v_n, 1)
-           + 0.30 * (1 - least(meters * 1.3 / v_speed / v_budget, 1))
-           + 0.15 * (1 - unnamed_n::real / v_n)
-           + 0.10 * (checked_n::real / v_n) ) as score
+    select ids, places, round((meters * 1.3 / v_speed)::numeric, 1) as minutes,
+           route_score(jsonb_build_object(
+             'tag',     case when v_tagw > 0 then least(tagsum / v_n, 1) end,
+             'short',   case when v_n > 1 then 1 - least(meters * 1.3 / v_speed / v_budget, 1) end,
+             'named',   1 - unnamed_n::real / v_n,
+             'checked', checked_n::real / v_n)) as sc
       from paths
      where step = v_n
   ),
-  picked as (       -- 似た候補ばかりにならないよう、起点・終点ごとに最良の1件
+  best as (       -- 似た候補ばかりにならないよう、起点・終点ごとに最良の1件
     select * from (
-      select d.*, row_number() over (partition by ids[cardinality(ids)] order by score desc) as rn2
-        from (select d.*, row_number() over (partition by ids[1] order by score desc) as rn1 from done d) d
+      select d.*, row_number() over (partition by ids[cardinality(ids)] order by (sc ->> 'match')::numeric desc, md5(array_to_string(ids, '-') || v_seed)) as rn2
+        from (select d.*, row_number() over (partition by ids[1] order by (sc ->> 'match')::numeric desc, md5(array_to_string(ids, '-') || v_seed)) as rn1 from done d) d
        where rn1 = 1
     ) x where rn2 = 1
-    order by score desc
-    limit p_limit
   )
-  select coalesce(jsonb_agg(q.r order by q.score desc), '[]'::jsonb) into v_out
+  select coalesce(jsonb_agg(jsonb_build_object('ids', to_jsonb(ids), 'places', to_jsonb(places), 'minutes', minutes, 'sc', sc)
+                            order by (sc ->> 'match')::numeric desc, md5(array_to_string(ids, '-') || v_seed)), '[]'::jsonb)
+    into v_cand
+    from (select * from best order by (sc ->> 'match')::numeric desc, md5(array_to_string(ids, '-') || v_seed) limit greatest(p_limit, 1) * 6) b;
+
+  -- 重なりを減らす：残した流れと「場所」を2つ以上共有する流れは、点数の低い方を落とす（1地点の流れは同じ場所を1つでも共有したら落とす）
+  for c in select value from jsonb_array_elements(v_cand) loop
+    exit when jsonb_array_length(v_kept) >= p_limit;
+    v_ok := true;
+    for k in select value from jsonb_array_elements(v_keys) loop
+      if (select count(*) from jsonb_array_elements_text(c -> 'places') a
+           where a.value in (select jsonb_array_elements_text(k)))
+         >= least(2, jsonb_array_length(c -> 'places')) then
+        v_ok := false; exit;
+      end if;
+    end loop;
+    if v_ok then
+      v_kept := v_kept || jsonb_build_array(c);
+      v_keys := v_keys || jsonb_build_array(c -> 'places');
+    end if;
+  end loop;
+
+  select coalesce(jsonb_agg(q.r order by q.ord), '[]'::jsonb) into v_out
     from (
-      select pk.score,
+      select pk.ord,
              jsonb_build_object(
                'route_key', array_to_string(pk.ids, '-'),
                'travel_mode', p_mode,
                'total_minutes', pk.minutes,
-               'match', round(pk.score::numeric, 3),
+               'match', (pk.sc ->> 'match')::numeric,
+               'score_parts', pk.sc -> 'parts',
+               'score_weights', pk.sc -> 'weights',
                'area_code', (select area_code from spots where id = pk.ids[1]),
                'transition_label', (select string_agg(lg.name, ' → ' order by u.ord)
                                       from unnest(pk.ids) with ordinality u(id, ord)
@@ -142,7 +215,9 @@ begin
                                    join spot_categories sc on sc.code = s.category
                                    join landscape_groups lg on lg.code = sc.landscape_group) w)
              ) as r
-        from picked pk
+        from (select e.ord, array(select jsonb_array_elements_text(e.value -> 'ids'))::bigint[] as ids,
+                     (e.value ->> 'minutes')::numeric as minutes, e.value -> 'sc' as sc
+                from jsonb_array_elements(v_kept) with ordinality e(value, ord)) pk
     ) q;
   return coalesce(v_out, '[]'::jsonb);
 end $$;

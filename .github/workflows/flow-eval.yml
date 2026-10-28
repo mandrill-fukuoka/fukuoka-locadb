@@ -1,0 +1,18 @@
+# 流れ検索の確認（読み取りのみ）：確認用シーン文（data/flow_eval/scenes.txt）で build_routes を呼び、上位3件を表にする
+# 検索の記録はしない（おすすめの流れは増えない）。段階1の前後・段階2の後に同じ文で比べる
+name: flow-eval
+on: { workflow_dispatch: {} }
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq php-cli
+      - run: pip install "psycopg[binary]>=3.2"
+      - name: 確認用シーン文で検索
+        run: python tools/flow_eval.py --json flow-eval.json | tee -a "$GITHUB_STEP_SUMMARY"
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - uses: actions/upload-artifact@v4
+        with: { name: flow-eval, path: flow-eval.json, retention-days: 30 }
