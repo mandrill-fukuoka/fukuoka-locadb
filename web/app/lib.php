@@ -24,6 +24,9 @@ function nm($name): string {
     return $name;
 }
 
+// 表示名：川・線路・海岸は町名（線路は高架・地上など）付きの label を優先（sql の spot_label）
+function sn(array $s): string { return nm($s['label'] ?? ($s['name'] ?? '')); }
+
 // ---------- 説明文の公開 ----------
 // spots.summary には人が書いた・採用した説明文しか入らない（DB変更130の制約：summary_by が必須）。
 // AIの文章は spot_ai_notes の下書きにあり、確認画面で人が採用したときだけ spots.summary に入る。だから説明文はそのまま出す
@@ -263,7 +266,7 @@ function page_header(string $title, string $active = ''): void {
 // ---------- 景観グループの色（色ドット・ピンに使う） ----------
 const GROUP_COLOR = [
     'commercial' => '#C8423A', 'old_town' => '#D27A2C', 'urban_new' => '#7A5BA6', 'residential' => '#B9547F',
-    'institution' => '#4F5DA8', 'transport' => '#2F8DA0', 'port_industrial' => '#6B6F72', 'river' => '#3478C6',
+    'institution' => '#4F5DA8', 'transport' => '#2F8DA0', 'rail' => '#2B6F8A', 'port_industrial' => '#6B6F72', 'river' => '#3478C6',
     'sea' => '#1F4E8C', 'beach' => '#C49A45', 'lake' => '#2E8C7E', 'water' => '#3478C6', 'green' => '#4F8A4E',
     'historic' => '#8C6A4F', 'vacant' => '#9C978E', 'slope' => '#8A8A2E', 'shop' => '#C0602F',
 ];
@@ -421,7 +424,7 @@ function render_route_card(array $r, int $i, array $opt = []): void {
             <?php if ($k > 0): ?><span class="hop"><?= h($modeLabel) ?> <?= h($s['minutes_from_prev'] ?? '') ?>分</span><?php endif; ?>
             <div class="cap">
               <span class="grp"><i class="dot" aria-hidden="true"></i><?= h($s['group'] ?? '') ?></span>
-              <strong class="name"><?php if (!empty($s['id'])): ?><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h(nm($s['name'])) ?></a><?php else: ?><?= h(nm($s['name'])) ?><?php endif; ?></strong>
+              <strong class="name"><?php if (!empty($s['id'])): ?><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h(sn($s)) ?></a><?php else: ?><?= h(sn($s)) ?><?php endif; ?></strong>
               <span class="flags"><?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?><?php if (($s['data_status'] ?? '') === 'archived'): ?><span class="chip warn">対象外</span><?php endif; ?><?php if (($s['confidence'] ?? '') !== 'field_checked'): ?><span class="chip dim"><?= h(conf_stage($s)) ?></span><?php endif; ?></span>
               <?php if (!empty($s['vibe'])): ?><span class="small muted vibe"><?= h($s['vibe']) ?></span><?php endif; ?>
               <?= summary_html($s, 'span', 'desc') ?>

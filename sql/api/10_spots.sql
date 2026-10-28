@@ -4,7 +4,7 @@ declare f record;
 begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname in (
-              'grp_match','search_spots','spots_nearby','spot_detail','review_queue','review_spot',
+              'grp_match','spot_label','search_spots','spots_nearby','spot_detail','review_queue','review_spot',
               'photo_state','spatial_view','logistics_view','drone_view','tide_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids','live_root','precinct_word')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
@@ -12,6 +12,17 @@ end $$;
 -- 景観の一致（water は 川・海・砂浜・池 のどれでも）
 create function grp_match(p_want text, p_actual text) returns boolean language sql immutable as $$
   select p_want = p_actual or (p_want = 'water' and p_actual in ('river','sea','beach','lake','water'));
+$$;
+
+-- 表示名（2026-10-29）：川・線路・海岸の線の地点は、名前が同じものが多いので町名を足す。線路は形（高架・地上など）も
+--  例：JR鹿児島本線（箱崎一丁目付近・高架）。名前のない地点・住所のない地点・点の地点は名前のまま
+create function spot_label(p_name text, p_cat text, p_address text, p_rail_form text default null) returns text
+language sql immutable as $$
+  select case when p_name is null or p_name like '（無名）%' or p_cat not in ('railway','river','coast') then p_name
+    else p_name || coalesce('（' || nullif(concat_ws('・',
+           nullif(regexp_replace(regexp_replace(coalesce(p_address, ''), '^.*?区', ''), '^大字', '') || '付近', '付近'),
+           case p_rail_form when 'elevated' then '高架' when 'embankment' then '盛土' when 'cutting' then '切り通し'
+                            when 'ground' then '地上' end), '') || '）', '') end;
 $$;
 
 -- 周辺の特徴の段階（空間特徴 spot_spatial。仕様書10章タスクI。2026-10-18 利用者と合意・暫定）
@@ -114,7 +125,7 @@ with hits as (
   select s.id, s.code, s.name, s.area_code, s.address, s.category as cat, sc.name as category,
          sc.landscape_group as grp_code, lg.name as grp, s.era_feel, s.shoot_scope, s.status, s.confidence,
          s.data_status, s.summary, s.ffc_registered, s.geom, s.line_key, s.position_kind,
-         s.relief_m, s.slope_grade_pct, s.slope_rise_m,
+         s.relief_m, s.slope_grade_pct, s.slope_rise_m, s.rail_form,
          (s.name like '（無名）%') as unnamed,
          (select count(*) from spot_facts f where f.spot_id = s.id and f.status = 'approved') as fact_count,
          live_root(s.group_root_id) as groot, s.parent_id
@@ -157,7 +168,8 @@ grouped as (
                                      h.id::text))
 )
 select coalesce(jsonb_agg(x), '[]'::jsonb) from (
-  select g.id, g.code, g.name, g.area_code, g.address, g.category, g.grp_code, g.grp,
+  select g.id, g.code, g.name, spot_label(g.name, g.cat, g.address, g.rail_form) as label,
+         g.area_code, g.address, g.category, g.grp_code, g.grp,
          g.era_feel, g.shoot_scope, g.status, g.confidence, g.data_status, g.summary, g.ffc_registered,
          g.position_kind, ST_Y(g.geom::geometry) as lat, ST_X(g.geom::geometry) as lon,
          g.relief_m, g.slope_grade_pct, g.slope_rise_m, g.fact_count,
@@ -190,7 +202,8 @@ $$;
 -- ロケハンリスト：指定した順で地点を返す
 create function spots_by_ids(p_ids bigint[]) returns jsonb language sql stable as $$
 select coalesce(jsonb_agg(x order by x.ord), '[]'::jsonb) from (
-  select u.ord, s.id, s.code, s.name, s.area_code, s.address, sc.name as category, sc.landscape_group as grp_code,
+  select u.ord, s.id, s.code, s.name, spot_label(s.name, s.category, s.address, s.rail_form) as label,
+         s.area_code, s.address, sc.name as category, sc.landscape_group as grp_code,
          lg.name as grp, s.confidence, s.data_status, s.summary,
          (select count(*) from spot_facts f where f.spot_id = s.id and f.status = 'approved') as fact_count,
          photo_state(s.id, s.category, s.name like '（無名）%') as photo_state,
@@ -209,7 +222,8 @@ returns jsonb language sql stable as $$
 select coalesce(jsonb_agg(x order by x.meters), '[]'::jsonb) from (
   select * from (
     select distinct on (n.name, sc.landscape_group)
-           n.id, n.name, lg.name as grp, sc.landscape_group as grp_code, sc.name as category,
+           n.id, n.name, spot_label(n.name, n.category, n.address, n.rail_form) as label,
+           lg.name as grp, sc.landscape_group as grp_code, sc.name as category,
            round(ST_Distance(n.geom, s.geom)) as meters,
            ST_Y(n.geom::geometry) as lat, ST_X(n.geom::geometry) as lon
       from spots s
@@ -231,7 +245,8 @@ $$;
 create function spot_detail(p_id bigint, p_with_history boolean default false)
 returns jsonb language sql stable as $$
 select jsonb_build_object(
-  'id', s.id, 'code', s.code, 'name', s.name, 'alt_names', s.alt_names, 'address', s.address,
+  'id', s.id, 'code', s.code, 'name', s.name, 'label', spot_label(s.name, s.category, s.address, s.rail_form),
+  'rail_form', s.rail_form, 'alt_names', s.alt_names, 'address', s.address,
   'area_code', s.area_code, 'category', s.category, 'category_name', sc.name,
   'extra_categories', (select coalesce(jsonb_agg(c.name), '[]') from spot_categories c where c.code = any (s.extra_categories)),
   'grp_code', sc.landscape_group, 'grp', lg.name, 'shape', sc.shape,

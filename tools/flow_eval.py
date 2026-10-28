@@ -3,7 +3,8 @@
   DATABASE_URL=... python tools/flow_eval.py [--scenes data/flow_eval/scenes.txt] [--json out.json] [--top 3]
 
 シーン文の解釈は画面と同じ web/app/scene.php（キーワードによる簡易解釈）を php-cli で呼ぶ。
-読み取り専用のトランザクションで実行する（検索の記録 record_route_search は呼ばない＝おすすめの流れは増えない）。
+最後に取り消す（rollback）。検索の記録 record_route_search は呼ばない＝おすすめの流れは増えない。
+（build_routes は検索ごとの一時表を作るので、読み取り専用のトランザクションでは動かない）
 """
 import argparse
 import json
@@ -34,7 +35,10 @@ def main() -> None:
               if l.strip() and not l.lstrip().startswith("#")]
     results, matches = [], []
     with psycopg.connect(os.environ["DATABASE_URL"]) as c:
-        c.execute("set transaction read only")
+        # 画面（service_role）が検索ごとの一時表を作れるか
+        tmp = c.execute("""select case when exists (select 1 from pg_roles where rolname = 'service_role')
+                                  then has_database_privilege('service_role', current_database(), 'TEMP') end""").fetchone()[0]
+        print(f"service_role の一時表の権限：{ {True: 'あり', False: 'なし（！画面の検索が失敗します）', None: '-'}[tmp] }")
         for i, scene in enumerate(scenes, 1):
             q = interpret(scene)
             t0 = time.time()
@@ -56,6 +60,7 @@ def main() -> None:
                 pl = "・".join(f"{key} {float(v):.2f}" for key, v in parts.items()) or "-"
                 print(f"| {k} | {spots} | {r.get('travel_mode')} {r.get('total_minutes')}分 | "
                       f"{round(float(r.get('match') or 0) * 100)}% | {pl} |")
+        c.rollback()
     if matches:
         qs = statistics.quantiles(matches, n=10) if len(matches) >= 10 else []
         print(f"\n### 適合度の分布（全 {len(matches)} 件）\n")

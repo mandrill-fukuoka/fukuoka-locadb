@@ -22,7 +22,7 @@ if (($_GET['format'] ?? '') === 'csv' && $rows) {
     fputcsv($out, array_merge(['No', '名前', '種別', '景観', '区', '住所', '緯度', '経度', '確認状況'], $withPhoto ? ['写真の状態'] : [],
         ['Googleマップ', 'ストリートビュー', '詳細ページ']));
     foreach ($rows as $i => $s) {
-        fputcsv($out, array_merge([$i + 1, nm($s['name']), $s['category'], $s['grp'], AREA_LABEL[$s['area_code']] ?? '', $s['address'],
+        fputcsv($out, array_merge([$i + 1, sn($s), $s['category'], $s['grp'], AREA_LABEL[$s['area_code']] ?? '', $s['address'],
             $s['lat'], $s['lon'], conf_stage($s)], $withPhoto ? [PHOTO_STATE_LABEL[$s['photo_state'] ?? ''] ?? ''] : [], [
             place_link_url($s),
             'https://www.google.com/maps/@?' . http_build_query(['api' => 1, 'map_action' => 'pano', 'viewpoint' => $s['lat'] . ',' . $s['lon']]),
@@ -58,13 +58,13 @@ page_header('ロケハンリスト', 'list.php');
       <button type="button" class="secondary small-btn" id="savelist" data-ids="<?= h(implode(',', array_column($rows, 'id'))) ?>">このリストを自分のリストにする</button>
       <button type="button" class="secondary small-btn" id="clearlist">リストを空にする</button>
     </p>
-    <?php overview_map(array_map(fn($s) => ['lat' => $s['lat'], 'lon' => $s['lon'], 'name' => nm($s['name']), 'grp' => $s['grp_code'],
+    <?php overview_map(array_map(fn($s) => ['lat' => $s['lat'], 'lon' => $s['lon'], 'name' => sn($s), 'grp' => $s['grp_code'],
           'sub' => $s['category'] . '・' . ($s['address'] ?: (AREA_LABEL[$s['area_code']] ?? ''))], $rows), 'ovmap'); ?>
     <ol class="places listitems">
       <?php foreach ($rows as $i => $s): ?>
         <li id="ovmap-item-<?= $i + 1 ?>" class="place-item" data-id="<?= (int)$s['id'] ?>">
           <div class="place-body">
-            <div><span class="num" style="background:<?= h(group_color($s['grp_code'])) ?>"><?= $i + 1 ?></span><strong><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h(nm($s['name'])) ?></a></strong>
+            <div><span class="num" style="background:<?= h(group_color($s['grp_code'])) ?>"><?= $i + 1 ?></span><strong><a class="plain" href="spot.php?id=<?= (int)$s['id'] ?>"><?= h(sn($s)) ?></a></strong>
               <span class="muted"><?= dot($s['grp_code']) ?><?= h($s['category']) ?>・<?= h($s['address'] ?: (AREA_LABEL[$s['area_code']] ?? '')) ?></span>
               <?php if ($s['confidence'] !== 'field_checked'): ?><span class="chip dim"><?= h(conf_stage($s)) ?></span><?php endif; ?><?= photo_state_chip($s) ?>
               <?php if (!empty($s['risk'])): ?><span class="chip warn">変化リスク</span><?php endif; ?>
