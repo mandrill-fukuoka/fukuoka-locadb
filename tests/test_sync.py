@@ -251,7 +251,7 @@ def test_B_multi_category_kept(db, tmp_path):
     w = World(); w.area(700, 130.40, 33.595, leisure="park", historic="castle", name="舞鶴公園")
     w.run(db, tmp_path)
     s = spot(db, name="舞鶴公園")
-    assert s["category"] == "heritage" and s["extra_categories"] == ["park"]
+    assert s["category"] == "castle" and s["extra_categories"] == ["heritage", "park"]   # 城跡（2026-10-29）
     rows = db.execute("select search_spots(null,null,'park') r").fetchone()["r"]
     assert any(x["name"] == "舞鶴公園" for x in rows)
 

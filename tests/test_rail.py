@@ -84,3 +84,46 @@ def test_keywords_stage3_scenes():
     assert php_interpret("再開発の工事現場の前を通り、まだ残る古い路地に入っていく")["sequence"] == ["vacant", "old_town"]
     assert php_interpret("放課後、高校から川沿いの土手を二人で歩いて帰る")["sequence"] == ["institution", "river"]
     assert php_interpret("島へ渡るフェリー乗り場から、漁港の路地を歩いて丘の上へ")["sequence"] == ["port_industrial", "sea", "old_town", "green"]
+
+
+# ---------- 2026-10-29 A・B：足りない地点 ----------
+def test_gap_categories_rules():
+    c = categories_of
+    assert c({"historic": "castle", "name": "福岡城跡"}, "w", True)[0] == "castle"
+    assert c({"man_made": "breakwater"}, "w", False) == ["breakwater"]
+    assert c({"man_made": "lighthouse"}, "n", False) == ["lighthouse"]
+    assert c({"amenity": "ferry_terminal", "name": "能古渡船場"}, "n", False) == ["harbour_structure"]
+    assert c({"highway": "motorway", "bridge": "yes", "name": "福岡都市高速環状線"}, "w", False) == ["expressway"]
+    assert c({"highway": "motorway", "tunnel": "yes", "name": "福岡都市高速環状線"}, "w", False) == ["underpass"]
+    assert c({"highway": "pedestrian", "name": "柳橋連合市場"}, "w", False) == ["eatery_street"]
+    assert c({"name": "藤崎商店街デンタルクリニック", "amenity": "dentist"}, "n", False) == []
+    assert c({"name": "みのしま連合商店街振興組合事務所"}, "n", False) == []
+    assert c({"name": "箱崎商店街", "landuse": "retail"}, "w", True) == ["shotengai"]
+    assert c({"leisure": "park", "name": "室見川河畔公園"}, "w", True)[0] == "riverbank"
+    assert c({"building": "ruins"}, "w", True) == ["ruins"]
+    assert c({"disused:shop": "convenience", "building": "yes", "disused": "yes", "name": "旧コンビニ"}, "w", True) == []
+
+
+def test_gap_samples(db, tmp_path):
+    w = World()
+    # 中洲（中央区）にバー15軒、屋台4軒。海岸と、海岸のそばの駐車場・離れた駐車場
+    for i in range(15):
+        w.point(100 + i, 130.405 + (i % 5) * 0.0003, 33.592 + (i // 5) * 0.0003, amenity="bar", name=f"バー{i}")
+    for i in range(4):
+        w.point(200 + i, 130.395 + i * 0.0002, 33.590, amenity="fast_food", name=f"屋台{i}ちゃん")
+    w.line(300, [(130.381, 33.5985), (130.419, 33.5985)], natural="coastline", name="博多湾")
+    w.area(310, 130.385, 33.5978, size=0.0003, amenity="parking", parking="surface")
+    w.area(312, 130.3856, 33.5980, size=0.0001, amenity="parking", parking="surface")    # 同じ400m四方の小さい駐車場は取らない
+    w.area(311, 130.385, 33.583, size=0.0003, amenity="parking", parking="surface")
+    w.line(320, [(130.382, 33.585), (130.418, 33.585)], highway="motorway", bridge="yes", layer="1", name="福岡都市高速環状線")
+    w.line(330, [(130.383, 33.5975), (130.386, 33.5980)], man_made="breakwater")
+    w.run(db, tmp_path)
+    cats = lambda c: spots(db, "category = %s and data_status <> 'archived'", c)
+    assert len(cats("nightlife_area")) == 1 and len(cats("yatai_area")) == 1
+    assert len(cats("seaside_parking")) == 1                 # 海から離れた駐車場・同じ四方の小さい駐車場は取らない
+    assert cats("expressway") and cats("breakwater")
+    n = cats("nightlife_area")[0]
+    assert n["name"].startswith("（無名）飲み屋街")
+    # 2回目も同じ地点（キーが変わらない）
+    w.run(db, tmp_path)
+    assert [r["id"] for r in cats("nightlife_area")] == [n["id"]]
