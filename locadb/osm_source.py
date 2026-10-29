@@ -364,9 +364,10 @@ STANDPOINT_MAX_M = {"river": 80, "coast": 100, "railway": 60, "expressway": 60}
 
 # 2026-10-29 A：集まりから置く地点（飲み屋街・屋台の集まる場所）と、海沿いの駐車場の絞り込み
 NIGHTLIFE_GRID, NIGHTLIFE_R, NIGHTLIFE_MIN, NIGHTLIFE_SEP = 200, 150, 12, 350   # 格子m・数える半径m・最低軒数・地点どうしの間隔m
-YATAI_GRID, YATAI_R, YATAI_MIN, YATAI_SEP = 100, 120, 3, 250
+YATAI_GRID, YATAI_R, YATAI_MIN, YATAI_SEP = 100, 120, 2, 250
 YATAI_NAME = re.compile(r"屋台(?!料理)")
-SEASIDE_PARKING_M = 150
+SEASIDE_PARKING_M = 100      # 海岸・砂浜からの距離
+SEASIDE_PARKING_GRID = 400   # この四方ごとに一番大きい駐車場だけ残す
 
 
 def cluster_samples(pts, cat: str, grid: float, radius: float, min_n: int, sep: float, area_of) -> list:
@@ -484,16 +485,24 @@ def read(pbf: Path, watch: set[str] | None = None, detect_slopes: bool = True) -
     # 海沿いの駐車場：海岸・砂浜から150m以内の平面駐車場だけ残す（2026-10-29 A）
     sea = [g for g, k in zip(r.spatial._w, r.spatial._wkind) if k in ("coast", "beach")]
     sea_tree = STRtree(sea) if sea else None
-    kept_points = []
+    best_parking = {}                                   # 格子 -> 一番大きい駐車場の key
     for f in points:
         if "seaside_parking" in f.cats:
             pt = Point(*to_m(f.lon, f.lat))
             near = sea_tree is not None and any(sea[i].distance(pt) <= SEASIDE_PARKING_M
                                                 for i in sea_tree.query(pt.buffer(SEASIDE_PARKING_M)))
-            if not near:
-                f.cats = [c for c in f.cats if c != "seaside_parking"]
-                if not f.cats:
-                    continue
+            if near:
+                cell = (math.floor(pt.x / SEASIDE_PARKING_GRID), math.floor(pt.y / SEASIDE_PARKING_GRID))
+                cur = best_parking.get(cell)
+                if cur is None or (f.extent_m or 0, f.key) > (cur.extent_m or 0, cur.key):
+                    best_parking[cell] = f
+    keep_parking = {f.key for f in best_parking.values()}
+    kept_points = []
+    for f in points:
+        if "seaside_parking" in f.cats and f.key not in keep_parking:
+            f.cats = [c for c in f.cats if c != "seaside_parking"]
+            if not f.cats:
+                continue
         kept_points.append(f)
     points = kept_points
 

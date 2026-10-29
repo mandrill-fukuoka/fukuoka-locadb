@@ -112,14 +112,15 @@ def test_gap_samples(db, tmp_path):
     for i in range(4):
         w.point(200 + i, 130.395 + i * 0.0002, 33.590, amenity="fast_food", name=f"屋台{i}ちゃん")
     w.line(300, [(130.381, 33.5985), (130.419, 33.5985)], natural="coastline", name="博多湾")
-    w.area(310, 130.385, 33.5975, size=0.0003, amenity="parking", parking="surface")
+    w.area(310, 130.385, 33.5978, size=0.0003, amenity="parking", parking="surface")
+    w.area(312, 130.3856, 33.5980, size=0.0001, amenity="parking", parking="surface")    # 同じ400m四方の小さい駐車場は取らない
     w.area(311, 130.385, 33.583, size=0.0003, amenity="parking", parking="surface")
     w.line(320, [(130.382, 33.585), (130.418, 33.585)], highway="motorway", bridge="yes", layer="1", name="福岡都市高速環状線")
     w.line(330, [(130.383, 33.5975), (130.386, 33.5980)], man_made="breakwater")
     w.run(db, tmp_path)
     cats = lambda c: spots(db, "category = %s and data_status <> 'archived'", c)
     assert len(cats("nightlife_area")) == 1 and len(cats("yatai_area")) == 1
-    assert len(cats("seaside_parking")) == 1                 # 海から離れた駐車場は取らない
+    assert len(cats("seaside_parking")) == 1                 # 海から離れた駐車場・同じ四方の小さい駐車場は取らない
     assert cats("expressway") and cats("breakwater")
     n = cats("nightlife_area")[0]
     assert n["name"].startswith("（無名）飲み屋街")
