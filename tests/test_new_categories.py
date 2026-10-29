@@ -11,8 +11,8 @@ from locadb.categories import CATEGORIES, PRIORITY, categories_of
     ({"highway": "residential", "tunnel": "yes", "name": "市道12号線"}, "w", False, []),   # 番号だけの道は除く
     ({"highway": "residential", "tunnel": "yes"}, "w", False, []),                    # 名前のないトンネルは取らない
     ({"amenity": "parking", "parking": "multi-storey"}, "w", True, ["parking_multi"]),
-    ({"amenity": "parking", "parking": "surface"}, "w", True, []),
-    ({"man_made": "lighthouse"}, "n", False, ["harbour_structure"]),
+    ({"amenity": "parking", "parking": "surface"}, "w", True, ["seaside_parking"]),     # 海の近くかは osm_source で絞る（2026-10-29）
+    ({"man_made": "lighthouse"}, "n", False, ["lighthouse"]),                         # 2026-10-29：渡船場と分けた
     ({"amenity": "ferry_terminal", "name": "渡船場"}, "n", False, ["harbour_structure"]),
     ({"amenity": "ferry_terminal"}, "n", False, []),
     ({"man_made": "water_tower"}, "n", False, ["industrial_structure"]),

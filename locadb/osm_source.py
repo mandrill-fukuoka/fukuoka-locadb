@@ -360,7 +360,42 @@ def _grid_samples(line_m, spacing: float):
     return kept
 
 
-STANDPOINT_MAX_M = {"river": 80, "coast": 100, "railway": 60}
+STANDPOINT_MAX_M = {"river": 80, "coast": 100, "railway": 60, "expressway": 60}
+
+# 2026-10-29 A：集まりから置く地点（飲み屋街・屋台の集まる場所）と、海沿いの駐車場の絞り込み
+NIGHTLIFE_GRID, NIGHTLIFE_R, NIGHTLIFE_MIN, NIGHTLIFE_SEP = 200, 150, 12, 350   # 格子m・数える半径m・最低軒数・地点どうしの間隔m
+YATAI_GRID, YATAI_R, YATAI_MIN, YATAI_SEP = 100, 120, 3, 250
+YATAI_NAME = re.compile(r"屋台(?!料理)")
+SEASIDE_PARKING_M = 150
+
+
+def cluster_samples(pts, cat: str, grid: float, radius: float, min_n: int, sep: float, area_of) -> list:
+    """点（m座標）の集まりから地点を置く。半径 radius に min_n 以上ある場所を多い順に選び、sep 以内には2つ置かない。
+    キーは格子（grid m）に固定する（同じ集まりは毎回同じキー）"""
+    if not pts:
+        return []
+    arr = np.array([(p.x, p.y) for p in pts])
+    tree = STRtree(pts)
+    cand = []
+    for i, p in enumerate(pts):
+        idx = tree.query(p.buffer(radius))
+        near = [j for j in idx if pts[j].distance(p) <= radius]
+        if len(near) >= min_n:
+            c = arr[near].mean(axis=0)
+            cand.append((len(near), c[0], c[1]))
+    out, kept = [], []
+    for n, x, y in sorted(cand, key=lambda c: (-c[0], c[1], c[2])):
+        if any(math.hypot(x - kx, y - ky) < sep for kx, ky in kept):
+            continue
+        kept.append((x, y))
+        lon, lat = to_ll(x, y)
+        ac = area_of(lon, lat)
+        if not ac:
+            continue
+        cell = f"{math.floor(x / grid)}_{math.floor(y / grid)}"
+        key = f"{cat}#{int(grid)}:{cell}"
+        out.append(LineSample(key, f"{cat}:{cell}", cat, "", lon, lat, lon, lat, "area", [], ac, {"count": n}))
+    return out
 
 
 def rail_form(t: dict) -> str:
@@ -445,6 +480,28 @@ def read(pbf: Path, watch: set[str] | None = None, detect_slopes: bool = True) -
                 attrs = {"rail_form": r.rail_form.get(near[0], "ground")}
             samples.append(LineSample(f"{line_key}#{int(spacing)}:{cx}_{cy}", line_key, cat, name or "",
                                       lon, lat, llon, llat, kind, way_ids, ac, attrs))
+
+    # 海沿いの駐車場：海岸・砂浜から150m以内の平面駐車場だけ残す（2026-10-29 A）
+    sea = [g for g, k in zip(r.spatial._w, r.spatial._wkind) if k in ("coast", "beach")]
+    sea_tree = STRtree(sea) if sea else None
+    kept_points = []
+    for f in points:
+        if "seaside_parking" in f.cats:
+            pt = Point(*to_m(f.lon, f.lat))
+            near = sea_tree is not None and any(sea[i].distance(pt) <= SEASIDE_PARKING_M
+                                                for i in sea_tree.query(pt.buffer(SEASIDE_PARKING_M)))
+            if not near:
+                f.cats = [c for c in f.cats if c != "seaside_parking"]
+                if not f.cats:
+                    continue
+        kept_points.append(f)
+    points = kept_points
+
+    # 飲み屋街・屋台の集まる場所：バー・居酒屋／屋台の点の集まりから地点を置く（2026-10-29 A）
+    bars = [Point(*to_m(f.lon, f.lat)) for f in points if "bar" in f.cats]
+    yatai = [Point(*to_m(f.lon, f.lat)) for f in points if YATAI_NAME.search(f.name or "")]
+    samples += cluster_samples(bars, "nightlife_area", NIGHTLIFE_GRID, NIGHTLIFE_R, NIGHTLIFE_MIN, NIGHTLIFE_SEP, area_of)
+    samples += cluster_samples(yatai, "yatai_area", YATAI_GRID, YATAI_R, YATAI_MIN, YATAI_SEP, area_of)
 
     # 坂道：市内の道に沿って標高を読み、急な区間を線の地点として置く（キーは位置の格子で固定）
     city_prep = prep(unary_union(list(ward_ll.values())))

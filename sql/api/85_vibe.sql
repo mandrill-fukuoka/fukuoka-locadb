@@ -45,9 +45,9 @@ with x as (
 )
 select jsonb_strip_nulls(jsonb_build_object(
   'night_ok',  clamp01(case when bars is null then null else 0.7 * least(bars / 10.0, 1) + 0.3 * least(eat / 20.0, 1)
-                         + case when cat in ('eatery_street','shotengai') then 0.2 else 0 end end),
+                         + case when cat in ('eatery_street','shotengai','nightlife_area','yatai_area') then 0.2 else 0 end end),
   'neon',      clamp01(case when bars is null then null else least(bars / 10.0, 1)
-                         + case when cat = 'eatery_street' then 0.2 else 0 end end),
+                         + case when cat in ('eatery_street','nightlife_area','yatai_area') then 0.2 else 0 end end),
   'lively',    clamp01(case when shops is null then null else 0.8 * least(shops / 30.0, 1) + 0.2 * coalesce(least(cover / 0.3, 1), least(shops / 30.0, 1)) end),
   'high_traffic', clamp01(case when shops is null then null else 0.8 * least(shops / 30.0, 1) + 0.2 * coalesce(least(cover / 0.3, 1), least(shops / 30.0, 1)) end),
   'lonely',    clamp01(case when few_shops is null then null else 0.6 * few_shops
@@ -108,7 +108,7 @@ with x as (
 select (case
   -- 繁華街・商業：周りの店と飲み屋の多さ（郊外の大きな商業施設で周りに店がない地点は低い）
   when p_grp = 'commercial' then clamp01(case when shops is null then null else
-         0.6 * least(shops / 30.0, 1) + 0.4 * least(bars / 10.0, 1) + case when cat = 'eatery_street' then 0.2 else 0 end end)
+         0.6 * least(shops / 30.0, 1) + 0.4 * least(bars / 10.0, 1) + case when cat in ('eatery_street','nightlife_area','yatai_area') then 0.2 else 0 end end)
   -- 古い街並み・路地：狭い道・建物が密・商店街
   when p_grp = 'old_town' then clamp01(case when road is null and cover is null then
            case when cat in ('alley','shotengai') then 0.6 end else

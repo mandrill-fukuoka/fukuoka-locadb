@@ -18,7 +18,7 @@ $$;
 --  例：JR鹿児島本線（箱崎一丁目付近・高架）。名前のない地点・住所のない地点・点の地点は名前のまま
 create function spot_label(p_name text, p_cat text, p_address text, p_rail_form text default null) returns text
 language sql immutable as $$
-  select case when p_name is null or p_name like '（無名）%' or p_cat not in ('railway','river','coast') then p_name
+  select case when p_name is null or p_name like '（無名）%' or p_cat not in ('railway','river','coast','expressway') then p_name
     else p_name || coalesce('（' || nullif(concat_ws('・',
            nullif(regexp_replace(regexp_replace(coalesce(p_address, ''), '^.*?区', ''), '^大字', '') || '付近', '付近'),
            case p_rail_form when 'elevated' then '高架' when 'embankment' then '盛土' when 'cutting' then '切り通し'

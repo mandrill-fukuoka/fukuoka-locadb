@@ -15,6 +15,7 @@ import re
 # ---------------------------------------------------------------------------
 CATEGORIES = {
     "station":             ("駅前・交通結節点", "transport", "point", 0),
+    "castle":              ("城跡・石垣", "historic", "point", 0),       # 2026-10-29 B：寺社に埋もれないよう分ける
     "shrine_temple":       ("寺社", "historic", "point", 0),
     "heritage":            ("歴史的建築・遺跡", "historic", "point", 0),
     "school":              ("学校・大学", "institution", "point", 0),
@@ -25,22 +26,29 @@ CATEGORIES = {
     "port":                ("港湾・ふ頭・コンテナヤード", "port_industrial", "point", 0),
     "island":              ("島", "sea", "point", 0),
     "pond":                ("池・湖・ため池・お堀", "lake", "point", 0),
+    "riverbank":           ("河川敷・土手", "river", "point", 0),        # 2026-10-29 A
     "park":                ("公園・庭園・緑地", "green", "point", 0),
     "hill":                ("丘陵・山道・展望地点", "green", "point", 0),
     "bridge_overpass":     ("橋・歩道橋", "transport", "point", 0),
     "commercial_facility": ("商業施設", "commercial", "point", 0),
     "eatery_street":       ("飲食店街・市場・屋台", "commercial", "point", 0),
+    "nightlife_area":      ("飲み屋街", "commercial", "line", 0),        # 2026-10-29 A：バー・居酒屋が集まる場所（osm_source で集計して置く）
+    "yatai_area":          ("屋台の集まる場所", "commercial", "line", 0),  # 2026-10-29 A：屋台が3軒以上集まる場所（同上）
     "housing_estate":      ("団地・古い集合住宅", "residential", "point", 0),
     "new_building":        ("高層ビル・ホテル", "urban_new", "point", 0),
     "factory":             ("工場", "port_industrial", "point", 0),
     "warehouse":           ("倉庫・物流施設", "port_industrial", "point", 0),
-    "vacant":              ("空き店舗・閉鎖施設", "vacant", "point", 0),
+    "ruins":               ("廃墟・廃校・廃工場", "vacant", "point", 0),  # 2026-10-29 A
+    "vacant":              ("閉鎖施設・空き家", "vacant", "point", 0),   # 閉店した店（disused:shop）は入れない（2026-10-29 B）
     "redevelopment_site":  ("工事中・再開発地", "vacant", "point", 0),
     # 修正提案2A（2026-10-22）：撮影の需要がある種類を足す。いずれも景観グループは既存のものを使う
     "level_crossing":      ("踏切", "rail", "point", 0),
     "underpass":           ("トンネル・地下道", "transport", "point", 0),
     "parking_multi":       ("立体駐車場", "urban_new", "point", 0),
-    "harbour_structure":   ("灯台・渡船場・フェリー乗り場", "sea", "point", 0),
+    "harbour_structure":   ("渡船場・フェリー乗り場", "sea", "point", 0),
+    "lighthouse":          ("灯台", "sea", "point", 0),                 # 2026-10-29 B：渡船場と分ける
+    "breakwater":          ("防波堤・堤防", "sea", "point", 0),          # 2026-10-29 A：名前のない防波堤も取る
+    "seaside_parking":     ("海沿いの駐車場", "transport", "point", 0),   # 2026-10-29 A：海岸・砂浜から150m以内の平面駐車場（osm_source で絞る）
     "industrial_structure": ("給水塔・サイロ・タンク", "port_industrial", "point", 0),
     "disused_railway":     ("廃線跡", "vacant", "point", 0),
     "sento":               ("銭湯", "old_town", "point", 0),
@@ -59,6 +67,7 @@ CATEGORIES = {
     "river":               ("河川・運河", "river", "line", 400),
     "coast":               ("海岸・護岸・干潟", "sea", "line", 400),
     "railway":             ("線路沿い", "rail", "line", 600),
+    "expressway":          ("高速道路の高架", "transport", "line", 500),   # 2026-10-29 A：都市高速など高架の区間
     "slope_street":        ("坂道・階段坂", "slope", "line", 80),      # 道路×標高から検出（locadb/slopes.py）
 }
 PRIORITY = {code: i for i, code in enumerate(CATEGORIES)}
@@ -116,6 +125,9 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
         out.append("station")
     if a == "place_of_worship" and nm:
         out.append("shrine_temple")
+    if t.get("historic") in ("castle", "castle_wall", "fort") or (nm and re.search(r"城跡|城址|石垣", nm)
+            and not t.get("natural") and a is None and not t.get("shop")):
+        out.append("castle")
     if (t.get("historic") and nm) or t.get("heritage"):
         out.append("heritage")
     if a in ("school", "university", "college"):
@@ -139,6 +151,9 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
         or (t.get("natural") == "water" and not t.get("water") and re.search(r"池|湖|堀", nm))
     ):
         out.append("pond")
+    if nm and RIVERBANK_NAME.search(nm) and (t.get("leisure") in ("park", "pitch", "recreation_ground", "playground")
+                                            or t.get("landuse") in ("grass", "recreation_ground", "meadow")):
+        out.append("riverbank")
     if t.get("leisure") in ("park", "garden") and nm:
         out.append("park")
     if t.get("natural") == "peak" or t.get("tourism") == "viewpoint":
@@ -157,7 +172,8 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
     shop_cat = SHOP_AMENITY.get(a) or SHOP_SHOP.get(t.get("shop"))
     if shop_cat and nm:                                   # 名前のない店は取らない
         out.append(shop_cat)
-    if a == "marketplace" or (osm_type != "n" and re.search(r"横丁|屋台", nm)):
+    if a == "marketplace" or (osm_type != "n" and re.search(r"横丁|屋台", nm)) \
+            or (hw == "pedestrian" and re.search(r"市場$", nm)):          # 柳橋連合市場など（2026-10-29 B）
         out.append("eatery_street")
     if (osm_type == "w" and t.get("building") == "apartments" and re.search(r"団地|住宅|ハイツ|コーポ", nm)) \
             or (t.get("landuse") == "residential" and "団地" in nm):
@@ -172,7 +188,15 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
     if not not_industrial and ((osm_type == "w" and t.get("building") == "warehouse" and nm)
             or (t.get("landuse") == "industrial" and re.search(r"warehouse|logistics", t.get("industrial", "")))):
         out.append("warehouse")
-    if t.get("disused:shop") or t.get("abandoned:building") or (t.get("building") and t.get("disused") == "yes"):
+    # 廃墟・廃校・廃工場（2026-10-29 A）
+    if t.get("building") == "ruins" or (t.get("ruins") == "yes" and not t.get("historic")) \
+            or t.get("disused:amenity") in ("school", "hospital") or t.get("abandoned:amenity") in ("school", "hospital") \
+            or t.get("disused:man_made") == "works" or t.get("abandoned:man_made") == "works" \
+            or t.get("disused:landuse") == "industrial" or t.get("abandoned:landuse") == "industrial" \
+            or (nm and RUINS_NAME.search(nm)):
+        out.append("ruins")
+    # 閉鎖施設：閉店した店（disused:shop）は入れない（チェーン店の閉店ばかりで映像の場所にならない。2026-10-29 B）
+    if t.get("abandoned:building") or (t.get("building") and t.get("disused") == "yes" and not t.get("disused:shop")):
         out.append("vacant")
     if t.get("landuse") in ("construction", "brownfield"):
         out.append("redevelopment_site")
@@ -185,8 +209,14 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
         out.append("underpass")                                   # 名前のあるトンネル・地下道だけ（道路の暗渠・番号だけの道は除く）
     if a == "parking" and t.get("parking") == "multi-storey" or t.get("building") == "parking":
         out.append("parking_multi")
-    if t.get("man_made") == "lighthouse" or (a == "ferry_terminal" and nm):
+    if a == "ferry_terminal" and nm:
         out.append("harbour_structure")
+    if t.get("man_made") == "lighthouse":
+        out.append("lighthouse")
+    if osm_type != "n" and t.get("man_made") == "breakwater":       # 名前のない防波堤も取る（2026-10-29 A）
+        out.append("breakwater")
+    if osm_type != "n" and a == "parking" and t.get("parking") in (None, "surface") and t.get("access") not in ("private", "no"):
+        out.append("seaside_parking")                                # 海の近くかどうかは osm_source で絞る
     if t.get("man_made") in ("water_tower", "silo") or (t.get("man_made") == "storage_tank" and nm):
         out.append("industrial_structure")
     if osm_type == "w" and t.get("railway") in ("abandoned", "disused") and nm:
@@ -199,11 +229,12 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
         or str(t.get("layer", "0")).lstrip("-").isdigit() and int(t.get("layer", "0")) < 0 or "地下" in nm
     on_bridge = t.get("bridge") not in (None, "no")
     if osm_type == "w" and not underground:
-        if hw and "商店街" in nm:
+        if hw and SHOTENGAI_NAME.search(nm) and not NOT_SHOTENGAI_NAME.search(nm):
             out.append("shotengai")
         if not on_bridge and (hw == "living_street" or t.get("service") == "alley" or hw == "steps"):
             out.append("alley")
-        if not on_bridge and hw == "pedestrian" and nm and "商店街" not in nm:   # 商店街は商店街として扱う
+        if not on_bridge and hw == "pedestrian" and nm and not SHOTENGAI_NAME.search(nm) \
+                and not re.search(r"市場$", nm):                     # 商店街・市場はそれぞれの種別で扱う
             out.append("public_space")
         if t.get("waterway") in ("river", "canal") and nm:
             out.append("river")
@@ -211,14 +242,21 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
             out.append("coast")
         if t.get("railway") == "rail" and nm and t.get("service") is None:
             out.append("railway")
+        if on_bridge and hw in ("motorway", "trunk") and nm and not ROAD_NUMBER.match(nm):
+            out.append("expressway")                                  # 高速道路の高架（2026-10-29 A）
     if t.get("natural") == "wetland" and t.get("wetland") == "tidalflat":
         out.append("coast_point")
-    if t.get("man_made") in ("breakwater", "groyne") and nm:
+    if t.get("man_made") == "groyne" and nm:
         out.append("coast_point")
     if t.get("natural") in ("cape", "bay") and nm:
         out.append("coast_point")
-    if (t.get("place") == "square") or ("商店街" in nm and not t.get("shop") and not hw and osm_type != "w"):
-        out.append("public_space_point" if t.get("place") == "square" else "shotengai_point")
+    if t.get("place") == "square":
+        out.append("public_space_point")
+    # 商店街（点・面）：店・事務所・医療の要素や「○○商店街事務所」などは除く（2026-10-29 B）
+    if nm and SHOTENGAI_NAME.search(nm) and not NOT_SHOTENGAI_NAME.search(nm) and not hw \
+            and not t.get("shop") and not t.get("office") and not t.get("healthcare") \
+            and a in (None, "marketplace") and (osm_type != "w" or closed):
+        out.append("shotengai_point")
 
     # 「〜_point」は線の種別の点版（干潟・防波堤・広場など）。種別コードは線の種別にそろえる
     out = [c.removesuffix("_point") for c in out]
@@ -230,6 +268,11 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
 
 
 ROAD_NUMBER = re.compile(r"^\S*?[0-9０-９]+号線$")
+# 2026-10-29 A・B
+SHOTENGAI_NAME = re.compile(r"商店街|商店会|銀天|名店街|アーケード")
+NOT_SHOTENGAI_NAME = re.compile(r"事務所|組合|クリニック|歯科|医院|駐車場|会館|ビル$")
+RIVERBANK_NAME = re.compile(r"河川敷|河畔|土手|堤防|川.*(?:緑地|広場|運動場|グラウンド)|(?:緑地|広場).*川")
+RUINS_NAME = re.compile(r"廃墟|廃校|廃工場|^旧.+(?:小学校|中学校|高校|高等学校|分校|工場)(?:跡)?$")
 
 
 def display_name(t: dict, category: str) -> str:
