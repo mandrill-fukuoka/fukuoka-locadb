@@ -1,0 +1,21 @@
+{
+  "note": "地点リスト（2026-10-30）で OpenStreetMap だけでは位置を決められなかった場所。国土数値情報・国土地理院の住所検索・OSM の道の形から位置を決める。2026-10-30 利用者と合意（交差点は2か所とも、歩道橋は明治通り・渡辺通り・大博通り・住吉通り・昭和通り・大正通り）。",
+  "spots": [
+    {"no": [10], "name": "脇山の田園", "category": "farmland", "place": "landuse_mesh", "code": "0100",
+     "near_address": "福岡県福岡市早良区脇山", "radius_m": 1500, "town": "脇山", "note": "田のマスが最も集まる場所"},
+    {"no": [21], "name": "高宮の住宅街", "category": "housing_estate", "place": "landuse_mesh", "code": "0700",
+     "near_address": "福岡県福岡市南区高宮", "radius_m": 800, "town": "高宮", "away_spot": "高宮駅", "away_m": 300,
+     "note": "建物用地のマスが最も集まる場所（駅から300m以上離れたところ）"},
+    {"no": [14], "name": "大名の路地", "category": "alley", "place": "town_alley", "near_address": "福岡県福岡市中央区大名", "radius_m": 450, "town": "大名"},
+    {"no": [58], "name": "警固本通り・国体道路の交差点", "category": "station", "place": "road_crossing",
+     "roads_a": ["国体道路"], "roads_b": ["警固本通り", "警固本通"], "near_spot": "警固神社"},
+    {"no": [58], "name": "天神西通り・国体道路の交差点", "category": "station", "place": "road_crossing",
+     "roads_a": ["国体道路"], "roads_b": ["天神西通り"], "near_spot": "警固神社"},
+    {"no": [50], "name": "大通りの歩道橋", "category": "bridge_overpass", "place": "footbridges_over",
+     "roads": ["明治通り", "渡辺通り", "大博通り", "住吉通り", "昭和通り", "大正通り"]},
+    {"no": [64], "name": "中央ふ頭", "category": "port", "place": "address", "address": "福岡県福岡市博多区沖浜町",
+     "note": "博多港の中央ふ頭（沖浜町。マリンメッセ福岡・博多港国際センターの周辺）"},
+    {"no": [53], "name": "博多駅地下街", "category": "commercial_facility", "place": "address", "address": "福岡県福岡市博多区博多駅中央街",
+     "note": "博多駅前の地下にある地下街。位置は博多駅中央街の代表点で、地下の範囲そのものではない"}
+  ]
+}

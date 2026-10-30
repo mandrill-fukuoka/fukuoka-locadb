@@ -162,3 +162,23 @@ def test_curated_resolve(db):
     p = resolve({"place": "nearest_to_spot", "ways_named": "大博通り", "spot": "博多駅"}, h, db)
     assert abs(p.y - 33.595) < 1e-9 and abs(p.x - 130.40) < 1e-9
     assert resolve({"osm": "w9", "place": "node"}, h, db) is None
+
+
+def test_curated_crossing_and_footbridges(db, monkeypatch):
+    from shapely.geometry import LineString
+    from tools import curated_import as ci
+    monkeypatch.setattr(ci, "town_at", lambda p: "天神一丁目")
+
+    class FakeH:
+        named = {"国体道路": [LineString([(130.390, 33.585), (130.400, 33.585)])],
+                 "警固本通り": [LineString([(130.393, 33.580), (130.393, 33.590)])],
+                 "明治通り": [LineString([(130.390, 33.592), (130.410, 33.592)])]}
+        footbridges = [LineString([(130.395, 33.5918), (130.395, 33.5922)]),      # 明治通りを渡る
+                       LineString([(130.3951, 33.5917), (130.3951, 33.5923)]),    # 同じ場所（80m以内）は1つ
+                       LineString([(130.405, 33.580), (130.405, 33.581)])]        # 渡らない
+        narrow, geom = [], {}
+    p = ci.resolve({"place": "road_crossing", "roads_a": ["国体道路"], "roads_b": ["警固本通り"]}, FakeH(), db)
+    assert (round(p.x, 3), round(p.y, 3)) == (130.393, 33.585)
+    assert ci.resolve({"place": "road_crossing", "roads_a": ["国体道路"], "roads_b": ["天神西通り"]}, FakeH(), db) is None
+    res = ci.resolve_many({"place": "footbridges_over", "roads": ["明治通り", "渡辺通り"]}, FakeH(), db)
+    assert [n for n, _, _ in res] == ["明治通りの歩道橋（天神一丁目）"]
