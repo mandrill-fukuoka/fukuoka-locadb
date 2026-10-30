@@ -1,18 +1,122 @@
 {
-  "note": "利用者の地点リスト（2026-10-30「66カットDB照合」）の △・× のうち、OpenStreetMap で位置を確かめられた場所。位置は OSM の要素から決める（推測しない）。手入力の地点（origin=manual）として登録し、自動収集では変えない。",
-  "spots": [
-    {"no": [4], "name": "天神交差点", "category": "station", "osm": "n310797965", "place": "node",
-     "note": "渡辺通りと明治通りの交差点（OSM の信号「天神」）"},
-    {"no": [4, 25], "name": "ONE FUKUOKA BLDG.", "category": "new_building", "osm": "w178497725", "place": "inside"},
-    {"no": [26], "name": "天神ビジネスセンター", "category": "new_building", "osm": "w827636420", "place": "inside"},
-    {"no": [54], "name": "キャナルシティ博多", "category": "commercial_facility", "osm": "w751001483", "place": "inside"},
-    {"no": [24], "name": "長浜屋台", "category": "yatai_area", "osm": "n4619782091", "place": "node"},
-    {"no": [60], "name": "親不孝通り", "category": "nightlife_area", "osm": "w43105756", "place": "middle",
-     "alt": ["親富孝通り"]},
-    {"no": [59], "name": "大博通り（博多駅前）", "category": "station", "ways_named": "大博通り", "place": "nearest_to_spot",
-     "spot": "博多駅", "note": "大博通りのうち、博多駅にいちばん近い位置"},
-    {"no": [33], "name": "志賀島の海岸道路（志賀島循環線）", "category": "coast", "osm": "w375257540", "place": "middle"},
-    {"no": [61], "name": "中洲の路地", "category": "alley", "osm": "w738855812", "place": "middle"},
-    {"no": [14], "name": "今泉の路地", "category": "alley", "osm": "w579429198", "place": "middle"}
-  ]
+ "note": "利用者の地点リスト（2026-10-30「66カットDB照合」）の △・× のうち、OpenStreetMap で位置を確かめられた場所。位置は OSM の要素から決める（推測しない）。手入力の地点（origin=manual）として登録し、自動収集では変えない。",
+ "spots": [
+  {
+   "no": [
+    4
+   ],
+   "name": "天神交差点",
+   "category": "station",
+   "osm": "n310797965",
+   "place": "node",
+   "note": "渡辺通りと明治通りの交差点（OSM の信号「天神」）"
+  },
+  {
+   "no": [
+    4,
+    25
+   ],
+   "name": "ONE FUKUOKA BLDG.",
+   "category": "new_building",
+   "osm": "w178497725",
+   "place": "inside"
+  },
+  {
+   "no": [
+    26
+   ],
+   "name": "天神ビジネスセンター",
+   "category": "new_building",
+   "osm": "w827636420",
+   "place": "inside"
+  },
+  {
+   "no": [
+    54
+   ],
+   "name": "キャナルシティ博多",
+   "category": "commercial_facility",
+   "osm": "w751001483",
+   "place": "inside"
+  },
+  {
+   "no": [
+    24
+   ],
+   "name": "長浜屋台",
+   "category": "yatai_area",
+   "osm": "n4619782091",
+   "place": "node"
+  },
+  {
+   "no": [
+    60
+   ],
+   "name": "親不孝通り",
+   "category": "nightlife_area",
+   "osm": "w43105756",
+   "place": "middle",
+   "alt": [
+    "親富孝通り"
+   ]
+  },
+  {
+   "no": [
+    59
+   ],
+   "name": "大博通り（博多駅前）",
+   "category": "station",
+   "ways_named": "大博通り",
+   "place": "nearest_to_spot",
+   "spot": "博多駅",
+   "note": "大博通りのうち、博多駅にいちばん近い位置"
+  },
+  {
+   "no": [
+    33
+   ],
+   "name": "志賀島の海岸道路（志賀島循環線）",
+   "category": "coast",
+   "osm": "w375257540",
+   "place": "middle"
+  },
+  {
+   "no": [
+    61
+   ],
+   "name": "中洲の路地",
+   "category": "alley",
+   "osm": "w738855812",
+   "place": "middle"
+  },
+  {
+   "no": [
+    14
+   ],
+   "name": "今泉の路地",
+   "category": "alley",
+   "osm": "w579429198",
+   "place": "middle"
+  },
+  {
+   "no": [
+    11
+   ],
+   "name": "元岡の田園",
+   "category": "farmland",
+   "osm": "w617427630",
+   "place": "inside",
+   "note": "OSM の農地（約3.7ha）"
+  },
+  {
+   "no": [
+    12
+   ],
+   "name": "今宿の田園",
+   "category": "farmland",
+   "osm": "w727341302",
+   "place": "inside",
+   "note": "OSM の農地（約1.2ha）。県立玄洋高校の近く"
+  }
+ ]
 }
