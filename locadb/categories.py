@@ -45,6 +45,7 @@ CATEGORIES = {
     # 修正提案2A（2026-10-22）：撮影の需要がある種類を足す。いずれも景観グループは既存のものを使う
     "level_crossing":      ("踏切", "rail", "point", 0),
     "underpass":           ("トンネル・地下道", "transport", "point", 0),
+    "gantry_sign":         ("門型標識", "transport", "point", 0),        # 2026-10-30：福岡市の道路施設一覧から手入力で登録（自動収集の規則はなし）
     "parking_multi":       ("立体駐車場", "urban_new", "point", 0),
     "harbour_structure":   ("渡船場・フェリー乗り場", "sea", "point", 0),
     "lighthouse":          ("灯台", "sea", "point", 0),                 # 2026-10-29 B：渡船場と分ける

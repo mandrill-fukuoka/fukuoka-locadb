@@ -188,3 +188,13 @@ def test_curated_user_point(db):
     from tools.curated_import import resolve
     p = resolve({"place": "point", "lat": 33.585249, "lon": 130.391518}, None, db)
     assert (p.y, p.x) == (33.585249, 130.391518)
+
+
+def test_facility_probe_rules():
+    from tools.facility_probe import kind_of, norm
+    assert norm("今宿地下通路（ブルーパス）") == "今宿地下通路"
+    assert norm("小笠木_案内板(門型)") == "小笠木案内板"
+    assert kind_of({"highway": "footway", "bridge": "yes"}) == "footbridge"
+    assert kind_of({"highway": "primary", "tunnel": "yes"}) == "tunnel"
+    assert kind_of({"highway": "primary", "layer": "-1"}) == "underpass"
+    assert kind_of({"highway": "footway", "tunnel": "yes"}) == "underground"
