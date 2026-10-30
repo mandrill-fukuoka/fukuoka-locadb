@@ -182,3 +182,9 @@ def test_curated_crossing_and_footbridges(db, monkeypatch):
     assert ci.resolve({"place": "road_crossing", "roads_a": ["国体道路"], "roads_b": ["天神西通り"]}, FakeH(), db) is None
     res = ci.resolve_many({"place": "footbridges_over", "roads": ["明治通り", "渡辺通り"]}, FakeH(), db)
     assert [n for n, _, _ in res] == ["明治通りの歩道橋（天神一丁目）"]
+
+
+def test_curated_user_point(db):
+    from tools.curated_import import resolve
+    p = resolve({"place": "point", "lat": 33.585249, "lon": 130.391518}, None, db)
+    assert (p.y, p.x) == (33.585249, 130.391518)

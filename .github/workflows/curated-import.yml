@@ -6,7 +6,7 @@ on:
     inputs:
       data:
         description: "リストのファイル（data/curated/ の下）"
-        default: "data/curated/2026-10-30_list2.json"
+        default: "data/curated/2026-10-30_list3.json"
       mode:
         type: choice
         options: [dry_run, apply]

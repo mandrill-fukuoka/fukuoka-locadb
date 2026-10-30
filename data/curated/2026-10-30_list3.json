@@ -1,0 +1,9 @@
+{
+  "note": "警固本通りと国体道路の交差点。2026-10-30 利用者が Googleマップで2か所を指定。",
+  "spots": [
+    {"no": [58], "name": "警固本通り・国体道路の交差点（大名一丁目側）", "category": "station", "place": "point",
+     "lat": 33.585249, "lon": 130.391518, "url": "https://maps.app.goo.gl/hb3NQmG5MZUh5Hzc9"},
+    {"no": [58], "name": "警固本通り・国体道路の交差点（警固二丁目側）", "category": "station", "place": "point",
+     "lat": 33.584561, "lon": 130.391593, "url": "https://maps.app.goo.gl/QWqdVk4Xec5N78PC7"}
+  ]
+}
