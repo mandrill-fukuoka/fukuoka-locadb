@@ -225,3 +225,23 @@ def test_curated_merge_near(db, tmp_path, monkeypatch):
     assert "昭和通り2号歩道橋" in names and "昭和通りの歩道橋（大手門一丁目）" in names["昭和通り2号歩道橋"]["alt_names"]
     assert "警固歩道橋" in names["警固の橋"]["alt_names"] and "警固歩道橋" not in names
     assert names["新しい歩道橋"]["origin"] == "manual"
+
+
+def test_curated_does_not_merge_list_neighbours(db, tmp_path, monkeypatch):
+    """同じリストの2つの施設が40m以内に並んでいても、片方の名前で上書きしない（2026-10-30 の不具合）"""
+    import json, sys
+    from tools import curated_import as ci
+    db.execute("""insert into areas (code, name, geom) values ('fuk-chuo','中央区',
+                  ST_Multi(ST_GeomFromText('POLYGON((130.38 33.58,130.42 33.58,130.42 33.60,130.38 33.60,130.38 33.58))',4326))::geography)""")
+    db.commit()
+    data = {"spots": [
+        {"no": [1], "name": "鎧塚歩道橋", "category": "bridge_overpass", "place": "point", "lat": 33.5900, "lon": 130.4000, "merge_near_m": 40, "url": "https://e.org"},
+        {"no": [2], "name": "香椎鎧坂歩道橋", "category": "bridge_overpass", "place": "point", "lat": 33.5900, "lon": 130.4003, "merge_near_m": 40, "url": "https://e.org"}]}
+    p = tmp_path / "d.json"; p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(ci.osm_source, "download", lambda dest: None)
+    monkeypatch.setattr(ci.osm_source, "clip", lambda a, b: None)
+    monkeypatch.setattr(ci.H, "apply_file", lambda self, *a, **k: None)
+    monkeypatch.setattr(ci.Path, "unlink", lambda self, *a, **k: None)
+    monkeypatch.setattr(sys, "argv", ["x", "--data", str(p), "--apply", "--out", str(tmp_path / "o")])
+    ci.main()
+    assert {r["name"] for r in db.execute("select name from spots").fetchall()} == {"鎧塚歩道橋", "香椎鎧坂歩道橋"}
