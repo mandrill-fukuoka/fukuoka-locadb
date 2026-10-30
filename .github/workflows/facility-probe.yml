@@ -1,0 +1,23 @@
+# 福岡市の道路施設一覧の位置を OSM から探す（読み取りだけ。DBへは SELECT のみ）
+name: facility-probe
+on: workflow_dispatch
+concurrency: { group: facility-probe, cancel-in-progress: false }
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+      - run: pip install -r requirements.txt
+      - name: 数える
+        shell: bash
+        run: |
+          python -m tools.facility_probe --data data/curated/fukuoka_road_facilities.json --out facility-out | tee facility.log
+          { echo '## 道路施設一覧の照合'; cat facility-out/summary.md; } >> "$GITHUB_STEP_SUMMARY"
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: facility-probe, path: "facility-out/", retention-days: 30 }

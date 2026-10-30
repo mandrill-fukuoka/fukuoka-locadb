@@ -1,0 +1,708 @@
+{
+ "source": "福岡市 道路下水道局「道路施設の点検計画（施設一覧）」https://www.city.fukuoka.lg.jp/doro-gesuido/doroiji/hp/documents/sisetsuitiran.pdf（2020年4月版）",
+ "note": "2026-10-30 利用者が全件の反映を希望。PDFに位置はないので、OSM の名前の一致、または町名の近くで種類と長さ（±35%）が合う構造物が1つだけのときに位置を決める。決められないものは登録しない。",
+ "facilities": [
+  {
+   "kind": "tunnel",
+   "ward": "東区",
+   "name": "長谷トンネル",
+   "route": "一級市道",
+   "year": "H04.03",
+   "length_m": 119.2,
+   "hint": ""
+  },
+  {
+   "kind": "tunnel",
+   "ward": "南区",
+   "name": "筑紫丘トンネル（東行き）",
+   "route": "一級市道",
+   "year": "H09.03",
+   "length_m": 330.0,
+   "hint": "福岡県福岡市南区筑紫丘"
+  },
+  {
+   "kind": "tunnel",
+   "ward": "南区",
+   "name": "筑紫丘トンネル（西行き）",
+   "route": "一級市道",
+   "year": "H09.03",
+   "length_m": 330.0,
+   "hint": "福岡県福岡市南区筑紫丘"
+  },
+  {
+   "kind": "tunnel",
+   "ward": "早良区",
+   "name": "曲淵トンネル",
+   "route": "一般国道",
+   "year": "S52.12",
+   "length_m": 252.0,
+   "hint": "福岡県福岡市早良区曲渕"
+  },
+  {
+   "kind": "tunnel",
+   "ward": "西区",
+   "name": "観峰トンネル",
+   "route": "その他市道",
+   "year": "S54",
+   "length_m": 106.0,
+   "hint": ""
+  },
+  {
+   "kind": "underpass",
+   "ward": "東区",
+   "name": "貝塚アンダーパス",
+   "route": "その他市道",
+   "year": "不明",
+   "length_m": 280.0,
+   "hint": "福岡県福岡市東区箱崎"
+  },
+  {
+   "kind": "underpass",
+   "ward": "東区",
+   "name": "松島アンダーパス（多の津394号）",
+   "route": "その他市道",
+   "year": "不明",
+   "length_m": 85.0,
+   "hint": "福岡県福岡市東区松島"
+  },
+  {
+   "kind": "underpass",
+   "ward": "東区",
+   "name": "松島アンダーパス（松島323号）",
+   "route": "その他市道",
+   "year": "不明",
+   "length_m": 65.0,
+   "hint": "福岡県福岡市東区松島"
+  },
+  {
+   "kind": "underpass",
+   "ward": "東区",
+   "name": "松島アンダーパス（松島324号）",
+   "route": "その他市道",
+   "year": "不明",
+   "length_m": 40.0,
+   "hint": "福岡県福岡市東区松島"
+  },
+  {
+   "kind": "underpass",
+   "ward": "博多区",
+   "name": "美野島アンダーパス",
+   "route": "一般国道",
+   "year": "不明",
+   "length_m": 290.0,
+   "hint": "福岡県福岡市博多区美野島"
+  },
+  {
+   "kind": "underpass",
+   "ward": "博多区",
+   "name": "南八幡アンダーパス",
+   "route": "一級市道",
+   "year": "不明",
+   "length_m": 125.0,
+   "hint": "福岡県福岡市博多区南八幡町"
+  },
+  {
+   "kind": "underpass",
+   "ward": "南区",
+   "name": "塩原アンダーパス",
+   "route": "その他市道",
+   "year": "不明",
+   "length_m": 195.0,
+   "hint": "福岡県福岡市南区塩原"
+  },
+  {
+   "kind": "underpass",
+   "ward": "南区",
+   "name": "折立アンダーパス（南）",
+   "route": "一級市道",
+   "year": "不明",
+   "length_m": 245.0,
+   "hint": ""
+  },
+  {
+   "kind": "underpass",
+   "ward": "南区",
+   "name": "折立アンダーパス（北）",
+   "route": "一級市道",
+   "year": "不明",
+   "length_m": 245.0,
+   "hint": ""
+  },
+  {
+   "kind": "underpass",
+   "ward": "西区",
+   "name": "十郎川アンダーパス",
+   "route": "一級市道",
+   "year": "不明",
+   "length_m": 125.0,
+   "hint": ""
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "無名歩道橋（香椎浜１丁目）",
+   "route": "一級市道",
+   "year": "H03.01",
+   "length_m": 52.4,
+   "hint": "福岡県福岡市東区香椎浜一丁目"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "無名歩道橋（香椎浜４丁目）",
+   "route": "一級市道",
+   "year": "H03.01",
+   "length_m": 58.15,
+   "hint": "福岡県福岡市東区香椎浜四丁目"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "名島２号歩道橋",
+   "route": "一級市道",
+   "year": "H03.11",
+   "length_m": 31.0,
+   "hint": "福岡県福岡市東区名島"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "東和白歩道橋",
+   "route": "-",
+   "year": "S49.03",
+   "length_m": 26.5,
+   "hint": "福岡県福岡市東区和白東"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "多の津１号歩道橋",
+   "route": "一級市道",
+   "year": "S48.01",
+   "length_m": 44.15,
+   "hint": "福岡県福岡市東区多の津"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "香椎跨線人道橋",
+   "route": "-",
+   "year": "H03.07",
+   "length_m": 58.2,
+   "hint": "福岡県福岡市東区香椎"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "唐の原歩道橋",
+   "route": "一般国道",
+   "year": "H10.03",
+   "length_m": 41.73,
+   "hint": "福岡県福岡市東区唐の原"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "香住ヶ丘歩道橋",
+   "route": "一般国道",
+   "year": "S47.02",
+   "length_m": 38.8,
+   "hint": "福岡県福岡市東区香住ヶ丘"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "多の津２号歩道橋",
+   "route": "二級市道",
+   "year": "S48.01",
+   "length_m": 15.0,
+   "hint": "福岡県福岡市東区多の津"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "城浜歩道橋",
+   "route": "一級市道",
+   "year": "S58.12",
+   "length_m": 23.9,
+   "hint": ""
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "香椎浜１丁目歩道橋",
+   "route": "一級市道",
+   "year": "S62.02",
+   "length_m": 14.0,
+   "hint": "福岡県福岡市東区香椎浜一丁目"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "名島歩道橋",
+   "route": "一級市道",
+   "year": "H03.03",
+   "length_m": 29.8,
+   "hint": "福岡県福岡市東区名島"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "汐井跨線人道橋",
+   "route": "その他市道",
+   "year": "S50.01",
+   "length_m": 34.85,
+   "hint": ""
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "香椎5丁目跨線人道橋",
+   "route": "-",
+   "year": "H15.9",
+   "length_m": 9.5,
+   "hint": "福岡県福岡市東区香椎五丁目"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "鎧塚歩道橋",
+   "route": "一般県道",
+   "year": "S47.03",
+   "length_m": 14.7,
+   "hint": ""
+  },
+  {
+   "kind": "footbridge",
+   "ward": "東区",
+   "name": "香椎鎧坂歩道橋",
+   "route": "一般市道",
+   "year": "S48.03",
+   "length_m": 17.7,
+   "hint": "福岡県福岡市東区香椎"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "弓田町歩道橋",
+   "route": "一級市道",
+   "year": "S44.03",
+   "length_m": 21.75,
+   "hint": "福岡県福岡市博多区弓田町"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "麦野歩道橋",
+   "route": "一級市道",
+   "year": "S43.08",
+   "length_m": 18.45,
+   "hint": "福岡県福岡市博多区麦野"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "美野島歩道橋",
+   "route": "一般県道",
+   "year": "S43.01",
+   "length_m": 20.3,
+   "hint": "福岡県福岡市博多区美野島"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "東住吉歩道橋",
+   "route": "一般国道",
+   "year": "S45.03",
+   "length_m": 23.35,
+   "hint": "福岡県福岡市博多区住吉"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "那珂南歩道橋",
+   "route": "一級市道",
+   "year": "S53.12",
+   "length_m": 22.2,
+   "hint": "福岡県福岡市博多区那珂"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "竪粕歩道橋",
+   "route": "一般国道",
+   "year": "S49.03",
+   "length_m": 19.8,
+   "hint": "福岡県福岡市博多区堅粕"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "那珂小学校前歩道橋",
+   "route": "一級市道",
+   "year": "S42.01",
+   "length_m": 17.0,
+   "hint": "福岡県福岡市博多区那珂"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "昭和通り１号歩道橋",
+   "route": "一級市道",
+   "year": "S45.03",
+   "length_m": 34.9,
+   "hint": ""
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "筑紫通り元町歩道橋",
+   "route": "一級市道",
+   "year": "S46.02",
+   "length_m": 17.5,
+   "hint": "福岡県福岡市博多区元町"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "稲城歩道橋",
+   "route": "一般国道",
+   "year": "S49.10",
+   "length_m": 44.4,
+   "hint": ""
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "竹下駅前歩道橋(駅東口)",
+   "route": "一級市道",
+   "year": "S62.04",
+   "length_m": 13.05,
+   "hint": "福岡県福岡市博多区竹下"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "大井歩道橋",
+   "route": "一般県道",
+   "year": "H03.10",
+   "length_m": 121.16,
+   "hint": "福岡県福岡市博多区大井"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "祇園町西交差点歩道橋",
+   "route": "指定国道",
+   "year": "H08.03",
+   "length_m": 121.43,
+   "hint": "福岡県福岡市博多区祇園町"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "竹下駅自由通路(駅西口)",
+   "route": "-",
+   "year": "H23.01",
+   "length_m": 33.0,
+   "hint": "福岡県福岡市博多区竹下"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "博多駅歩行者連絡橋",
+   "route": "一級市道",
+   "year": "H24.12",
+   "length_m": 103.1,
+   "hint": "福岡県福岡市博多区博多駅中央街"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "博多区",
+   "name": "相生踏切横断歩道橋",
+   "route": "-",
+   "year": "H24.01",
+   "length_m": 44.0,
+   "hint": "福岡県福岡市博多区相生町"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "中央区",
+   "name": "昭和通り２号歩道橋",
+   "route": "一級市道",
+   "year": "S45.07",
+   "length_m": 28.25,
+   "hint": ""
+  },
+  {
+   "kind": "footbridge",
+   "ward": "中央区",
+   "name": "警固歩道橋",
+   "route": "主要地方道",
+   "year": "S43.01",
+   "length_m": 17.3,
+   "hint": "福岡県福岡市中央区警固"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "中央区",
+   "name": "舞鶴小学校前歩道橋",
+   "route": "一級市道",
+   "year": "S46.03",
+   "length_m": 19.15,
+   "hint": "福岡県福岡市中央区舞鶴"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "中央区",
+   "name": "那の津口歩道橋",
+   "route": "一級市道",
+   "year": "S53.03",
+   "length_m": 73.2,
+   "hint": "福岡県福岡市中央区那の津"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "中央区",
+   "name": "よかとぴあ通り１号歩道橋",
+   "route": "二級市道",
+   "year": "H05.03",
+   "length_m": 67.27,
+   "hint": "福岡県福岡市中央区地行浜"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "中央区",
+   "name": "よかとぴあ通り２号歩道橋",
+   "route": "二級市道",
+   "year": "H05.03",
+   "length_m": 31.33,
+   "hint": "福岡県福岡市中央区地行浜"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "中央区",
+   "name": "那の津歩道橋",
+   "route": "一級市道",
+   "year": "H07.12",
+   "length_m": 45.1,
+   "hint": "福岡県福岡市中央区那の津"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "南区",
+   "name": "井尻歩道橋",
+   "route": "主要地方道",
+   "year": "S48.03",
+   "length_m": 44.1,
+   "hint": "福岡県福岡市南区井尻"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "南区",
+   "name": "折立歩道橋",
+   "route": "主要地方道",
+   "year": "S57.09",
+   "length_m": 29.65,
+   "hint": ""
+  },
+  {
+   "kind": "footbridge",
+   "ward": "南区",
+   "name": "高宮駅前歩道橋",
+   "route": "主要地方道",
+   "year": "S63.05",
+   "length_m": 92.76,
+   "hint": "福岡県福岡市南区高宮"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "南区",
+   "name": "五十川歩道橋",
+   "route": "-",
+   "year": "H08.01",
+   "length_m": 21.0,
+   "hint": "福岡県福岡市南区五十川"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "南区",
+   "name": "平尾駅歩道橋",
+   "route": "一級市道",
+   "year": "H05.10",
+   "length_m": 10.0,
+   "hint": "福岡県福岡市南区高木"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "早良区",
+   "name": "有田歩道橋",
+   "route": "一般県道",
+   "year": "S51.03",
+   "length_m": 17.7,
+   "hint": "福岡県福岡市早良区有田"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "西区",
+   "name": "姪浜人道橋",
+   "route": "その他市道",
+   "year": "S55.08",
+   "length_m": 27.95,
+   "hint": "福岡県福岡市西区姪浜"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "西区",
+   "name": "石丸横断歩道橋",
+   "route": "一般県道",
+   "year": "H14.03",
+   "length_m": 45.0,
+   "hint": "福岡県福岡市西区石丸"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "西区",
+   "name": "小戸２丁目１号歩道橋",
+   "route": "その他市道",
+   "year": "H12.10",
+   "length_m": 28.6,
+   "hint": "福岡県福岡市西区小戸二丁目"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "西区",
+   "name": "小戸２丁目２号歩道橋",
+   "route": "その他市道",
+   "year": "H12.10",
+   "length_m": 28.6,
+   "hint": "福岡県福岡市西区小戸二丁目"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "西区",
+   "name": "愛宕横断歩道橋",
+   "route": "一級市道",
+   "year": "H14.11",
+   "length_m": 43.3,
+   "hint": "福岡県福岡市西区愛宕"
+  },
+  {
+   "kind": "footbridge",
+   "ward": "西区",
+   "name": "北原1丁目歩道橋",
+   "route": "その他市道",
+   "year": "H18.01",
+   "length_m": 27.4,
+   "hint": "福岡県福岡市西区北原一丁目"
+  },
+  {
+   "kind": "underground",
+   "ward": "東区",
+   "name": "箱崎埠頭地下通路",
+   "route": "その他市道",
+   "year": "S50.05",
+   "length_m": 40.9,
+   "hint": "福岡県福岡市東区箱崎ふ頭"
+  },
+  {
+   "kind": "underground",
+   "ward": "東区",
+   "name": "名島地下通路",
+   "route": "その他市道",
+   "year": "S34.09",
+   "length_m": 58.9,
+   "hint": "福岡県福岡市東区名島"
+  },
+  {
+   "kind": "underground",
+   "ward": "博多区",
+   "name": "千代地下通路",
+   "route": "主要地方道",
+   "year": "S57.09",
+   "length_m": 54.5,
+   "hint": "福岡県福岡市博多区千代"
+  },
+  {
+   "kind": "underground",
+   "ward": "中央区",
+   "name": "清川地下通路",
+   "route": "一級市道",
+   "year": "S54.03",
+   "length_m": 94.4,
+   "hint": "福岡県福岡市中央区清川"
+  },
+  {
+   "kind": "underground",
+   "ward": "中央区",
+   "name": "渡辺通り地下通路",
+   "route": "一般県道",
+   "year": "S54.03",
+   "length_m": 81.6,
+   "hint": "福岡県福岡市中央区渡辺通"
+  },
+  {
+   "kind": "underground",
+   "ward": "早良区",
+   "name": "西新地下通路",
+   "route": "一級市道",
+   "year": "S56.06",
+   "length_m": 41.0,
+   "hint": "福岡県福岡市早良区西新"
+  },
+  {
+   "kind": "underground",
+   "ward": "西区",
+   "name": "今宿地下通路（ブルーパス）",
+   "route": "指定国道",
+   "year": "H10.04",
+   "length_m": 86.6,
+   "hint": "福岡県福岡市西区今宿"
+  },
+  {
+   "kind": "gantry",
+   "ward": "早良区",
+   "name": "小笠木_案内板(門型)",
+   "route": "県道",
+   "year": "不明",
+   "length_m": null,
+   "hint": "福岡県福岡市早良区小笠"
+  },
+  {
+   "kind": "gantry",
+   "ward": "早良区",
+   "name": "千代今宿線_案内板(門型)",
+   "route": "市町村道幹線1級",
+   "year": "不明",
+   "length_m": null,
+   "hint": ""
+  },
+  {
+   "kind": "other",
+   "ward": "中央区",
+   "name": "ボックスカルバート(唐人町)",
+   "route": "市町村道幹線2級",
+   "year": "S63.1",
+   "length_m": 949.5,
+   "hint": "福岡県福岡市中央区唐人町"
+  },
+  {
+   "kind": "other",
+   "ward": "中央区",
+   "name": "菰川張出橋",
+   "route": "一級市道",
+   "year": "不明",
+   "length_m": 430.0,
+   "hint": ""
+  },
+  {
+   "kind": "other",
+   "ward": "中央区",
+   "name": "鋼桁(渡辺通り４丁目)",
+   "route": "市町村道その他",
+   "year": "H09.1",
+   "length_m": 98.0,
+   "hint": "福岡県福岡市中央区渡辺通四丁目"
+  }
+ ]
+}
