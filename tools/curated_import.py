@@ -97,6 +97,7 @@ class H(osmium.SimpleHandler):
         self.named = {}                     # 名前 -> [LineString]
         self.footbridges = []               # 名前のない歩道・階段の橋（LineString）
         self.narrow = []                    # 細い道（LineString, way id）
+        self.highways = []                  # 名前のある道（名前, LineString）。交差点が見つからないときの手がかり
 
     def node(self, n):
         k = f"n{n.id}"
@@ -112,7 +113,8 @@ class H(osmium.SimpleHandler):
         is_fb = hw in ("footway", "path", "steps") and br not in (None, "no") and not nm
         is_narrow = hw in NARROW and not underground and br in (None, "no") and \
             (hw != "service" or w.tags.get("service") in (None, "alley"))
-        if k not in self.want_ids and nm not in self.want_names and not is_fb and not is_narrow:
+        is_named_road = bool(hw and nm and hw not in NARROW)
+        if k not in self.want_ids and nm not in self.want_names and not is_fb and not is_narrow and not is_named_road:
             return
         try:
             cs = [(nd.location.lon, nd.location.lat) for nd in w.nodes]
@@ -129,6 +131,8 @@ class H(osmium.SimpleHandler):
             self.footbridges.append(LineString(cs))
         if is_narrow:
             self.narrow.append((LineString(cs), w.id))
+        if is_named_road:
+            self.highways.append((nm, LineString(cs)))
 
 
 def near_point(spec, conn):
@@ -178,6 +182,19 @@ def resolve(spec, h, conn):
                     pts += list(x.geoms) if hasattr(x, "geoms") else [x]
         pts = [p for p in pts if p.geom_type == "Point"]
         if not pts:
+            ref = near_point(spec, conn)
+            if ref is not None:                      # 手がかり：roads_a と交わる道の名前（近い順）
+                near = {}
+                for nm, l in h.highways:
+                    for la in a:
+                        x = la.intersection(l)
+                        if not x.is_empty and nm not in spec["roads_a"]:
+                            for q in (list(x.geoms) if hasattr(x, "geoms") else [x]):
+                                if q.geom_type == "Point":
+                                    d = dist_m(q, ref)
+                                    if d <= 900 and d < near.get(nm, (1e9,))[0]:
+                                        near[nm] = (d, q)
+                spec["_hint"] = "、".join(f"{nm}（{int(d)}m）" for nm, (d, _) in sorted(near.items(), key=lambda x: x[1][0])[:10])
             return None
         ref = near_point(spec, conn)
         return min(pts, key=lambda p: dist_m(p, ref)) if ref else pts[0]
@@ -264,6 +281,8 @@ def main():
         for s0 in data["spots"]:
             for nm, p, note in resolve_many(s0, h, conn):
                 items.append(({**s0, "name": nm, "note": note}, p))
+            if s0.get("_hint"):
+                lines.append(f"| {s0['no']} | （手がかり）{s0['name']} | | | | {s0['_hint']} | 交わる道の名前（近い順） |")
         for s, p in items:
             if p is None:
                 lines.append(f"| {s['no']} | {s['name']} | {s['category']} | - | - | - | ！位置を決められない（OSMの要素・データが見つからない） |"); continue
