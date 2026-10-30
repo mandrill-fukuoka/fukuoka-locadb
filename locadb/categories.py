@@ -29,6 +29,7 @@ CATEGORIES = {
     "riverbank":           ("河川敷・土手", "river", "point", 0),        # 2026-10-29 A
     "park":                ("公園・庭園・緑地", "green", "point", 0),
     "hill":                ("丘陵・山道・展望地点", "green", "point", 0),
+    "farmland":            ("田園・農地", "green", "point", 0),          # 2026-10-30：1ha以上の農地を800m四方に1か所（osm_source で絞る）
     "bridge_overpass":     ("橋・歩道橋", "transport", "point", 0),
     "commercial_facility": ("商業施設", "commercial", "point", 0),
     "eatery_street":       ("飲食店街・市場・屋台", "commercial", "point", 0),
@@ -121,7 +122,8 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
     a, hw = t.get("amenity"), t.get("highway")
     out = []
 
-    if (t.get("railway") == "station" or t.get("public_transport") == "station") and nm:
+    if ((t.get("railway") == "station" or t.get("public_transport") == "station") and nm) \
+            or (t.get("aeroway") == "terminal" and nm):                  # 空港のターミナル（2026-10-30）
         out.append("station")
     if a == "place_of_worship" and nm:
         out.append("shrine_temple")
@@ -158,6 +160,8 @@ def categories_of(t: dict, osm_type: str, closed: bool) -> list[str]:
         out.append("park")
     if t.get("natural") == "peak" or t.get("tourism") == "viewpoint":
         out.append("hill")
+    if osm_type != "n" and t.get("landuse") in ("farmland", "paddy"):
+        out.append("farmland")                                       # 広さと間隔は osm_source で絞る
 
     # 橋：撮影の対象になる橋に絞る（高速道路・幹線道路の高架は除く）
     if osm_type == "w" and t.get("bridge") and t.get("bridge") != "no" and hw and hw not in MOTORWAY:

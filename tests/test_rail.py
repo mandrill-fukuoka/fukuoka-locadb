@@ -127,3 +127,38 @@ def test_gap_samples(db, tmp_path):
     # 2回目も同じ地点（キーが変わらない）
     w.run(db, tmp_path)
     assert [r["id"] for r in cats("nightlife_area")] == [n["id"]]
+
+
+# ---------- 2026-10-30 地点リスト ----------
+def test_farmland_and_terminal_rules():
+    assert categories_of({"landuse": "farmland"}, "w", True) == ["farmland"]
+    assert categories_of({"landuse": "farmland"}, "n", False) == []
+    assert categories_of({"aeroway": "terminal", "name": "福岡空港国内線ターミナル"}, "w", True)[0] == "station"
+
+
+def test_farmland_size_and_spacing(db, tmp_path):
+    w = World()
+    w.area(400, 130.39, 33.585, size=0.0008, landuse="farmland")      # 約1.4ha 以上
+    w.area(401, 130.3905, 33.5855, size=0.0003, landuse="farmland")   # 同じ800m四方の小さい農地
+    w.area(402, 130.41, 33.595, size=0.0002, landuse="farmland")      # 小さすぎる
+    w.run(db, tmp_path)
+    assert len(spots(db, "category = 'farmland' and data_status <> 'archived'")) == 1
+
+
+def test_curated_resolve(db):
+    from shapely.geometry import LineString, Point, Polygon
+    from tools.curated_import import resolve
+
+    class FakeH:
+        geom = {"n1": Point(130.40, 33.59), "w2": Polygon([(130.40, 33.59), (130.41, 33.59), (130.41, 33.60), (130.40, 33.60)]),
+                "w3": LineString([(130.40, 33.59), (130.42, 33.59)])}
+        named = {"大博通り": [LineString([(130.40, 33.58), (130.40, 33.60)])]}
+    db.execute("insert into spots (name, category, geom) values ('博多駅', 'station', ST_SetSRID(ST_MakePoint(130.41, 33.595),4326)::geography)")
+    db.commit()
+    h = FakeH()
+    assert resolve({"osm": "n1", "place": "node"}, h, db).x == 130.40
+    assert Polygon(h.geom["w2"]).contains(resolve({"osm": "w2", "place": "inside"}, h, db))
+    assert abs(resolve({"osm": "w3", "place": "middle"}, h, db).x - 130.41) < 1e-9
+    p = resolve({"place": "nearest_to_spot", "ways_named": "大博通り", "spot": "博多駅"}, h, db)
+    assert abs(p.y - 33.595) < 1e-9 and abs(p.x - 130.40) < 1e-9
+    assert resolve({"osm": "w9", "place": "node"}, h, db) is None
