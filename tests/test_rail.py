@@ -198,3 +198,30 @@ def test_facility_probe_rules():
     assert kind_of({"highway": "primary", "tunnel": "yes"}) == "tunnel"
     assert kind_of({"highway": "primary", "layer": "-1"}) == "underpass"
     assert kind_of({"highway": "footway", "tunnel": "yes"}) == "underground"
+
+
+def test_curated_merge_near(db, tmp_path, monkeypatch):
+    """近くに同じ種別の地点があれば新しく作らない：手入力は名前を直し、OSMの地点は別名に足す"""
+    import json, sys
+    from tools import curated_import as ci
+    db.execute("""insert into areas (code, name, geom) values ('fuk-chuo','中央区',
+                  ST_Multi(ST_GeomFromText('POLYGON((130.38 33.58,130.42 33.58,130.42 33.60,130.38 33.60,130.38 33.58))',4326))::geography)""")
+    m = db.execute("select create_manual_spot('昭和通りの歩道橋（大手門一丁目）', 33.5898, 130.3856, 'bridge_overpass') r").fetchone()["r"]
+    db.execute("""insert into spots (name, category, geom, origin) values ('警固の橋', 'bridge_overpass',
+                  ST_SetSRID(ST_MakePoint(130.3928, 33.5839),4326)::geography, 'osm')""")
+    db.commit()
+    data = {"spots": [
+        {"no": [1], "name": "昭和通り2号歩道橋", "category": "bridge_overpass", "place": "point", "lat": 33.58972, "lon": 130.38556, "merge_near_m": 40, "url": "https://example.org"},
+        {"no": [2], "name": "警固歩道橋", "category": "bridge_overpass", "place": "point", "lat": 33.58389, "lon": 130.39278, "merge_near_m": 40, "url": "https://example.org"},
+        {"no": [3], "name": "新しい歩道橋", "category": "bridge_overpass", "place": "point", "lat": 33.5950, "lon": 130.4000, "merge_near_m": 40, "url": "https://example.org"}]}
+    p = tmp_path / "d.json"; p.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(ci.osm_source, "download", lambda dest: None)
+    monkeypatch.setattr(ci.osm_source, "clip", lambda a, b: None)
+    monkeypatch.setattr(ci.H, "apply_file", lambda self, *a, **k: None)
+    monkeypatch.setattr(ci.Path, "unlink", lambda self, *a, **k: None)
+    monkeypatch.setattr(sys, "argv", ["x", "--data", str(p), "--apply", "--out", str(tmp_path / "o")])
+    ci.main()
+    names = {r["name"]: r for r in db.execute("select name, alt_names, origin from spots where category='bridge_overpass'").fetchall()}
+    assert "昭和通り2号歩道橋" in names and "昭和通りの歩道橋（大手門一丁目）" in names["昭和通り2号歩道橋"]["alt_names"]
+    assert "警固歩道橋" in names["警固の橋"]["alt_names"] and "警固歩道橋" not in names
+    assert names["新しい歩道橋"]["origin"] == "manual"

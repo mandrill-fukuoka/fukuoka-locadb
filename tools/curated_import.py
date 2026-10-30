@@ -304,6 +304,28 @@ def main():
                 res = "！福岡市7区の外"
             elif same:
                 res = f"登録済み（id={same['id']}）"
+            elif s.get("merge_near_m") and (dup := conn.execute(
+                    """select id, name, origin, alt_names from spots where data_status <> 'archived' and category = %s
+                          and ST_DWithin(geom, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)
+                        order by geom <-> ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography limit 1""",
+                    (s["category"], lon, lat, s["merge_near_m"], lon, lat)).fetchone()):
+                # 近くに同じ種別の地点がある：手入力なら正式な名前に直し、OSMの地点なら別名に足す（新しく作らない）
+                if dup["origin"] == "manual":
+                    act = f"名前を直す：{dup['name']} → {s['name']}（id={dup['id']}）"
+                    if a.apply:
+                        conn.execute("update spots set name = %s, alt_names = array_append(alt_names, %s), updated_at = now() where id = %s",
+                                     (s["name"], dup["name"], dup["id"]))
+                        conn.execute("insert into spot_history (spot_id, actor, event, detail) values (%s, 'list-2026-10-30', 'renamed', %s)",
+                                     (dup["id"], json.dumps({"from": dup["name"], "to": s["name"], "why": s.get("note", "")}, ensure_ascii=False)))
+                elif s["name"] in (dup["alt_names"] or []) or dup["name"] == s["name"]:
+                    act = f"登録済み（{dup['name']}、id={dup['id']}）"
+                else:
+                    act = f"別名に足す：{dup['name']} ＋ {s['name']}（id={dup['id']}）"
+                    if a.apply:
+                        conn.execute("update spots set alt_names = array_append(alt_names, %s) where id = %s", (s["name"], dup["id"]))
+                if a.apply:
+                    conn.commit()
+                res = act + ("" if a.apply else "（試し）")
             elif a.apply:
                 src = s["url"] if s.get("url") else f"https://www.openstreetmap.org/{ {'n': 'node', 'w': 'way'}[s['osm'][0]] }/{s['osm'][1:]}" if s.get("osm") \
                     else "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-L03-b-2021.html" if s["place"] == "landuse_mesh" \
