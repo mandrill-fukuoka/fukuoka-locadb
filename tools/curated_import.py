@@ -14,6 +14,7 @@
   landuse_mesh     国土数値情報 土地利用細分メッシュ（2021年度・100m）で、code の土地利用が3×3マスに最も多く集まる場所。
                    near_address から radius_m 以内で、座標から引いた住所に town を含むもの。away_spot から away_m 以上離す
   address          国土地理院の住所検索で address の代表点
+  point            利用者が指定した lat・lon（地図のURLなど。出典に url を残す）
 外部：国土地理院の住所検索・逆ジオコーダー（1秒以上の間隔）、国土数値情報（出典：国土交通省 国土数値情報。加工して使用）。
 決まり：位置は推測しない。同じ名前の地点が200m以内にあれば登録しない（何度実行しても同じ）。出典として OSM の要素のURLを残す。
 """
@@ -171,6 +172,8 @@ def resolve(spec, h, conn):
     place = spec["place"]
     if place == "address":
         return geocode(spec["address"])
+    if place == "point":
+        return Point(spec["lon"], spec["lat"])
     if place == "road_crossing":
         a = [l for n in spec["roads_a"] for l in h.named.get(n, [])]
         b = [l for n in spec["roads_b"] for l in h.named.get(n, [])]
@@ -302,11 +305,12 @@ def main():
             elif same:
                 res = f"登録済み（id={same['id']}）"
             elif a.apply:
-                src = f"https://www.openstreetmap.org/{ {'n': 'node', 'w': 'way'}[s['osm'][0]] }/{s['osm'][1:]}" if s.get("osm") \
+                src = s["url"] if s.get("url") else f"https://www.openstreetmap.org/{ {'n': 'node', 'w': 'way'}[s['osm'][0]] }/{s['osm'][1:]}" if s.get("osm") \
                     else "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-L03-b-2021.html" if s["place"] == "landuse_mesh" \
                     else f"https://www.openstreetmap.org/#map=18/{lat}/{lon}"
                 how = {"landuse_mesh": "国土数値情報 土地利用細分メッシュ（2021年度）を加工して位置を決めた",
                        "address": "国土地理院の住所検索の代表点",
+                       "point": "利用者が地図で指定した位置",
                        "footbridges_over": "OpenStreetMap の道と歩道橋の形から位置を決めた",
                        "road_crossing": "OpenStreetMap の道の交わる点"}.get(s["place"], "OpenStreetMap の要素から位置を決めた")
                 r = conn.execute("select create_manual_spot(%s,%s,%s,%s,'{}',null,'unverified',%s,%s,'official',null,%s) r",
