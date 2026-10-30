@@ -368,6 +368,7 @@ YATAI_GRID, YATAI_R, YATAI_MIN, YATAI_SEP = 100, 120, 2, 250
 YATAI_NAME = re.compile(r"屋台(?!料理)")
 SEASIDE_PARKING_M = 100      # 海岸・砂浜からの距離
 SEASIDE_PARKING_GRID = 400   # この四方ごとに一番大きい駐車場だけ残す
+FARMLAND_MIN_R, FARMLAND_GRID = 56.0, 800   # 田園：1ha（半径相当56m）以上、800m四方に一番大きい1か所（2026-10-30）
 
 
 def cluster_samples(pts, cat: str, grid: float, radius: float, min_n: int, sep: float, area_of) -> list:
@@ -496,11 +497,19 @@ def read(pbf: Path, watch: set[str] | None = None, detect_slopes: bool = True) -
                 cur = best_parking.get(cell)
                 if cur is None or (f.extent_m or 0, f.key) > (cur.extent_m or 0, cur.key):
                     best_parking[cell] = f
-    keep_parking = {f.key for f in best_parking.values()}
+    best_farm = {}
+    for f in points:
+        if "farmland" in f.cats and (f.extent_m or 0) >= FARMLAND_MIN_R:
+            x, y = to_m(f.lon, f.lat)
+            cell = (math.floor(x / FARMLAND_GRID), math.floor(y / FARMLAND_GRID))
+            cur = best_farm.get(cell)
+            if cur is None or (f.extent_m or 0, f.key) > (cur.extent_m or 0, cur.key):
+                best_farm[cell] = f
+    keep_parking = {f.key for f in best_parking.values()} | {f.key for f in best_farm.values()}
     kept_points = []
     for f in points:
-        if "seaside_parking" in f.cats and f.key not in keep_parking:
-            f.cats = [c for c in f.cats if c != "seaside_parking"]
+        if ("seaside_parking" in f.cats or "farmland" in f.cats) and f.key not in keep_parking:
+            f.cats = [c for c in f.cats if c not in ("seaside_parking", "farmland")]
             if not f.cats:
                 continue
         kept_points.append(f)
