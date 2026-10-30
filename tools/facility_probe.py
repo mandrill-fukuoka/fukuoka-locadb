@@ -106,7 +106,12 @@ def main():
     osm_source.download(full); osm_source.clip(full, clipped); full.unlink()
     h = H(); h.apply_file(str(clipped), locations=True, idx="flex_mem"); clipped.unlink()
 
-    res, resolved = [], []
+    res, resolved, cands_out = [], [], []
+    def keep_cands(f, rows, why):
+        for r in rows[:8]:
+            p = mid(r[3])
+            cands_out.append({"kind": KIND_LABEL[f["kind"]], "ward": f["ward"], "name": f["name"], "length_m": f.get("length_m"),
+                              "why": why, "osm": r[0], "osm_len_m": round(r[4], 1), "lat": round(p.y, 6), "lon": round(p.x, 6)})
     with connect() as conn:
         for f in data["facilities"]:
             want = norm(f["name"])
@@ -123,8 +128,12 @@ def main():
                         pick = cand[0]; how = "長さの一致"
                     elif cand:
                         how = "未決"; note = f"長さの合う候補が{len(cand)}件（" + "、".join(f"{r[0]} {int(r[4])}m" for r in cand[:6]) + "）"
+                        keep_cands(f, sorted(cand, key=lambda r: abs(r[4] - f["length_m"])), "長さが合う")
                     else:
                         how = "未決"; note = "町名の近くに、種類と長さの合う構造物がない"
+                        near = sorted([r for r in h.rows if r[2] == f["kind"] and dist_m(mid(r[3]), c) <= 1200],
+                                      key=lambda r: dist_m(mid(r[3]), c))
+                        keep_cands(f, near, "同じ種類で近い（長さは合わない）")
                 else:
                     how = "未決"; note = "町名を引けない"
             else:
@@ -150,6 +159,7 @@ def main():
                                      "note": f"{KIND_LABEL[f['kind']]}（福岡市の道路施設一覧。延長 {f.get('length_m')}m、{f.get('route')}）。"
                                              f"位置は {how}（OSM {pick[0]}、長さ {round(pick[4])}m）"})
             res.append(row)
+    (out / "candidates.json").write_text(json.dumps(cands_out, ensure_ascii=False, indent=1), encoding="utf-8")
     cols = ["kind", "ward", "name", "length_m", "how", "osm", "osm_len_m", "lat", "lon", "near", "exists", "in_city", "note"]
     with open(out / "facilities.csv", "w", newline="", encoding="utf-8-sig") as fp:
         w = csv.DictWriter(fp, fieldnames=cols, extrasaction="ignore"); w.writeheader(); w.writerows(res)
