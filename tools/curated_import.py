@@ -280,8 +280,22 @@ def main():
 
     lines = ["| No | 名前 | 種別 | 位置 | 区 | 近い地点（m） | 結果 |", "|---|---|---|---|---|---|---|"]
     with connect() as conn:
+        # 名前の付け直しの取り消し（place=rename：id の地点の名前が from なら name に戻し、別名から name を外す）
+        for s0 in [x for x in data["spots"] if x.get("place") == "rename"]:
+            row = conn.execute("select name from spots where id = %s", (s0["id"],)).fetchone()
+            if row and row["name"] == s0["from"]:
+                if a.apply:
+                    conn.execute("update spots set name = %s, alt_names = array_remove(alt_names, %s), updated_at = now() where id = %s",
+                                 (s0["name"], s0["name"], s0["id"]))
+                    conn.execute("insert into spot_history (spot_id, actor, event, detail) values (%s, 'list-2026-10-30', 'renamed', %s)",
+                                 (s0["id"], json.dumps({"from": s0["from"], "to": s0["name"], "why": s0.get("note", "")}, ensure_ascii=False)))
+                    conn.commit()
+                lines.append(f"| {s0['no']} | {s0['name']} | | | | | 名前を戻す：{s0['from']} → {s0['name']}（id={s0['id']}）{'' if a.apply else '（試し）'} |")
+            else:
+                lines.append(f"| {s0['no']} | {s0['name']} | | | | | 戻さない（今の名前：{row['name'] if row else 'なし'}） |")
+        list_names = {x.get("name") for x in data["spots"]}
         items = []
-        for s0 in data["spots"]:
+        for s0 in [x for x in data["spots"] if x.get("place") != "rename"]:
             for nm, p, note in resolve_many(s0, h, conn):
                 items.append(({**s0, "name": nm, "note": note}, p))
             if s0.get("_hint"):
@@ -308,7 +322,8 @@ def main():
                     """select id, name, origin, alt_names from spots where data_status <> 'archived' and category = %s
                           and ST_DWithin(geom, ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography, %s)
                         order by geom <-> ST_SetSRID(ST_MakePoint(%s,%s),4326)::geography limit 1""",
-                    (s["category"], lon, lat, s["merge_near_m"], lon, lat)).fetchone()):
+                    (s["category"], lon, lat, s["merge_near_m"], lon, lat)).fetchone()) \
+                    and dup["name"] not in list_names:          # リストの別の施設（近くに並ぶ歩道橋など）にはまとめない
                 # 近くに同じ種別の地点がある：手入力なら正式な名前に直し、OSMの地点なら別名に足す（新しく作らない）
                 if dup["origin"] == "manual":
                     act = f"名前を直す：{dup['name']} → {s['name']}（id={dup['id']}）"
