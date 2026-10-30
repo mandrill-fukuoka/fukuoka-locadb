@@ -1,0 +1,681 @@
+{
+ "note": "福岡市の道路施設一覧の施設のうち、全国道路施設点検データベース～損傷マップ～（https://road-structures-map.mlit.go.jp 国土交通省道路局国道・技術課）に同じ名前があるもの。2026-10-30 利用者の判断（営利目的に当たらない）で利用。名前と位置だけを使い、点検結果は使わない。",
+ "spots": [
+  {
+   "no": [
+    1
+   ],
+   "name": "長谷トンネル",
+   "category": "underpass",
+   "place": "point",
+   "lat": 33.655,
+   "lon": 130.47333,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 119.2m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「長谷トンネル」"
+  },
+  {
+   "no": [
+    2
+   ],
+   "name": "筑紫丘トンネル",
+   "category": "underpass",
+   "place": "point",
+   "lat": 33.5606,
+   "lon": 130.42044,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 330.0m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「筑紫丘トンネル１」（東行き・西行きの2本）"
+  },
+  {
+   "no": [
+    3
+   ],
+   "name": "観峰トンネル",
+   "category": "underpass",
+   "place": "point",
+   "lat": 33.56556,
+   "lon": 130.25889,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（その他市道、延長 106.0m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「観峰トンネル」"
+  },
+  {
+   "no": [
+    4
+   ],
+   "name": "無名歩道橋（香椎浜１丁目）",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.65306,
+   "lon": 130.42972,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 52.4m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「無名歩道橋（香椎浜1丁目）」"
+  },
+  {
+   "no": [
+    5
+   ],
+   "name": "無名歩道橋（香椎浜４丁目）",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.65715,
+   "lon": 130.43217,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 58.15m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「無名歩道橋（香椎浜4丁目）」"
+  },
+  {
+   "no": [
+    6
+   ],
+   "name": "名島２号歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.64472,
+   "lon": 130.42472,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 31.0m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「名島2号歩道橋」"
+  },
+  {
+   "no": [
+    7
+   ],
+   "name": "東和白歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.69917,
+   "lon": 130.44083,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（-、延長 26.5m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「東和白歩道橋」"
+  },
+  {
+   "no": [
+    8
+   ],
+   "name": "多の津１号歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.62472,
+   "lon": 130.45139,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 44.15m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「多の津1号歩道橋」"
+  },
+  {
+   "no": [
+    9
+   ],
+   "name": "香椎跨線人道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.65861,
+   "lon": 130.44417,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（-、延長 58.2m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「香椎跨線人道橋」"
+  },
+  {
+   "no": [
+    10
+   ],
+   "name": "唐の原歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.67333,
+   "lon": 130.44111,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一般国道、延長 41.73m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「唐の原歩道橋」"
+  },
+  {
+   "no": [
+    11
+   ],
+   "name": "香住ヶ丘歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.66778,
+   "lon": 130.44194,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一般国道、延長 38.8m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「香住ヶ丘歩道橋」"
+  },
+  {
+   "no": [
+    12
+   ],
+   "name": "多の津２号歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.62611,
+   "lon": 130.45167,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（二級市道、延長 15.0m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「多の津2号歩道橋」"
+  },
+  {
+   "no": [
+    13
+   ],
+   "name": "城浜歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.65,
+   "lon": 130.42778,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 23.9m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「城浜歩道橋」"
+  },
+  {
+   "no": [
+    14
+   ],
+   "name": "香椎浜１丁目歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.65111,
+   "lon": 130.43139,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 14.0m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「香椎浜1丁目歩道橋」"
+  },
+  {
+   "no": [
+    15
+   ],
+   "name": "汐井跨線人道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.61944,
+   "lon": 130.41611,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（その他市道、延長 34.85m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「汐井跨線人道橋」"
+  },
+  {
+   "no": [
+    16
+   ],
+   "name": "香椎5丁目跨線人道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.65111,
+   "lon": 130.45139,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（-、延長 9.5m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「香椎5丁目跨線人道橋」"
+  },
+  {
+   "no": [
+    17
+   ],
+   "name": "鎧塚歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.6625,
+   "lon": 130.4425,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一般県道、延長 14.7m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「鎧塚歩道橋」"
+  },
+  {
+   "no": [
+    18
+   ],
+   "name": "香椎鎧坂歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.6625,
+   "lon": 130.44278,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一般市道、延長 17.7m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「香椎鎧坂歩道橋」"
+  },
+  {
+   "no": [
+    19
+   ],
+   "name": "弓田町歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.56351,
+   "lon": 130.4448,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 21.75m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「弓田町歩道橋」"
+  },
+  {
+   "no": [
+    20
+   ],
+   "name": "麦野歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.55222,
+   "lon": 130.46056,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 18.45m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「麦野歩道橋」"
+  },
+  {
+   "no": [
+    21
+   ],
+   "name": "美野島歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.5775,
+   "lon": 130.41694,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一般県道、延長 20.3m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「美野島歩道橋」"
+  },
+  {
+   "no": [
+    22
+   ],
+   "name": "東住吉歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.58361,
+   "lon": 130.42194,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一般国道、延長 23.35m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「東住吉歩道橋」"
+  },
+  {
+   "no": [
+    23
+   ],
+   "name": "那珂南歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.54056,
+   "lon": 130.46556,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 22.2m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「那珂南歩道橋」"
+  },
+  {
+   "no": [
+    24
+   ],
+   "name": "堅粕歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.59278,
+   "lon": 130.42333,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一般国道、延長 19.8m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「堅粕歩道橋」"
+  },
+  {
+   "no": [
+    25
+   ],
+   "name": "那珂小学校前歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.56944,
+   "lon": 130.43861,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 17.0m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「那珂小学校前歩道橋」"
+  },
+  {
+   "no": [
+    26
+   ],
+   "name": "昭和通り１号歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.59972,
+   "lon": 130.40861,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 34.9m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「昭和通り1号歩道橋」"
+  },
+  {
+   "no": [
+    27
+   ],
+   "name": "筑紫通り元町歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.54167,
+   "lon": 130.465,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 17.5m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「筑紫通り元町歩道橋」"
+  },
+  {
+   "no": [
+    28
+   ],
+   "name": "稲城歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.60111,
+   "lon": 130.44917,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一般国道、延長 44.4m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「稲城歩道橋」"
+  },
+  {
+   "no": [
+    29
+   ],
+   "name": "竹下駅前歩道橋(駅東口)",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.56861,
+   "lon": 130.43194,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 13.05m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「竹下駅前歩道橋(駅東口)」"
+  },
+  {
+   "no": [
+    30
+   ],
+   "name": "大井歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.60167,
+   "lon": 130.44611,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一般県道、延長 121.16m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「大井歩道橋」"
+  },
+  {
+   "no": [
+    31
+   ],
+   "name": "祇園町西交差点歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.59194,
+   "lon": 130.41028,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（指定国道、延長 121.43m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「祇園町西交差点歩道橋」"
+  },
+  {
+   "no": [
+    32
+   ],
+   "name": "竹下駅自由通路(駅西口)",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.56861,
+   "lon": 130.43167,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（-、延長 33.0m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「竹下駅自由通路(駅西口)」"
+  },
+  {
+   "no": [
+    33
+   ],
+   "name": "博多駅歩行者連絡橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.59111,
+   "lon": 130.41917,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 103.1m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「博多駅歩行者連絡橋」"
+  },
+  {
+   "no": [
+    34
+   ],
+   "name": "相生踏切横断歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.54361,
+   "lon": 130.45833,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（-、延長 44.0m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「相生踏切横断歩道橋」"
+  },
+  {
+   "no": [
+    35
+   ],
+   "name": "昭和通り２号歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.58972,
+   "lon": 130.38556,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 28.25m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「昭和通り2号歩道橋」"
+  },
+  {
+   "no": [
+    36
+   ],
+   "name": "警固歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.58389,
+   "lon": 130.39278,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（主要地方道、延長 17.3m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「警固歩道橋」"
+  },
+  {
+   "no": [
+    37
+   ],
+   "name": "舞鶴小学校前歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.59333,
+   "lon": 130.39139,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 19.15m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「舞鶴小学校前歩道橋」"
+  },
+  {
+   "no": [
+    38
+   ],
+   "name": "那の津口歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.59556,
+   "lon": 130.39667,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 73.2m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「那の津口歩道橋」"
+  },
+  {
+   "no": [
+    39
+   ],
+   "name": "よかとぴあ通り１号歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.59278,
+   "lon": 130.36583,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（二級市道、延長 67.27m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「よかとぴあ通り1号歩道橋」"
+  },
+  {
+   "no": [
+    40
+   ],
+   "name": "よかとぴあ通り２号歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.59139,
+   "lon": 130.36389,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（二級市道、延長 31.33m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「よかとぴあ通り2号歩道橋」"
+  },
+  {
+   "no": [
+    41
+   ],
+   "name": "那の津歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.5975,
+   "lon": 130.39778,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 45.1m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「那の津歩道橋」"
+  },
+  {
+   "no": [
+    42
+   ],
+   "name": "井尻歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.54861,
+   "lon": 130.44194,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（主要地方道、延長 44.1m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「井尻歩道橋」"
+  },
+  {
+   "no": [
+    43
+   ],
+   "name": "折立歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.55333,
+   "lon": 130.43611,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（主要地方道、延長 29.65m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「折立歩道橋」"
+  },
+  {
+   "no": [
+    44
+   ],
+   "name": "高宮駅前歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.56694,
+   "lon": 130.41389,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（主要地方道、延長 92.76m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「高宮駅前歩道橋」"
+  },
+  {
+   "no": [
+    45
+   ],
+   "name": "五十川歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.56278,
+   "lon": 130.43972,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（-、延長 21.0m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「五十川歩道橋」"
+  },
+  {
+   "no": [
+    46
+   ],
+   "name": "平尾駅歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.57361,
+   "lon": 130.40667,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 10.0m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「平尾駅歩道橋」"
+  },
+  {
+   "no": [
+    47
+   ],
+   "name": "有田歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.5595,
+   "lon": 130.32888,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一般県道、延長 17.7m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「有田歩道橋」"
+  },
+  {
+   "no": [
+    48
+   ],
+   "name": "姪浜人道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.58333,
+   "lon": 130.33056,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（その他市道、延長 27.95m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「姪浜人道橋」"
+  },
+  {
+   "no": [
+    49
+   ],
+   "name": "石丸横断歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.57389,
+   "lon": 130.31639,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一般県道、延長 45.0m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「石丸横断歩道橋」"
+  },
+  {
+   "no": [
+    50
+   ],
+   "name": "愛宕横断歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.58306,
+   "lon": 130.33861,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一級市道、延長 43.3m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「愛宕横断歩道橋」"
+  },
+  {
+   "no": [
+    51
+   ],
+   "name": "北原1丁目歩道橋",
+   "category": "bridge_overpass",
+   "place": "point",
+   "lat": 33.57722,
+   "lon": 130.25694,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（その他市道、延長 27.4m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「北原1丁目歩道橋」"
+  },
+  {
+   "no": [
+    52
+   ],
+   "name": "曲淵トンネル",
+   "category": "underpass",
+   "place": "point",
+   "lat": 33.49611,
+   "lon": 130.30444,
+   "url": "https://road-structures-map.mlit.go.jp",
+   "merge_near_m": 40,
+   "note": "福岡市の道路施設一覧（一般国道、延長 252.0m）。位置は 全国道路施設点検データベース～損傷マップ～（国土交通省道路局）の「曲渕トンネル」（表記は曲渕。延長252mで一致）"
+  }
+ ]
+}
