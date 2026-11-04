@@ -9,6 +9,14 @@ begin
     execute format('alter table public.%I enable row level security', t);
   end loop;
 
+  -- PostGIS の spatial_ref_sys（座標系の参照表）。拡張の表なので RLS が有効にできないことがある。
+  -- 有効にできなければ、anon / authenticated の権限を外して外から見えなくする。
+  begin
+    execute 'alter table public.spatial_ref_sys enable row level security';
+  exception when others then
+    raise notice 'spatial_ref_sys の RLS は有効にできませんでした（権限を外します）: %', sqlerrm;
+  end;
+
   if exists (select 1 from pg_roles where rolname = 'anon') then
     revoke all on all tables in schema public from anon;
     revoke all on all sequences in schema public from anon;
