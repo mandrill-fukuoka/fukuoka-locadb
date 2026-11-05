@@ -1,4 +1,4 @@
--- 追加候補（DB変更203。tools/migrate.py が毎回作り直す）
+-- 追加候補（DB変更203・220。tools/migrate.py が毎回作り直す）
 --  確認画面の「追加候補」タブは additions_counts と additions_list で読み、addition_decide で採否を決める（人だけ）
 do $$
 declare f record;
@@ -14,20 +14,25 @@ select jsonb_build_object(
   'adopted',   (select count(*) from spot_additions where status = 'adopted'),
   'rejected',  (select count(*) from spot_additions where status = 'rejected'),
   'wikipedia', (select count(*) from spot_additions where status = 'candidate' and source = 'wikipedia'),
-  'commons',   (select count(*) from spot_additions where status = 'candidate' and source = 'commons'));
+  'commons',   (select count(*) from spot_additions where status = 'candidate' and source = 'commons'),
+  'bodik',     (select count(*) from spot_additions where status = 'candidate' and source = 'bodik'),
+  'bodik_datasets', (select coalesce(jsonb_object_agg(d, n), '{}'::jsonb)
+                       from (select dataset as d, count(*) as n from spot_additions
+                              where status = 'candidate' and source = 'bodik' group by dataset) t));
 $$;
 
-create function additions_list(p_status text default 'candidate', p_source text default null, p_limit int default 30, p_offset int default 0)
+create function additions_list(p_status text default 'candidate', p_source text default null, p_limit int default 30, p_offset int default 0,
+                               p_dataset text default null)
 returns jsonb language sql stable as $$
 select coalesce(jsonb_agg(x), '[]'::jsonb) from (
   select a.id, a.source, a.name, a.lat, a.lon, a.area_code, ar.name as area_name, a.suggest_cat, a.source_url,
-         a.files, a.samples, a.near_name, round(a.near_m::numeric) as near_m, a.status, a.spot_id,
+         a.files, a.samples, a.dataset, a.detail, a.near_name, round(a.near_m::numeric) as near_m, a.status, a.spot_id,
          s.code as spot_code, a.decided_by, a.decided_at
     from spot_additions a
     left join areas ar on ar.code = a.area_code
     left join spots s on s.id = a.spot_id
-   where a.status = p_status and (p_source is null or a.source = p_source)
-   order by a.source, coalesce(a.files, 0) desc, a.id
+   where a.status = p_status and (p_source is null or a.source = p_source) and (p_dataset is null or a.dataset = p_dataset)
+   order by a.source, a.dataset nulls first, coalesce(a.files, 0) desc, a.sort_rank desc, a.id
    offset p_offset limit least(p_limit, 100)
 ) x;
 $$;
@@ -50,6 +55,8 @@ begin
     if coalesce(p_category, '') = '' then return jsonb_build_object('ok', false, 'reason', '種別を選んでください'); end if;
     r := create_manual_spot(v_name, a.lat, a.lon, p_category, '{}', null, 'unverified', a.source_url,
                             case a.source when 'wikipedia' then 'Wikipedia（日本語）の座標つき記事から追加候補として採用'
+                                 when 'bodik' then 'BODIK ODCS 福岡市「' || coalesce(a.detail->>'dataset_label', a.dataset, '') || '」（CC BY 4.0）から追加候補として採用'
+                                                   || case when a.detail->>'geocode' is not null then '（位置は住所からの目安）' else '' end
                                  else 'Wikimedia Commons の写真が集まる場所から追加候補として採用' end,
                             'official', null, p_user);
     update spot_additions set status = 'adopted', spot_id = (r->>'id')::bigint, decided_by = p_user, decided_at = now() where id = p_id;
