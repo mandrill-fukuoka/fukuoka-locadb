@@ -99,8 +99,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $rows = []; $dups = []; $tags = []; $drafts = []; $checks = []; $ccount = ['items' => [], 'last_run' => null];
 $facts = []; $fcount = ['items' => [], 'spots' => 0];
 $photos = []; $pcount = ['candidate' => 0, 'adopted' => 0, 'rejected' => 0, 'spots' => 0];
-$additions = []; $acount = ['candidate' => 0, 'adopted' => 0, 'rejected' => 0, 'wikipedia' => 0, 'commons' => 0]; $addCats = [];
-$asrc = in_array($_GET['asrc'] ?? '', ['wikipedia', 'commons'], true) ? $_GET['asrc'] : '';
+$additions = []; $acount = ['candidate' => 0, 'adopted' => 0, 'rejected' => 0, 'wikipedia' => 0, 'commons' => 0, 'bodik' => 0, 'bodik_datasets' => []]; $addCats = [];
+$asrc = in_array($_GET['asrc'] ?? '', ['wikipedia', 'commons', 'bodik'], true) ? $_GET['asrc'] : '';
+// BODIK（福岡市オープンデータ）の一覧の名前。キーは spot_additions.dataset（locadb/bodik_import.py の SPECS と同じ）
+$bodikLabels = ['public_facility' => '公共施設一覧', 'facility' => '市の施設', 'hoiku' => '保育所等', 'school' => '市立学校', 'kouminkan' => '公民館',
+  'shikuyakusho' => '市役所・区役所', 'shimincenter' => '市民センター', 'toshokan' => '図書館', 'subway' => '地下鉄', 'wifi' => '公衆無線LAN',
+  'waterspot' => '給水スポット', 'yatai' => '屋台', 'park' => '都市公園', 'bath' => '公衆浴場', 'inn' => '旅館業', 'building' => '特定建築物', 'eatery' => '飲食店営業許可'];
+$adata = ($asrc === 'bodik' && isset($bodikLabels[$_GET['adata'] ?? ''])) ? $_GET['adata'] : '';
 $psug = in_array($_GET['psug'] ?? '', ['high', 'unknown', 'low'], true) ? $_GET['psug'] : '';
 $psugCounts = [];
 $pstatus = in_array($_GET['pstatus'] ?? '', ['candidate', 'adopted', 'rejected'], true) ? $_GET['pstatus'] : 'candidate';
@@ -124,7 +129,7 @@ try {
         $psugCounts = sb_rpc('photos_suggest_counts') ?? [];
     } elseif ($queue === 'additions') {
         $acount = sb_rpc('additions_counts') ?? $acount;
-        $additions = sb_rpc('additions_list', ['p_status' => $pstatus, 'p_source' => $asrc ?: null, 'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
+        $additions = sb_rpc('additions_list', ['p_status' => $pstatus, 'p_source' => $asrc ?: null, 'p_dataset' => $adata ?: null, 'p_offset' => $page * $per, 'p_limit' => $per]) ?? [];
         $addCats = sb_get('spot_categories?select=code,name&order=priority,code') ?? [];
     } elseif ($queue === 'dups') {
         $dups = sb_rpc('duplicate_candidates', ['p_limit' => 100, 'p_meters' => 150]) ?? [];
@@ -138,7 +143,7 @@ try {
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
 $qs = fn(array $o) => '?' . http_build_query(array_merge(['queue' => $queue, 'area' => $area, 'status' => $status, 'q' => $q,
-                                                          'target' => $target, 'check' => $check, 'flag' => $flag, 'item' => $item, 'pstatus' => $pstatus, 'asrc' => $asrc, 'psug' => $psug], $o));
+                                                          'target' => $target, 'check' => $check, 'flag' => $flag, 'item' => $item, 'pstatus' => $pstatus, 'asrc' => $asrc, 'adata' => $adata, 'psug' => $psug], $o));
 $tabs = ['review' => '要確認', 'unreviewed' => '未確認', 'manual' => '手入力・人が直した', 'drafts' => '説明文の下書き',
          'checks' => '自動チェック', 'facts' => '事実カード', 'photos' => '写真候補', 'additions' => '追加候補', 'dups' => '重複の疑い', 'archived' => '対象外', 'all' => 'すべて'];
 $TARGET_LABEL = ['category' => '種別', 'address' => '住所', 'summary' => '説明文'];
@@ -364,34 +369,49 @@ page_header('地点の確認', 'spots.php');
   </nav>
 <?php elseif ($queue === 'additions'): ?>
   <section class="card">
-    <p class="small muted">DBにまだない場所を、日本語Wikipediaの座標つき記事と、Wikimedia Commons の写真が集まる場所から自動で集めた候補です（AIは使っていません）。
+    <p class="small muted">DBにまだない場所を、日本語Wikipediaの座標つき記事、Wikimedia Commons の写真が集まる場所、福岡市のオープンデータ（BODIK、CC BY 4.0）の施設・公園などの一覧から自動で集めた候補です（AIは使っていません）。
       「地点として追加」を押すと、名前・種別を確かめた値で手入力の地点ができます（確度は「未確認」。撮影の可否などは書きません）。位置の近くに既存の地点がないか、「最寄りの地点」を見てから決めてください。
-      Wikipedia 由来は記事名・座標・記事へのリンクだけを使います。Commons 由来は名前が付いていないので、地図と写真の例を見て人が名前を付けます。</p>
+      Wikipedia 由来は記事名・座標・記事へのリンクだけを使います。Commons 由来は名前が付いていないので、地図と写真の例を見て人が名前を付けます。
+      BODIK 由来は一覧に載っている名前と、一覧の種別などだけを使います。旅館業・公衆浴場・特定建築物・飲食店営業許可の一覧は住所だけなので、位置は住所からの目安です（地図で確かめてから決めてください）。</p>
     <nav class="tabs">
       <?php foreach (['candidate' => '候補', 'adopted' => '採用済み', 'rejected' => '不採用'] as $k => $v): ?>
         <a href="<?= h($qs(['pstatus' => $k, 'p' => 0])) ?>" class="<?= $pstatus === $k ? 'on' : '' ?>"><?= $v ?>（<?= number_format((int)($acount[$k] ?? 0)) ?>）</a>
       <?php endforeach; ?>
     </nav>
     <nav class="tabs">
-      <?php foreach ([''  => 'すべて', 'wikipedia' => 'Wikipedia 由来', 'commons' => 'Commons 由来（写真の多い場所）'] as $k => $v): ?>
+      <?php foreach ([''  => 'すべて', 'wikipedia' => 'Wikipedia 由来', 'commons' => 'Commons 由来（写真の多い場所）', 'bodik' => 'BODIK 由来（福岡市オープンデータ）'] as $k => $v): ?>
         <a href="<?= h($qs(['asrc' => $k, 'p' => 0])) ?>" class="<?= $asrc === $k ? 'on' : '' ?>"><?= $v ?><?= $k !== '' && $pstatus === 'candidate' ? '（' . number_format((int)($acount[$k] ?? 0)) . '）' : '' ?></a>
       <?php endforeach; ?>
     </nav>
+    <?php if ($asrc === 'bodik' && $pstatus === 'candidate'): ?>
+    <nav class="tabs">
+      <a href="<?= h($qs(['adata' => '', 'p' => 0])) ?>" class="<?= $adata === '' ? 'on' : '' ?>">一覧すべて</a>
+      <?php foreach ($bodikLabels as $k => $v): $n = (int)(($acount['bodik_datasets'] ?? [])[$k] ?? 0); if (!$n) continue; ?>
+        <a href="<?= h($qs(['adata' => $k, 'p' => 0])) ?>" class="<?= $adata === $k ? 'on' : '' ?>"><?= h($v) ?>（<?= number_format($n) ?>）</a>
+      <?php endforeach; ?>
+    </nav>
+    <?php endif; ?>
   </section>
-  <?php foreach ($additions as $c): ?>
+  <?php foreach ($additions as $c): $isB = $c['source'] === 'bodik'; $det = is_array($c['detail'] ?? null) ? $c['detail'] : []; ?>
     <article class="card check">
-      <h3><?= h($c['name']) ?> <span class="muted small"><?= $c['source'] === 'wikipedia' ? 'Wikipedia 由来' : 'Commons 由来' ?>・<?= h($c['area_name'] ?? '') ?></span></h3>
+      <h3><?= h($c['name']) ?> <span class="muted small"><?= $c['source'] === 'wikipedia' ? 'Wikipedia 由来' : ($isB ? 'BODIK 由来（' . h($det['dataset_label'] ?? '') . '）' : 'Commons 由来') ?>・<?= h($c['area_name'] ?? '') ?></span></h3>
       <p class="small">
         <?php if ($c['source'] === 'commons'): ?><span class="chip dim">写真 <?= (int)$c['files'] ?>枚</span><?php endif; ?>
         <span class="chip dim">最寄りの地点：<?= h(nm($c['near_name'] ?? '')) ?>（<?= (int)$c['near_m'] ?>m）</span>
-        <a target="_blank" rel="noopener" href="<?= h($c['source_url']) ?>"><?= $c['source'] === 'wikipedia' ? 'Wikipedia の記事' : 'Commons の地図' ?></a>・
+        <a target="_blank" rel="noopener" href="<?= h($c['source_url']) ?>"><?= $c['source'] === 'wikipedia' ? 'Wikipedia の記事' : ($isB ? 'BODIK の一覧' : 'Commons の地図') ?></a>・
         <a target="_blank" rel="noopener" href="<?= h('https://www.google.com/maps/search/?' . http_build_query(['api' => 1, 'query' => $c['lat'] . ',' . $c['lon']])) ?>">Googleマップで位置を見る</a></p>
+      <?php if ($isB): ?><p class="small muted">
+        <?php foreach (['公園種別', '区名', '供用面積m2', '種別', '分類', '営業の種類', '旅館業の種別', '客室数', '定員数', 'エリア', 'カテゴリー', '設置位置', 'resource'] as $dk):
+          if (isset($det[$dk]) && $det[$dk] !== ''): ?><span class="chip dim"><?= h($dk === 'resource' ? '一覧' : $dk) ?>：<?= h((string)$det[$dk]) ?></span> <?php endif; endforeach; ?>
+        <?php if (!empty($det['address'])): ?>住所：<?= h($det['address']) ?><?php endif; ?>
+        <?php if (!empty($det['geocode'])): ?> <strong>（位置は住所からの目安）</strong><?php endif; ?>
+        <?php if (!empty($det['url'])): ?> <a target="_blank" rel="noopener" href="<?= h($det['url']) ?>">一覧に載っているページ</a><?php endif; ?></p><?php endif; ?>
       <?php if (!empty($c['samples'])): ?><p class="small muted">写真の例：
         <?php foreach ($c['samples'] as $i => $sm): ?><?= $i ? '・' : '' ?><a target="_blank" rel="noopener" href="<?= h($sm['url']) ?>"><?= h($sm['title']) ?></a><?php endforeach; ?></p><?php endif; ?>
       <?php if ($c['status'] === 'candidate'): ?>
       <form method="post" action="<?= h($qs(['p' => $page])) ?>" class="row"><?= csrf_field() ?>
         <input type="hidden" name="action" value="addition_decide"><input type="hidden" name="add_id" value="<?= (int)$c['id'] ?>">
-        <label>地点の名前<input name="new_name" value="<?= $c['source'] === 'wikipedia' ? h($c['name']) : '' ?>" maxlength="100" placeholder="<?= $c['source'] === 'commons' ? '名前を付けてください' : '' ?>"></label>
+        <label>地点の名前<input name="new_name" value="<?= $c['source'] !== 'commons' ? h($c['name']) : '' ?>" maxlength="100" placeholder="<?= $c['source'] === 'commons' ? '名前を付けてください' : '' ?>"></label>
         <label>種別<select name="new_category"><option value="">選んでください</option>
           <?php foreach ($addCats as $ct): ?><option value="<?= h($ct['code']) ?>" <?= ($c['suggest_cat'] ?? '') === $ct['code'] ? 'selected' : '' ?>><?= h($ct['name']) ?></option><?php endforeach; ?></select></label>
         <button name="decision" value="adopt" class="small-btn">地点として追加</button>

@@ -18,6 +18,7 @@
 - 地点の位置・名前など：© OpenStreetMap contributors（[ODbL](https://www.openstreetmap.org/copyright)）
 - 住所：国土地理院 逆ジオコーダー
 - 標高・地形：国土地理院 標高タイル
+- 追加候補から採用した地点のうち、福岡市のオープンデータ由来のもの：福岡市がBODIK ODCS（https://data.bodik.jp/）で公開している施設・公園などの一覧（[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.ja)）。採用した地点の出典に、一覧のURLと「CC BY 4.0」を残す。氏名の列と、屋台の写真は取り込まない。住所だけの一覧から出した位置は、国土地理院の住所検索による目安
 
 ## 注意
 

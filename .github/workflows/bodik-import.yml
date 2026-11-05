@@ -1,0 +1,46 @@
+# 追加候補にBODIK（福岡市オープンデータ、CC BY 4.0）の施設・公園などを加える（AIなし・費用ゼロ）
+#  - dry_run：読み取りのみ。候補の一覧（bodik.csv）と件数を成果物に出すだけ（本番DBは読むだけ）
+#  - apply：候補を spot_additions に保存（公開はしない。確認画面の「追加候補」で人が採用すると地点になる）
+#  住所だけの一覧（lodging=inn, bath, building, eatery）は住所検索で座標を出すため時間がかかる（1件あたり約1.1秒）。
+#  only で一覧を絞る／limit で1回の件数を絞れる（保存済みは数えないので、applyを繰り返せば続きから進む）
+name: bodik-import
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run（読み取りのみ）/ apply（候補を保存）"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+      only:
+        description: "取り込む一覧（カンマ区切り。空なら全部）例：park,toshokan,kouminkan / 住所だけ：inn,bath,building,eatery"
+        type: string
+        default: ""
+      limit:
+        description: "住所だけの一覧で、1回に座標を引く件数の上限（0＝制限なし）"
+        type: string
+        default: "0"
+concurrency:
+  group: ${{ inputs.mode == 'apply' && 'database' || format('bodik-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  bodik:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 収集
+        shell: bash
+        run: |
+          python -m locadb.bodik_import --${MODE//_/-} --only "$ONLY" --limit "$LIMIT" --out bodik-out | tee bodik.log
+          { echo '```json'; tail -1 bodik.log; echo '```'; echo "モード：$MODE　一覧：${ONLY:-全部}　上限：$LIMIT"; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODE: ${{ inputs.mode }}
+          ONLY: ${{ inputs.only }}
+          LIMIT: ${{ inputs.limit }}
+      - uses: actions/upload-artifact@v4
+        with: { name: bodik-import, path: bodik-out/, retention-days: 30 }
