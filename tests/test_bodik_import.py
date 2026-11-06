@@ -137,6 +137,33 @@ def test_collect_reads_csv_in_either_encoding_and_only_csv_resources(tmp_path):
     assert any(u == bi.CKAN and p == {"id": "401307_kouminkan"} for u, p in s.calls)
 
 
+def make_zip(files: dict) -> bytes:
+    import io
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        for name, data in files.items():
+            z.writestr(name, data)
+    return buf.getvalue()
+
+
+def test_extract_shape_files_reads_nested_zip_and_ignores_paths(tmp_path):
+    """BODIKの公園データは zip の中に zip が入っていて、フォルダ名が文字化けしている"""
+    inner = make_zip({"òƒë/20231013_fukuoka_park.shp": b"shp", "òƒë/20231013_fukuoka_park.dbf": b"dbf", "òƒë/x.qmd": b"qmd",
+                      "../../evil.shp": b"evil"})
+    outer = make_zip({"文字化け.zip": inner})
+    n = bi.extract_shape_files(outer, tmp_path / "park")
+    assert n == 3 and sorted(p.name for p in (tmp_path / "park").iterdir()) == ["20231013_fukuoka_park.dbf", "20231013_fukuoka_park.shp", "evil.shp"]
+    assert not (tmp_path / "evil.shp").exists()                                              # 外には書かない
+
+
+def test_collect_reports_when_no_shape_is_found(tmp_path):
+    pkg = {"result": {"resources": [{"format": "ZIP", "url": "https://x/park.zip", "name": "公園"}]}}
+    s = FakeSession({"package_show": pkg, "park.zip": make_zip({"readme.txt": b"x"})})
+    st = {}
+    assert bi.collect(None, bi.SPEC_BY_KEY["park"], st, tmp_path, s, no_sleep) == [] and st == {"no_shape": 1}
+
+
 # ------------------------------------------------------------------ DB（PostGIS）
 def world(db, tmp_path):
     w = World()

@@ -360,21 +360,47 @@ def save(conn, rows: list[dict]) -> int:
     return conn.execute("select count(*) n from spot_additions").fetchone()["n"] - before
 
 
+SHAPE_EXT = (".shp", ".shx", ".dbf", ".prj", ".cpg")
+
+
+def extract_shape_files(content: bytes, dest: Path, depth: int = 0) -> int:
+    """Shape一式を取り出す。BODIKの公園データは zip の中にもう一つ zip が入っているので、入れ子も読む。
+    ファイル名は末尾だけ使う（フォルダ名の文字化け・../ を避ける）。取り出した数を返す"""
+    import zipfile
+    n = 0
+    with zipfile.ZipFile(io.BytesIO(content)) as z:
+        for info in z.infolist():
+            if info.is_dir():
+                continue
+            name = info.filename.replace("\\", "/").rsplit("/", 1)[-1]
+            low = name.lower()
+            if low.endswith(".zip") and depth < 3:
+                n += extract_shape_files(z.read(info), dest, depth + 1)
+            elif low.endswith(SHAPE_EXT) and not name.startswith("."):
+                dest.mkdir(parents=True, exist_ok=True)
+                (dest / name).write_bytes(z.read(info))
+                n += 1
+    return n
+
+
 def collect(conn, spec: dict, stats: dict, workdir: Path, session=requests, sleep=time.sleep) -> list[dict]:
     """1つのデータセットを取って、項目の一覧にする"""
     res = [r for r in package_resources(spec["pkg"], session, sleep) if r.get("url")]
     if spec["kind"] == "shape":
-        import zipfile
         z = next((r for r in res if (r.get("format") or "").upper() == "ZIP"), None)
         got = http_get(z["url"], None, session, sleep) if z else None
         if got is None:
             stats["fetch_failed"] = stats.get("fetch_failed", 0) + 1
             return []
         d = workdir / "park"
-        d.mkdir(parents=True, exist_ok=True)
-        zipfile.ZipFile(io.BytesIO(got.content)).extractall(d)
-        shp = next(d.rglob("*.shp"), None)
-        return items_from_shape(conn, str(shp), stats) if shp else []
+        extract_shape_files(got.content, d)
+        shp = next(d.glob("*.shp"), None)
+        if shp is None:                                     # 形式が変わったときに、静かに0件にならないようにする
+            stats["no_shape"] = stats.get("no_shape", 0) + 1
+            return []
+        items = items_from_shape(conn, str(shp), stats)
+        stats["park_items"] = len(items)
+        return items
     formats = spec.get("formats") or ["CSV"]
     res = [r for r in res if (r.get("format") or "").upper() in formats]
     items = []

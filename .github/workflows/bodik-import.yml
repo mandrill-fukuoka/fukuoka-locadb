@@ -1,7 +1,7 @@
 # 追加候補にBODIK（福岡市オープンデータ、CC BY 4.0）の施設・公園などを加える（AIなし・費用ゼロ）
 #  - dry_run：読み取りのみ。候補の一覧（bodik.csv）と件数を成果物に出すだけ（本番DBは読むだけ）
 #  - apply：候補を spot_additions に保存（公開はしない。確認画面の「追加候補」で人が採用すると地点になる）
-#  住所だけの一覧（lodging=inn, bath, building, eatery）は住所検索で座標を出すため時間がかかる（1件あたり約1.1秒）。
+#  住所だけの一覧（inn・bath・building・eatery）は住所検索で座標を出すため時間がかかる（1件あたり約1.1秒）。
 #  only で一覧を絞る／limit で1回の件数を絞れる（保存済みは数えないので、applyを繰り返せば続きから進む）
 name: bodik-import
 on:
