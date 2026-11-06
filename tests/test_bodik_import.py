@@ -237,6 +237,18 @@ def test_park_shape_uses_largest_polygon_point_and_sorts_by_area(db, tmp_path):
     assert abs(got[0]["lat"] - 33.59) < 0.001 and abs(got[0]["lon"] - 130.40) < 0.001      # 最大の区画の内側の点
 
 
+def test_park_shape_skips_records_without_a_shape(tmp_path):
+    import shapefile
+    w = shapefile.Writer(str(tmp_path / "park"), shapeType=shapefile.POLYGON, encoding="cp932")
+    for f in ("公園種別名", "公園名称", "区名"):
+        w.field(f, "C", 40)
+    w.field("供用面積", "N", 12, 0)
+    w.null(); w.record("近隣公園", "形のない公園", "中央区", 100)
+    w.close()
+    st = {}
+    assert bi.items_from_shape(None, str(tmp_path / "park.shp"), st) == [] and st == {"skipped_null_shape": 1}
+
+
 def test_save_list_counts_and_adopt_keep_source_and_license(db, tmp_path):
     world(db, tmp_path)
     spec = bi.SPEC_BY_KEY["park"]

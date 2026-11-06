@@ -275,6 +275,9 @@ def items_from_shape(conn, shp: str, stats: dict) -> list[dict]:
         name, ward, kind = clean(rec.get("公園名称")), clean(rec.get("区名")), clean(rec.get("公園種別名"))
         if not name:
             continue
+        if sr.shape.shapeType == shapefile.NULL:
+            stats["skipped_null_shape"] = stats.get("skipped_null_shape", 0) + 1
+            continue
         geom = shape(sr.shape.__geo_interface__)
         area = float(rec.get("供用面積") or 0)
         p = parks.setdefault((name, ward), {"name": name, "ward": ward, "kind": kind, "area": 0.0, "best": (0.0, None)})
