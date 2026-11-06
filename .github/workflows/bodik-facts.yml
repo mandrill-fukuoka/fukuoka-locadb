@@ -1,0 +1,48 @@
+# BODIK（福岡市オープンデータ、CC BY 4.0）の情報を、既存の地点の事実カードとして足す（AIなし・費用ゼロ・DB変更なし）
+#  足す事実：旅館業の客室数・定員数（規模）、都市公園の供用面積（規模）、給水スポットの団体名（管理者・所有者）、
+#            飲食店営業許可の初年度の許可年（創設・開設年）。名前が一致し近い地点にだけ付ける（locadb/bodik_facts.py の説明を参照）
+#  - dry_run：本番DBは読むだけ（事実の取り込みも試して取り消す）。成果物 bodik-facts.json・bodik-facts.csv・bodik-facts-left.csv を確認する
+#  - apply：spot_facts に承認者 hirata で取り込む。事実カードはログインなしの画面にもすぐ出る（取り消しは fact_revoke）
+#  弾かれた行が1件でもあれば全体を取り消して止まる。何度実行しても同じ結果（同じ事実は skipped）
+name: bodik-facts
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run（読み取りのみ）/ apply（事実カードに取り込む）"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+      only:
+        description: "対象（カンマ区切り。空なら全部）inn,park,waterspot,eatery"
+        type: string
+        default: ""
+      limit:
+        description: "住所だけの一覧（inn・eatery）で、1回に座標を引く件数の上限（0＝制限なし）"
+        type: string
+        default: "0"
+concurrency:
+  group: ${{ inputs.mode == 'apply' && 'database' || format('bodik-facts-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  facts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 収集と取り込み
+        shell: bash
+        run: |
+          python -m locadb.bodik_facts --${MODE//_/-} --only "$ONLY" --limit "$LIMIT" --out bodik-facts-out | tee bodik-facts.log
+          { echo '```json'; tail -1 bodik-facts.log; echo '```'; echo "モード：$MODE　対象：${ONLY:-全部}　上限：$LIMIT"; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODE: ${{ inputs.mode }}
+          ONLY: ${{ inputs.only }}
+          LIMIT: ${{ inputs.limit }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: bodik-facts, path: bodik-facts-out/, retention-days: 30 }
