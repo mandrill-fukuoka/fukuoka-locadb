@@ -33,6 +33,8 @@ from .db import connect, job
 
 NEAR_M = 150
 PARK_EXTRA_MAX_M = 1000
+PARK_SCATTER_MAX_M = 300                 # 同じ名前の公園の区画がこれ以上離れていたら、面積を合算した値は使わない
+FOOD_CATEGORIES = ("restaurant", "cafe", "bar")   # 飲食店営業許可の事実を足してよい地点の分類
 APPROVED_BY = "hirata"
 TARGETS = ("inn", "park", "waterspot", "eatery")
 ITEMS = ("管理者・所有者", "創設・開設年", "規模", "現況", "指定・登録", "人口")
@@ -124,18 +126,24 @@ def inn_claims(records: list[dict], today: date) -> list[dict]:
     return out
 
 
-def park_claims(items: list[dict]) -> list[dict]:
+def park_claims(items: list[dict], stats: dict | None = None) -> list[dict]:
     """bodik_import.items_from_shape の結果（名前・代表点・面積）から。広い公園は地点の置き場所がずれるので探す範囲を広げる"""
     out = []
+    scattered = 0
     for it in items:
         area = float(it["rank"] or 0)
         if area <= 0:
+            continue
+        if float(it.get("gap_m") or 0) > PARK_SCATTER_MAX_M:                          # 離れた同名の公園を合算している
+            scattered += 1
             continue
         kind = it["detail"].get("公園種別") or ""
         out.append({"dataset": "park", "name": it["name"], "addr": None, "lat": it["lat"], "lon": it["lon"],
                     "radius": min(NEAR_M + math.sqrt(area), PARK_EXTRA_MAX_M),
                     "item": "規模", "value": scale_text(area), "note": "供用面積" + (f"（{kind}）" if kind else ""),
                     "as_of": None, "quote": f"{it['name']}／{it['detail'].get('区名', '')}／供用面積{round(area)}m2"})
+    if stats is not None:
+        stats["park_scattered_skipped"] = scattered
     return out
 
 
@@ -167,7 +175,7 @@ def eatery_claims(records: list[dict], today: date) -> list[dict]:
         if not name or not addr or not year:
             continue
         out.append({"dataset": "eatery", "name": name, "addr": addr, "lat": None, "lon": None, "radius": NEAR_M,
-                    "item": "創設・開設年", "value": f"{year}年（営業許可の初年度）",
+                    "categories": FOOD_CATEGORIES, "item": "創設・開設年", "value": f"{year}年（営業許可の初年度）",
                     "note": "飲食店営業許可の初年度の許可日。営業者の変更などで新しくなることがあり、開業年とは限らない",
                     "as_of": None, "quote": f"{name}／{addr}／初年度許可{bi.clean(r.get('初年度許可・交付日'))}"})
     return out
@@ -202,6 +210,11 @@ def match_claims(claims: list[dict], index: SpotIndex, have: set, stats: dict, s
         if not near:
             s["name_but_far"] = s.get("name_but_far", 0) + 1
             continue
+        if c.get("categories"):
+            near = [x for x in near if x.get("category") in c["categories"]]
+            if not near:
+                s["wrong_category"] = s.get("wrong_category", 0) + 1       # 同名・近くでも、病院や学校などの地点には足さない
+                continue
         if len(near) > 1:
             s["ambiguous_spots"] = s.get("ambiguous_spots", 0) + 1
             left.append({**c, "why": "同じ名前の地点が近くに複数ある", "spots": near})
@@ -242,7 +255,7 @@ def collect_claims(conn, key: str, stats: dict, workdir: Path, today: date, sess
         st: dict = {}
         items = bi.collect(conn, bi.SPEC_BY_KEY["park"], st, workdir, session, sleep)
         stats.setdefault("park", {}).update({k: v for k, v in st.items() if k in ("no_shape", "fetch_failed", "park_items", "skipped_null_shape")})
-        return park_claims(items)
+        return park_claims(items, stats.setdefault("park", {}))
     records = fetch_records(key, session, sleep)
     stats.setdefault(key, {})["records"] = len(records)
     if key == "inn":
@@ -253,7 +266,7 @@ def collect_claims(conn, key: str, stats: dict, workdir: Path, today: date, sess
 
 
 SPOTS_SQL = """
-select id, code, name, alt_names, ST_Y(geom::geometry) as lat, ST_X(geom::geometry) as lon
+select id, code, name, alt_names, category, ST_Y(geom::geometry) as lat, ST_X(geom::geometry) as lon
   from spots where data_status <> 'archived'
 """
 

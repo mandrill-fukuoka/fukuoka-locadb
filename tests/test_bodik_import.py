@@ -235,6 +235,7 @@ def test_park_shape_uses_largest_polygon_point_and_sorts_by_area(db, tmp_path):
     got = sorted(bi.items_from_shape(db, str(tmp_path / "park.shp"), st), key=lambda i: -i["rank"])
     assert [g["name"] for g in got] == ["大きな公園", "青葉7号公園"] and got[0]["rank"] == 43600 and got[0]["detail"]["公園種別"] == "近隣公園"
     assert abs(got[0]["lat"] - 33.59) < 0.001 and abs(got[0]["lon"] - 130.40) < 0.001      # 最大の区画の内側の点
+    assert 2800 < got[0]["gap_m"] < 3000 and got[1]["gap_m"] == 0                          # 離れた区画までの距離（m）
 
 
 def test_park_shape_skips_records_without_a_shape(tmp_path):
