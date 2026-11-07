@@ -55,6 +55,21 @@ def license_label(pkg: dict) -> str:
     return "CC BY 4.0" if lid in ("cc-by", "") else (pkg.get("license_title") or lid)
 
 
+PROFILE_COLS = ["設置場所", "概要", "開催日時", "フリースペース", "備考", "承認状態", "公開範囲", "大分類__", "中分類__", "小分類__"]
+
+
+def column_profile(records: list[dict], n: int = 3) -> dict:
+    """列の中身をつかむための確認用（読み取りのみ）：埋まっている件数と、値の例。連絡先の列は見ない"""
+    out = {}
+    for c in PROFILE_COLS:
+        vals = [bi.clean(r.get(c)) for r in records if bi.clean(r.get(c))]
+        if not vals:
+            continue
+        uniq = sorted(set(vals))
+        out[c] = {"filled": len(vals), "distinct": len(uniq), "examples": [v[:120] for v in (uniq if len(uniq) <= 6 else vals[:n])]}
+    return out
+
+
 def join_hours(rec: dict) -> str:
     parts = []
     for c in HOURS_COLS:
@@ -175,6 +190,7 @@ def main(argv=None):
                 records += bi.read_table(bi.decode(got.content))
         stats["records"] = len(records)
         stats["columns"] = sorted({k for rec in records[:50] for k in rec})
+        stats["column_profile"] = column_profile(records)
         points = points_from_records(records, stats, geocode_limit=a.limit)
         stats["points"] = len(points)
         source = {"source_url": DATASET_PAGE + name, "source_title": f"BODIK ODCS 福岡市「{(pkg.get('title') or 'AED').replace('福岡市 ', '').replace('福岡市', '').strip() or 'AED'}」",
