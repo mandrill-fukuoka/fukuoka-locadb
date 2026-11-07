@@ -294,6 +294,16 @@ function logistics_line(array $lg): string {
     }
     return implode('・', $parts);
 }
+// 近くのAED（aed_view。DB変更230）：1件ずつの表示用の文。「名称 約30m（設置位置／利用時間など）」
+function aed_lines(array $aed): array {
+    $out = [];
+    foreach ($aed['items'] ?? [] as $a) {
+        $notes = array_values(array_filter([trim((string)($a['place'] ?? '')), trim((string)($a['hours'] ?? ''))], fn($x) => $x !== ''));
+        $out[] = (string)$a['name'] . ' 約' . (int)$a['meters'] . 'm' . (!empty($a['approx']) ? '（位置は住所からの目安）' : '')
+               . ($notes ? '（' . implode('／', $notes) . '）' : '');
+    }
+    return $out;
+}
 // 潮位（tide_view）：今日・明日の満潮・干潮。気象庁 潮位表 博多（QF）の予報
 function tide_lines(array $tide): array {
     $out = [];
