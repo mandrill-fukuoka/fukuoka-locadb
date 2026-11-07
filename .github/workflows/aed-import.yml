@@ -1,0 +1,40 @@
+# 福岡市のAED設置場所（BODIK ODCS「福岡市 AED」、CC BY 4.0）を取り込む（AIなし・費用ゼロ）。地点ページの「近くのAED」に使う
+#  - dry_run：本番DBは読むだけ（取り込みも試して取り消す）。成果物 aed.csv と、統計（項目名・件数・ライセンス）を確認する
+#  - apply：aed_points に取り込む（地点ページにすぐ出る。DB変更230が先）。一覧にないものは active=false にする。何度実行しても同じ結果
+name: aed-import
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run（読み取りのみ）/ apply（aed_points に取り込む）"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+      pkg:
+        description: "データセットのID（空なら検索して決める）"
+        type: string
+        default: ""
+concurrency:
+  group: ${{ inputs.mode == 'apply' && 'database' || format('aed-import-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  aed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 取得と取り込み
+        shell: bash
+        run: |
+          python -m locadb.bodik_aed --${MODE//_/-} --pkg "$PKG" --out aed-out | tee aed.log
+          { echo '```json'; tail -1 aed.log; echo '```'; echo "モード：$MODE"; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODE: ${{ inputs.mode }}
+          PKG: ${{ inputs.pkg }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: aed, path: aed-out/, retention-days: 30 }

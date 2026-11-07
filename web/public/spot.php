@@ -170,6 +170,13 @@ page_header(sn($s), '');
         <p class="small terrain">ドローンの目安：<?= !empty($s['drone']['did']) ? '人口集中地区の中です（飛行には許可・承認が必要になる場合があります）' : '人口集中地区の外です' ?><?= !empty($s['drone']['airport_near']) ? '。福岡空港に近く、空港周辺の空域の制限に当たる可能性があります' : '' ?>
           <span class="muted">（国土数値情報の人口集中地区（平成27年）と滑走路からの距離による目安。飛行の可否は判断しません。実際の飛行は<a href="https://www.mlit.go.jp/koku/info/" target="_blank" rel="noopener">国土交通省</a>の最新の情報で確認してください）</span></p>
       <?php endif; ?>
+      <?php if (!empty($s['aed']) && is_array($s['aed'])): $aed = $s['aed']; $aedLines = aed_lines($aed); $aedSrc = $aed['source'] ?? []; ?>
+        <p class="small terrain"><?php if ($aedLines): ?>近くのAED（福岡市に登録された施設・半径<?= (int)($aed['radius_m'] ?? 300) ?>m以内、近い順）：<br><?= implode('<br>', array_map('h', $aedLines)) ?><?php
+              if ((int)($aed['total'] ?? 0) > count($aedLines)): ?><br>ほか <?= (int)$aed['total'] - count($aedLines) ?> 件<?php endif; ?>
+          <?php else: ?>近くのAED：半径<?= (int)($aed['radius_m'] ?? 300) ?>m以内に、福岡市に登録された施設のAEDはありません<?php endif; ?>
+          <span class="muted">（福岡市「AED設置施設登録制度」に登録された情報で、登録時点のものです。実際に使えるか・使える時間は現地で確かめてください。登録されていないAEDもあります。急な病気やけがは119番へ<?php
+            if (!empty($aedSrc['url'])): ?>。出典：<a href="<?= h($aedSrc['url']) ?>" target="_blank" rel="noopener"><?= h($aedSrc['title'] ?? 'BODIK ODCS') ?></a>（<?= h($aedSrc['license'] ?? 'CC BY 4.0') ?>）<?php endif; ?>）</span></p>
+      <?php endif; ?>
       <?php if (!empty($s['tide']) && !empty($s['tide']['days'])): ?>
         <p class="small terrain">潮（博多の予報）：<?= h(implode('　／　', tide_lines($s['tide']))) ?>
           <span class="muted">（出典：気象庁ホームページ「潮位表」博多。気象庁の予報値を当サイトで表示用に整理したもの。地点の実際の潮位とは差があります。高さは潮位表の基準面から）</span></p>

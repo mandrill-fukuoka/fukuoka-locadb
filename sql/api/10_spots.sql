@@ -5,7 +5,7 @@ begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname in (
               'grp_match','spot_label','search_spots','spots_nearby','spot_detail','review_queue','review_spot',
-              'photo_state','spatial_view','logistics_view','drone_view','tide_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids','live_root','precinct_word')
+              'photo_state','spatial_view','logistics_view','drone_view','tide_view','aed_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids','live_root','precinct_word')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
@@ -100,6 +100,23 @@ select case when sc.landscape_group in ('sea','beach') or s.category in ('port',
           from tide_daily t where t.day between (now() at time zone 'Asia/Tokyo')::date and (now() at time zone 'Asia/Tokyo')::date + 1)
   end
   from spots s join spot_categories sc on sc.code = s.category where s.id = p_id;
+$$;
+
+-- 近くのAED（DB変更230）。半径300m以内の登録施設のAEDを近い順に最大3件。aed_points が空なら null（取り込み前は何も出さない）
+--  距離は10m単位に丸める（最小10m）。登録時点の情報なので、使えるか・使える時間は現地で確かめる（画面に明記）
+create function aed_view(p_id bigint) returns jsonb language sql stable as $$
+select case when not exists (select 1 from aed_points where active) then null else jsonb_build_object(
+  'radius_m', 300,
+  'total', (select count(*) from aed_points a where a.active and ST_DWithin(a.geom, s.geom, 300)),
+  'items', (select coalesce(jsonb_agg(jsonb_build_object('name', x.name, 'address', x.address, 'place', x.place_note,
+                                                         'hours', x.hours_note, 'meters', x.m, 'approx', x.geocoded) order by x.d), '[]'::jsonb)
+              from (select a.name, a.address, a.place_note, a.hours_note, a.geocoded, ST_Distance(a.geom, s.geom) d,
+                           greatest(10, round(ST_Distance(a.geom, s.geom) / 10) * 10) m
+                      from aed_points a where a.active and ST_DWithin(a.geom, s.geom, 300)
+                     order by ST_Distance(a.geom, s.geom), a.id limit 3) x),
+  'source', (select jsonb_build_object('title', a.source_title, 'url', a.source_url, 'license', a.license, 'at', a.fetched_at)
+               from aed_points a where a.active order by a.fetched_at desc limit 1)) end
+  from spots s where s.id = p_id;
 $$;
 
 -- 一覧でまとめる先（境内・敷地内の地点。DB変更208）。まとめる先が対象外なら null（まとめない）
@@ -310,6 +327,7 @@ select jsonb_build_object(
   'logistics', logistics_view(s.id),
   'drone', drone_view(s.id),
   'tide', tide_view(s.id),
+  'aed', aed_view(s.id),
   'summary_by', case when p_with_history then s.summary_by end, 'summary_at', s.summary_at,
   'drafts', case when p_with_history then
      (select coalesce(jsonb_agg(jsonb_build_object('id', n.id, 'source', n.source, 'body', n.body, 'model', n.model,
