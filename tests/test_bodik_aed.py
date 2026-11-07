@@ -54,6 +54,9 @@ def test_split_place_separates_hours_when_written_together():
     assert ba.split_place("設置場所　：　福岡市医師会館8階　講堂前, 使用時間　：　平日9時～17時、土曜日9時～13まで使用可能") == \
         ("福岡市医師会館8階　講堂前", "平日9時～17時、土曜日9時～13まで使用可能")
     assert ba.split_place("1階事務室") == ("1階事務室", "")
+    assert ba.split_place("AED設置場所:1階玄関付近 使用時間:24時間使用可能") == ("1階玄関付近", "24時間使用可能")
+    assert ba.split_place("設置場所:博多区役所1階守衛室、5階健康課 使用時間:常時使用可能") == ("博多区役所1階守衛室、5階健康課", "常時使用可能")
+    assert ba.split_place("設置場所:管理員室") == ("管理員室", "")
 
 
 def test_points_use_coordinates_then_address_and_skip_the_unusable():
@@ -61,21 +64,24 @@ def test_points_use_coordinates_then_address_and_skip_the_unusable():
             "設置位置": "設置場所：8階 講堂前, 使用時間：平日9時～17時", "電話番号": "092-852-1000"},
            {"名称": "座標なしの店", "住所": "福岡市博多区博多駅前2-8-1", "緯度": "", "経度": "", "設置位置": "1階", "利用可能曜日": "毎日",
             "利用可能開始時間": "9:00", "利用可能終了時間": "21:00"},
+           {"名称": "自由記述の店", "住所": "福岡市中央区天神1-1-1", "緯度": "33.59", "経度": "130.40", "設置場所": "8592",
+            "フリースペース": "AED設置場所:1階玄関付近 使用時間:24時間使用可能"},
            {"名称": "引けない店", "住所": "福岡市博多区どこか", "緯度": "", "経度": ""},
            {"名称": "福岡市医師会館", "住所": "福岡市早良区百道浜1-6-9", "緯度": "33.592182", "経度": "130.356433", "設置位置": "設置場所：8階 講堂前, 使用時間：平日9時～17時"},
            {"名称": "", "住所": "x", "緯度": "33.59", "経度": "130.40"},
            {"名称": "圏外", "住所": "", "緯度": "35.0", "経度": "139.0"}]
     sess = FakeSession({"AddressSearch": gsi("福岡県福岡市博多区博多駅前2丁目8-1", 33.5906, 130.4141)})
     st = {}
-    got = ba.points_from_records(rec[:2] + rec[3:], st, sess, no_sleep)
-    assert [p["name"] for p in got] == ["福岡市医師会館", "座標なしの店"]
-    a, b = got
+    got = ba.points_from_records(rec[:3] + rec[4:], st, sess, no_sleep)
+    assert [p["name"] for p in got] == ["福岡市医師会館", "座標なしの店", "自由記述の店"]
+    a, b, c = got
+    assert (c["place_note"], c["hours_note"]) == ("1階玄関付近", "24時間使用可能")      # 「設置場所」の列（別の値）は使わない
     assert (a["place_note"], a["hours_note"], a["geocoded"]) == ("8階 講堂前", "平日9時~17時", False)
     assert b["geocoded"] is True and b["hours_note"] == "曜日：毎日 開始時間：9:00 終了時間：21:00"
     assert "092" not in json.dumps(got, ensure_ascii=False)                     # 電話番号は読まない
     assert (st["duplicates"], st["skipped_no_name"], st["skipped_no_point"], st["geocoded"]) == (1, 1, 1, 1)
     st2 = {}
-    assert ba.points_from_records([rec[2]], st2, FakeSession({"AddressSearch": gsi("福岡県福岡市博多区博多駅前", 33.59, 130.41)}), no_sleep) == [] \
+    assert ba.points_from_records([rec[3]], st2, FakeSession({"AddressSearch": gsi("福岡県福岡市博多区博多駅前", 33.59, 130.41)}), no_sleep) == [] \
         and st2["geocode_failed"] == 1
 
 
