@@ -30,7 +30,7 @@ MIN_KEEP_RATIO = 0.5                       # 前回の件数のこの割合を�
 NAME_COLS = ["名称", "施設名", "施設名称", "設置施設名"]
 ADDR_COLS = ["住所", "所在地", "所在地_連結表記"]
 LAT_COLS, LON_COLS = ["緯度"], ["経度"]
-PLACE_COLS = ["設置位置", "設置場所"]
+PLACE_COLS = ["フリースペース", "設置位置"]      # 福岡市のデータは「設置場所:… 使用時間:…」を「フリースペース」に続けて書いている（「設置場所」の列は別の値）
 HOURS_COLS = ["利用可能曜日", "利用可能開始時間", "利用可能終了時間", "利用可能日時特記事項", "使用時間", "利用時間"]
 REMARK_COLS = ["備考"]
 
@@ -79,14 +79,16 @@ def join_hours(rec: dict) -> str:
     return " ".join(parts)
 
 
+def strip_place_label(text: str) -> str:
+    return re.sub(r"^(AED)?設置場所\s*[：:]\s*", "", text.strip().rstrip(" ,、，")).strip()
+
+
 def split_place(text: str) -> tuple[str, str]:
     """福岡市のデータは設置位置に「設置場所：…, 使用時間：…」と続けて書かれていることがある。分けられれば分ける"""
     m = re.search(r"使用時間\s*[：:]\s*(.*)$", text)
     if not m:
-        return text, ""
-    place = text[:m.start()].rstrip(" ,、，")
-    place = re.sub(r"^設置場所\s*[：:]\s*", "", place)
-    return place, m.group(1).strip()
+        return strip_place_label(text), ""
+    return strip_place_label(text[:m.start()]), m.group(1).strip()
 
 
 def points_from_records(records: list[dict], stats: dict, session=requests, sleep=time.sleep, geocode_limit: int = 0) -> list[dict]:
