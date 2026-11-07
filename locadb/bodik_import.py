@@ -280,8 +280,9 @@ def items_from_shape(conn, shp: str, stats: dict) -> list[dict]:
             continue
         geom = shape(sr.shape.__geo_interface__)
         area = float(rec.get("供用面積") or 0)
-        p = parks.setdefault((name, ward), {"name": name, "ward": ward, "kind": kind, "area": 0.0, "best": (0.0, None)})
+        p = parks.setdefault((name, ward), {"name": name, "ward": ward, "kind": kind, "area": 0.0, "best": (0.0, None), "geoms": []})
         p["area"] += area
+        p["geoms"].append((geom.area, geom))
         if geom.area >= p["best"][0]:
             p["best"] = (geom.area, geom.wkt)
     out = []
@@ -290,8 +291,11 @@ def items_from_shape(conn, shp: str, stats: dict) -> list[dict]:
         if not in_bbox(r["lat"], r["lon"]):
             stats["skipped_no_point"] = stats.get("skipped_no_point", 0) + 1
             continue
+        biggest = max(p["geoms"], key=lambda t: t[0])[1]
+        gap = max(g.distance(biggest) for _, g in p["geoms"])          # 同じ名前の区画が最大の区画からどれだけ離れているか（m）
         out.append({"key": f"bodik:park:{stable_id(name, ward)}", "name": sized_name(name, p["kind"]), "lat": r["lat"], "lon": r["lon"],
-                    "detail": {"公園種別": p["kind"], "区名": p["ward"], "供用面積m2": round(p["area"])}, "rank": p["area"]})
+                    "detail": {"公園種別": p["kind"], "区名": p["ward"], "供用面積m2": round(p["area"])}, "rank": p["area"],
+                    "gap_m": round(gap)})
     return out
 
 

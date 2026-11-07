@@ -33,8 +33,8 @@ class FakeSession:
         return Resp(b"", 404)
 
 
-def sp(i, name, lat, lon, alt=None):
-    return {"id": i, "code": f"FUK-{i}", "name": name, "alt_names": alt or [], "lat": lat, "lon": lon}
+def sp(i, name, lat, lon, alt=None, category=None):
+    return {"id": i, "code": f"FUK-{i}", "name": name, "alt_names": alt or [], "category": category, "lat": lat, "lon": lon}
 
 
 def gsi(title, lat, lon):
@@ -90,6 +90,29 @@ def test_waterspot_and_park_claims():
                         {"name": "面積なし", "lat": 33.59, "lon": 130.40, "rank": 0.0, "detail": {}}])
     assert len(p) == 1 and p[0]["value"] == "4ヘクタール" and p[0]["note"] == "供用面積（近隣公園）"
     assert p[0]["radius"] == 150 + 200                                                    # 広い公園は探す範囲を広げる
+
+
+def test_park_claims_skip_parks_whose_pieces_are_far_apart():
+    st = {}
+    items = [{"name": "近い公園", "lat": 33.59, "lon": 130.40, "rank": 5000.0, "gap_m": 120, "detail": {"区名": "中央区"}},
+             {"name": "離れた公園", "lat": 33.59, "lon": 130.40, "rank": 90000.0, "gap_m": 2500, "detail": {"区名": "南区"}},
+             {"name": "区画1つ", "lat": 33.59, "lon": 130.40, "rank": 800.0, "detail": {"区名": "東区"}}]
+    got = bf.park_claims(items, st)
+    assert [c["name"] for c in got] == ["近い公園", "区画1つ"] and st["park_scattered_skipped"] == 1
+
+
+def test_eatery_facts_only_go_to_food_spots():
+    assert set(bf.eatery_claims([{"屋号": "店", "営業所所在地": "福岡市博多区店屋町２番２０号", "許可終了日": "2031/3/31",
+                                  "初年度許可・交付日": "2019/4/1"}], TODAY)[0]["categories"]) == {"restaurant", "cafe", "bar"}
+    idx = bf.SpotIndex([sp(1, "食堂A", 33.59, 130.40, category="restaurant"), sp(2, "施設B", 33.60, 130.41, category="hospital"),
+                        sp(3, "スーパーC", 33.61, 130.42, category="supermarket")])
+    cl = [claim(n, lat, lon, ds="eatery", item="創設・開設年", value="2019年") for n, lat, lon in
+          (("食堂A", 33.59, 130.40), ("施設B", 33.60, 130.41), ("スーパーC", 33.61, 130.42))]
+    for c in cl:
+        c["categories"] = bf.FOOD_CATEGORIES
+    st = {}
+    facts, _ = bf.match_claims(cl, idx, set(), st)
+    assert [f["spot_id"] for f in facts] == [1] and st["eatery"]["wrong_category"] == 2
 
 
 # ------------------------------------------------------------------ 結びつけ（DBなし）
