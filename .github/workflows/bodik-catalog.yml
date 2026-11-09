@@ -1,0 +1,21 @@
+# BODIK ODCS の福岡市（組織 401307）のデータセットを棚卸しする（読み取り専用。DBにも本番にも触れない）
+# 成果物 bodik-catalog：catalog.csv（全データセットの名前・形式・ライセンス・取り込み済みか）と catalog-summary.json
+name: bodik-catalog
+on: workflow_dispatch
+jobs:
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 棚卸し
+        shell: bash
+        run: |
+          python -m locadb.bodik_catalog --out bodik-catalog-out | tee catalog.log
+          { echo '```json'; tail -1 catalog.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: bodik-catalog, path: bodik-catalog-out/, retention-days: 30 }
