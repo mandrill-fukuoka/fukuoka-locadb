@@ -62,7 +62,7 @@ def probe_zip(content: bytes) -> dict:
 
 
 def probe_resource(res: dict, session=requests, sleep=time.sleep) -> dict:
-    fmt = (res.get("format") or "").upper()
+    fmt = (res.get("format") or "").upper().lstrip(".")
     info = {"name": res.get("name"), "format": fmt}
     if fmt not in ("XLSX", "CSV", "ZIP"):
         info["note"] = "読み取り対象外の形式（XLS・PDF など）"

@@ -22,3 +22,16 @@ def test_probe_xlsx_reads_sheets():
     out = bp.probe_xlsx(buf.getvalue())
     assert out["公園"]["rows"] == 1
     assert out["公園"]["columns"][1]["sample"] == ["1.5"]
+
+
+def test_probe_resource_accepts_dotted_format():
+    class R:
+        status_code = 200
+        content = b"a,b\n1,2\n"
+
+    class S:
+        def get(self, *a, **k):
+            return R()
+
+    out = bp.probe_resource({"name": "x", "format": ".CSV", "url": "http://x"}, S(), lambda s: None)
+    assert out["format"] == "CSV" and out["content"]["csv"]["rows"] == 1
