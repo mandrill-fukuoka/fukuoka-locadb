@@ -42,5 +42,6 @@ def test_semicolon_name_display():
 
 def test_bath_is_not_old_town():
     """温泉・公衆浴場（OSM amenity=public_bath）は「古い街並み・路地」に入れない（2026-11-09）"""
-    assert CATEGORIES["sento"][1] != "old_town"
+    from locadb.categories import LANDSCAPE_GROUPS
+    assert CATEGORIES["sento"][1] == "bath" and "bath" in LANDSCAPE_GROUPS
     assert categories_of({"amenity": "public_bath", "bath:type": "onsen", "name": "天然温泉"}, "w", True) == ["sento"]
