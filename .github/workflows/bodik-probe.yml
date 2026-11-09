@@ -1,0 +1,27 @@
+# BODIK のデータセットの中身（列名・埋まり具合・先頭の数行）を確かめる（読み取り専用。DBにも本番にも触れない）
+# 成果物 bodik-probe：probe.json
+name: bodik-probe
+on:
+  workflow_dispatch:
+    inputs:
+      pkg:
+        description: "データセット名（カンマ区切り）"
+        required: true
+        default: "401307_tosikouen"
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 中身を確かめる
+        shell: bash
+        env:
+          PKG: ${{ inputs.pkg }}
+        run: python -m locadb.bodik_probe --pkg "$PKG" --out bodik-probe-out | tee probe.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: bodik-probe, path: bodik-probe-out/, retention-days: 30 }
