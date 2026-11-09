@@ -53,7 +53,7 @@ CATEGORIES = {
     "seaside_parking":     ("海沿いの駐車場", "transport", "point", 0),   # 2026-10-29 A：海岸・砂浜から150m以内の平面駐車場（osm_source で絞る）
     "industrial_structure": ("給水塔・サイロ・タンク", "port_industrial", "point", 0),
     "disused_railway":     ("廃線跡", "vacant", "point", 0),
-    "sento":               ("銭湯", "old_town", "point", 0),
+    "sento":               ("銭湯・温泉・公衆浴場", "commercial", "point", 0),   # 2026-11-09：温泉・公衆浴場が「古い街並み・路地」に混ざっていたので商業へ移す（BODIK の公衆浴場も商業）
     # 店舗・飲食（2026-10-22 利用者と合意）：映画・ドラマの撮影で必要になる店。景観グループは新設の「店舗・飲食」（shop）。チェーンも含める
     "restaurant":          ("飲食店", "shop", "point", 0),
     "cafe":                ("カフェ", "shop", "point", 0),

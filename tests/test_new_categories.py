@@ -38,3 +38,9 @@ def test_semicolon_name_display():
     assert display_name({"name": "名島踏切;貝塚2号踏切"}, "level_crossing") == "名島踏切"
     assert display_name({"name": "和白踏切"}, "level_crossing") == "和白踏切"
     assert display_name({"name": "箱崎橋;県道112号", "highway": "primary", "bridge": "yes"}, "bridge_overpass") == "箱崎橋"   # 橋は従来どおり
+
+
+def test_bath_is_not_old_town():
+    """温泉・公衆浴場（OSM amenity=public_bath）は「古い街並み・路地」に入れない（2026-11-09）"""
+    assert CATEGORIES["sento"][1] != "old_town"
+    assert categories_of({"amenity": "public_bath", "bath:type": "onsen", "name": "天然温泉"}, "w", True) == ["sento"]
