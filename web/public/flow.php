@@ -62,19 +62,28 @@ if ($isPost && $action === 'search' && !$error) {
             if ($mode !== '') $query['travel_mode'] = $mode;
             $query['sequence'] = array_slice(array_values(array_filter($query['sequence'] ?? [], fn($g) => in_array($g, $validGroups, true))), 0, 4);
             $query['tags'] = array_filter((array)($query['tags'] ?? []), fn($w, $t) => isset($tagNames[$t]), ARRAY_FILTER_USE_BOTH);
+            // 区を選んでいないときは、シーン文の頭の地名（天神・川端など）から起点の区を決める
+            $areaUse = $area ?: null;
+            if (!$areaUse && $scene !== '') {
+                $hint = $query['area'] ?? scene_area_hint($scene);
+                if ($hint && isset(AREA_LABEL[$hint])) {
+                    $areaUse = $hint;
+                    if (strpos((string)($query['notes'] ?? ''), '地名から起点') === false) $query['notes'] = ($query['notes'] ?? '') . '（地名から起点を' . AREA_LABEL[$hint] . 'に絞りました）';
+                }
+            }
             if (!$query['sequence'] && !$start) {
                 $error = '景観の流れを読み取れませんでした。「繁華街」「路地」「川」「海」「港」などの言葉を入れるか、下の「流れを直接指定」を使ってください。';
             } else {
                 $results = sb_rpc('build_routes', [
                     'p_seq' => $query['sequence'], 'p_tags' => (object)$query['tags'],
-                    'p_mode' => $query['travel_mode'] ?? 'any', 'p_area' => $area ?: null,
+                    'p_mode' => $query['travel_mode'] ?? 'any', 'p_area' => $areaUse,
                     'p_start' => $start, 'p_limit' => 8,
                 ]) ?? [];
                 // 記録（上位3件は「おすすめの流れ」に自動で蓄積）
                 try {
                     sb_rpc('record_route_search', [
                         'p_scene' => $scene ?: null, 'p_seq' => $query['sequence'], 'p_tags' => (object)$query['tags'],
-                        'p_mode' => $query['travel_mode'] ?? 'any', 'p_area' => $area ?: null, 'p_start' => $start,
+                        'p_mode' => $query['travel_mode'] ?? 'any', 'p_area' => $areaUse, 'p_start' => $start,
                         'p_routes' => $results, 'p_user' => current_user()]);
                 } catch (Throwable $e) { error_log('record_route_search: ' . $e->getMessage()); }
                 $_SESSION['last_routes'] = [];

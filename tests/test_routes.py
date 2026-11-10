@@ -122,6 +122,40 @@ def test_keywords_port_is_read_in_order():
     assert q["sequence"][:2] == ["historic", "slope"] and q["sequence"][-1] == "sea"
 
 
+def test_keywords_place_names_do_not_trigger_landscape():
+    # 地名の中の「川」「城」「山」「橋」は景観に反応しない（地名は起点の区に回す）
+    q = php_interpret("川端商店街から歩く")
+    assert q["sequence"] == ["old_town"] and q["area"] == "fuk-hakata"
+    q = php_interpret("城南区の団地から坂道を上がる")
+    assert q["sequence"] == ["residential", "slope"] and q["area"] == "fuk-jonan"
+    q = php_interpret("山笠の櫛田神社の参道を歩く")
+    assert q["sequence"] == ["historic"]
+    q = php_interpret("大橋駅から高宮の住宅街へ")
+    assert q["sequence"] == ["transport", "residential"] and q["area"] == "fuk-minami"
+    # 景観の語が他にないときだけ、地名に結びつく景観（天神 → 繁華街）を使う
+    q = php_interpret("天神を歩く")
+    assert q["sequence"] == ["commercial"] and q["area"] == "fuk-chuo"
+    q = php_interpret("天神の高層ビルから川沿いへ")
+    assert q["sequence"] == ["urban_new", "river"] and q["area"] == "fuk-chuo"
+
+
+def test_keywords_area_hint_only_when_place_opens_the_scene_and_is_unique():
+    assert php_interpret("川沿いを歩いて天神に出る")["area"] is None           # 景観の語より後ろの地名は使わない
+    assert php_interpret("天神から博多川沿いへ")["area"] == "fuk-chuo"
+    assert php_interpret("天神と西新を歩く")["area"] is None                    # 区が2つに分かれるときは絞らない
+    assert php_interpret("港の倉庫街を抜けて海沿いに出る")["area"] is None
+
+
+def test_keywords_negation_and_time_of_day():
+    q = php_interpret("人のいない繁華街を抜けて路地に入る")
+    assert q["sequence"] == ["commercial", "old_town"]
+    assert "lonely" in q["tags"] and "low_traffic" in q["tags"] and "lively" not in q["tags"]
+    q = php_interpret("夜の繁華街の賑やかな通りから路地へ")
+    assert "lively" in q["tags"] and "low_traffic" not in q["tags"]
+    q = php_interpret("早朝の商店街を歩く")
+    assert "dawn_ok" in q["tags"] and "low_traffic" in q["tags"]
+
+
 # ---------- 段階2：雰囲気の目安（DB変更210） ----------
 def shop_categories(db):
     for code, name in (("bar", "バー・居酒屋"), ("restaurant", "飲食店"), ("cafe", "カフェ"), ("other_shop", "その他の店")):
