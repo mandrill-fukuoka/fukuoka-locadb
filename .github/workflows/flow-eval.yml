@@ -15,4 +15,4 @@ jobs:
         run: python tools/flow_eval.py --json flow-eval.json --xlsx flow-eval.xlsx | tee -a "$GITHUB_STEP_SUMMARY"
         env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
       - uses: actions/upload-artifact@v4
-        with: { name: flow-eval, path: "flow-eval.*", retention-days: 30 }
+        with: { name: flow-eval, path: "flow-eval.*", retention-days: 7 }

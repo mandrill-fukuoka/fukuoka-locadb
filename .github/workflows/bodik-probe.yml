@@ -24,4 +24,4 @@ jobs:
         run: python -m locadb.bodik_probe --pkg "$PKG" --out bodik-probe-out | tee probe.log
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: bodik-probe, path: bodik-probe-out/, retention-days: 30 }
+        with: { name: bodik-probe, path: bodik-probe-out/, retention-days: 7 }

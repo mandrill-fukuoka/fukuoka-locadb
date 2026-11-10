@@ -115,7 +115,7 @@ TEST_PG=postgresql://user:pass@localhost:5432 pytest -q tests
 - データの一部（Wikipedia 由来の事実・説明文の材料）は CC BY-SA 4.0。詳しくは [NOTICE.md](NOTICE.md)
 
 ## バックアップの暗号化と復元
-pipeline（本番）と db-migrate（apply）の反映前バックアップは、このリポジトリが公開なので **gpg（AES256）で暗号化してから** Actions の成果物（90日保存）に置く。パスフレーズは Secrets の `BACKUP_PASSPHRASE`（利用者が登録。値はログに出ない。未登録なら反映の前に止まる）。パスフレーズを失うと復元できないので、パスワード管理ツールにも控える。
+pipeline（本番）と db-migrate（apply）の反映前バックアップは、このリポジトリが公開なので **gpg（AES256）で暗号化してから** Actions の成果物（30日保存）に置く。パスフレーズは Secrets の `BACKUP_PASSPHRASE`（利用者が登録。値はログに出ない。未登録なら反映の前に止まる）。パスフレーズを失うと復元できないので、パスワード管理ツールにも控える。
 
 復元：成果物 `backup-before`／`backup-before-migrate` の `*.dump.gpg` をダウンロードし、手元で
 `gpg -d -o x.dump before-….dump.gpg`（パスフレーズを聞かれる）→ `pg_restore --no-owner -d <接続先> x.dump`。

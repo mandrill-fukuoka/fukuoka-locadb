@@ -20,4 +20,4 @@ jobs:
         env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: target-probe, path: "target-out/", retention-days: 30 }
+        with: { name: target-probe, path: "target-out/", retention-days: 7 }

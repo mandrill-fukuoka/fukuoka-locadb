@@ -28,4 +28,4 @@ jobs:
           FILES: ${{ inputs.files }}
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: plateau-probe, path: "plateau-out/", retention-days: 30 }
+        with: { name: plateau-probe, path: "plateau-out/", retention-days: 7 }
