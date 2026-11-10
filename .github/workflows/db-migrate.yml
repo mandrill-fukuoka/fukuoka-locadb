@@ -32,7 +32,7 @@ jobs:
           BACKUP_PASSPHRASE: "${{ secrets.BACKUP_PASSPHRASE }}"
       - uses: actions/upload-artifact@v4
         if: inputs.mode == 'apply'
-        with: { name: backup-before-migrate, path: "before-migrate-*.dump.gpg", retention-days: 90 }
+        with: { name: backup-before-migrate, path: "before-migrate-*.dump.gpg", retention-days: 30 }
       - name: 適用
         run: |
           case "${{ inputs.mode }}" in

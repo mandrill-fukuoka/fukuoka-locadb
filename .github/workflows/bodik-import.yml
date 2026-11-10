@@ -43,4 +43,4 @@ jobs:
           ONLY: ${{ inputs.only }}
           LIMIT: ${{ inputs.limit }}
       - uses: actions/upload-artifact@v4
-        with: { name: bodik-import, path: bodik-out/, retention-days: 30 }
+        with: { name: bodik-import, path: bodik-out/, retention-days: 7 }

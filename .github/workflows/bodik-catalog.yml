@@ -18,4 +18,4 @@ jobs:
           { echo '```json'; tail -1 catalog.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: bodik-catalog, path: bodik-catalog-out/, retention-days: 30 }
+        with: { name: bodik-catalog, path: bodik-catalog-out/, retention-days: 7 }

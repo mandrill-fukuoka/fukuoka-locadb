@@ -43,4 +43,4 @@ jobs:
           cat verify-out/summary.md >> "$GITHUB_STEP_SUMMARY"
         env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
       - uses: actions/upload-artifact@v4
-        with: { name: verify-findings, path: verify-out/, retention-days: 30 }
+        with: { name: verify-findings, path: verify-out/, retention-days: 7 }
