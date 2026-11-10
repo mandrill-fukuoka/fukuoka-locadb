@@ -145,6 +145,10 @@ def main():
         if f["wp"]:
             with_wp.add(f["spot_id"])
     qids = {q for v in linked.values() for q in v}
+    fkeys = collections.defaultdict(list)       # spot_id -> [OSM要素 n123/w123/r123]
+    for f in feats:
+        if f["key"] and re.fullmatch(r"[nwr]\d+", f["key"]):
+            fkeys[f["spot_id"]].append(f["key"])
 
     # 2) 事実の埋まり具合
     ents = fetch_entities(qids) if qids else {}
@@ -189,7 +193,8 @@ def main():
                 best = (rank, d, kind, s)
         if best:
             cands.append({"q": it["q"], "label": it["label"], "inst": it["inst"], "kind": best[2], "dist_m": round(best[1]),
-                          "spot_id": best[3]["id"], "spot_name": best[3]["name"], "category": best[3]["category"]})
+                          "spot_id": best[3]["id"], "spot_name": best[3]["name"], "category": best[3]["category"],
+                          "osm": " ".join(fkeys.get(best[3]["id"], []))})
     kinds = collections.Counter(c["kind"] for c in cands)
     cand_spots = {c["spot_id"] for c in cands if c["kind"] != "近接のみ"}
 
@@ -220,9 +225,15 @@ def main():
                 w.writerow([sid, by_id[sid]["name"], by_id[sid]["category"], q, e["label"]]
                            + ["○" if p in e["props"] else "" for p in PROPS] + [len(film.get(q, []))])
     with open(out / "candidates.csv", "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=["q", "label", "inst", "kind", "dist_m", "spot_id", "spot_name", "category"])
+        w = csv.DictWriter(f, fieldnames=["q", "label", "inst", "kind", "dist_m", "spot_id", "spot_name", "category", "osm"])
         w.writeheader(); w.writerows(sorted(cands, key=lambda c: ({"名前一致": 0, "名前の一部一致": 1, "近接のみ": 2}[c["kind"]], c["dist_m"])))
-    print("\n".join(lines))
+    # OSM へ wikidata タグを返す案（人が確認してから手で編集する前提。名前一致・150m以内・OSM要素が1つに決まるものだけ）
+    prop = [c for c in cands if c["kind"] == "名前一致" and c["dist_m"] <= 150 and len(c["osm"].split()) == 1]
+    with open(out / "osm_wikidata_proposal.csv", "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f); w.writerow(["OSM要素", "追加する wikidata", "Wikidataの名前", "地点名", "距離m", "Wikidataの分類"])
+        for c in sorted(prop, key=lambda c: c["osm"]):
+            w.writerow([c["osm"], c["q"], c["label"], c["spot_name"], c["dist_m"], c["inst"]])
+    print("\n".join(lines), f"\nOSMへ返す案：{len(prop)}件")
 
 
 if __name__ == "__main__":
