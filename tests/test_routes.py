@@ -111,6 +111,24 @@ def php_interpret(scene):
     return json.loads(out.stdout)
 
 
+def test_near_limits_start_spots(db):
+    # 地名（天神など）の周辺に絞る：起点が中心から半径以内のものだけ。ほかの段は距離の規則どおり（2026-11-10）
+    add(db, "近い海", "coast", 0, 0)
+    add(db, "近い港", "port", 400, 0)
+    add(db, "遠い海", "coast", 3000, 0)
+    add(db, "遠い港", "port", 3400, 0)
+    lon, lat = at(0, 0)
+    seq = ["sea", "port_industrial"]
+    allr = routes(db, seq, mode="walk")
+    assert {names(r)[0] for r in allr} == {"近い海", "遠い海"}
+    for mode in ("walk", "car", "any"):
+        rs = db.execute("select build_routes(%s, '{}'::jsonb, %s, null, null, 8, p_near_lat => %s, p_near_lon => %s, p_near_m => %s) as r",
+                        [seq, mode, lat, lon, 500]).fetchone()["r"]
+        assert rs and {names(r)[0] for r in rs} == {"近い海"}, mode
+    # 近くの指定がなければ、従来どおり（同じ条件なら同じ順）
+    assert [r["route_key"] for r in routes(db, seq, mode="walk")] == [r["route_key"] for r in allr]
+
+
 def test_keywords_port_is_read_in_order():
     q = php_interpret("港の倉庫街を抜けて海沿いに出る")
     assert q["sequence"] == ["port_industrial", "sea"]
@@ -144,6 +162,16 @@ def test_keywords_area_hint_only_when_place_opens_the_scene_and_is_unique():
     assert php_interpret("天神から博多川沿いへ")["area"] == "fuk-chuo"
     assert php_interpret("天神と西新を歩く")["area"] is None                    # 区が2つに分かれるときは絞らない
     assert php_interpret("港の倉庫街を抜けて海沿いに出る")["area"] is None
+
+
+def test_keywords_near_hint_for_named_places():
+    q = php_interpret("天神の高層ビルから川沿いへ")
+    assert q["near"]["name"] == "天神" and q["near"]["m"] == 700 and q["sequence"] == ["urban_new", "river"]
+    assert "天神の周辺" in q["notes"]
+    assert php_interpret("川沿いを歩いて天神に出る")["near"] is None            # 景観の語より後ろの地名は使わない
+    assert php_interpret("天神から大名へ歩く")["near"] is None                  # 中心のある地名が2つのときは絞らない
+    assert php_interpret("城南区の団地から坂道を上がる")["near"] is None         # 中心のない地名は区だけ
+    assert php_interpret("港の倉庫街を抜けて海沿いに出る")["near"] is None
 
 
 def test_keywords_negation_and_time_of_day():

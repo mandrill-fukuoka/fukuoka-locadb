@@ -62,11 +62,15 @@ if ($isPost && $action === 'search' && !$error) {
             if ($mode !== '') $query['travel_mode'] = $mode;
             $query['sequence'] = array_slice(array_values(array_filter($query['sequence'] ?? [], fn($g) => in_array($g, $validGroups, true))), 0, 4);
             $query['tags'] = array_filter((array)($query['tags'] ?? []), fn($w, $t) => isset($tagNames[$t]), ARRAY_FILTER_USE_BOTH);
-            // 区を選んでいないときは、シーン文の頭の地名（天神・川端など）から起点の区を決める
-            $areaUse = $area ?: null;
+            // 区を選んでいないときは、シーン文の頭の地名（天神・川端など）から起点を絞る。中心のある地名は周辺（半径）、なければ区
+            $areaUse = $area ?: null; $near = null; $hint = null;
             if (!$areaUse && $scene !== '') {
+                $near = $query['near'] ?? scene_near_hint($scene);
                 $hint = $query['area'] ?? scene_area_hint($scene);
-                if ($hint && isset(AREA_LABEL[$hint])) {
+                if ($near) {
+                    if (strpos((string)($query['notes'] ?? ''), '地名から起点') === false)
+                        $query['notes'] = ($query['notes'] ?? '') . '（地名から起点を' . $near['name'] . 'の周辺（約' . $near['m'] . 'm）に絞りました）';
+                } elseif ($hint && isset(AREA_LABEL[$hint])) {
                     $areaUse = $hint;
                     if (strpos((string)($query['notes'] ?? ''), '地名から起点') === false) $query['notes'] = ($query['notes'] ?? '') . '（地名から起点を' . AREA_LABEL[$hint] . 'に絞りました）';
                 }
@@ -78,12 +82,12 @@ if ($isPost && $action === 'search' && !$error) {
                     'p_seq' => $query['sequence'], 'p_tags' => (object)$query['tags'],
                     'p_mode' => $query['travel_mode'] ?? 'any', 'p_area' => $areaUse,
                     'p_start' => $start, 'p_limit' => 8,
-                ]) ?? [];
+                ] + ($near ? ['p_near_lat' => $near['lat'], 'p_near_lon' => $near['lon'], 'p_near_m' => $near['m']] : [])) ?? [];
                 // 記録（上位3件は「おすすめの流れ」に自動で蓄積）
                 try {
                     sb_rpc('record_route_search', [
                         'p_scene' => $scene ?: null, 'p_seq' => $query['sequence'], 'p_tags' => (object)$query['tags'],
-                        'p_mode' => $query['travel_mode'] ?? 'any', 'p_area' => $areaUse, 'p_start' => $start,
+                        'p_mode' => $query['travel_mode'] ?? 'any', 'p_area' => $areaUse ?: ($near ? ($hint ?? null) : null), 'p_start' => $start,
                         'p_routes' => $results, 'p_user' => current_user()]);
                 } catch (Throwable $e) { error_log('record_route_search: ' . $e->getMessage()); }
                 $_SESSION['last_routes'] = [];
