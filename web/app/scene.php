@@ -57,6 +57,44 @@ function scene_place_names(): array {
     ];
 }
 
+// 主な地名の中心（緯度・経度）と半径（m）。起点をこの範囲に絞る（区より細かい絞り込み）。名前は scene_place_names と同じ
+// 駅・公園・交差点などの代表点から取った目安。範囲は広めにとってある（±200mの誤差があっても外れない）
+function scene_place_centers(): array {
+    return [
+        '天神' => [33.5911, 130.3992, 700], '西中洲' => [33.5885, 130.4015, 350], '中洲' => [33.5917, 130.4053, 450],
+        '大名' => [33.5890, 130.3935, 500], '今泉' => [33.5870, 130.4010, 450], '赤坂' => [33.5892, 130.3878, 500],
+        '薬院' => [33.5820, 130.4010, 550], '渡辺通' => [33.5858, 130.4038, 450], '春吉' => [33.5855, 130.4085, 400],
+        '大濠' => [33.5865, 130.3770, 900], '舞鶴' => [33.5850, 130.3830, 700], '唐人町' => [33.5857, 130.3785, 500],
+        '六本松' => [33.5775, 130.3745, 600], '西新' => [33.5836, 130.3556, 700], '百道' => [33.5915, 130.3510, 700],
+        '姪浜' => [33.5862, 130.3212, 800], '箱崎' => [33.6190, 130.4187, 800], '香椎' => [33.6610, 130.4460, 900],
+        '大橋' => [33.5605, 130.4230, 700], '高宮' => [33.5593, 130.4098, 700], '長浜' => [33.5930, 130.3910, 600],
+        '川端' => [33.5935, 130.4090, 350], '祇園' => [33.5920, 130.4130, 400],
+    ];
+}
+
+// シーン文の頭に出てくる地名の中心から、起点の範囲を決める（中心をもつ地名がちょうど1つのときだけ。景観の語より後ろの地名は使わない）
+//   返り値：['lat' =>, 'lon' =>, 'm' =>, 'name' =>] または null
+function scene_near_hint(string $scene): ?array {
+    [$masked, $found] = scene_mask_places($scene);
+    if (!$found) return null;
+    $first = null;
+    foreach (scene_group_words() as $re) {
+        if (preg_match("/($re)/u", $masked, $m, PREG_OFFSET_CAPTURE)) {
+            $at = mb_strlen(substr($masked, 0, $m[0][1]));
+            $first = $first === null ? $at : min($first, $at);
+        }
+    }
+    $centers = scene_place_centers();
+    $hit = [];
+    foreach ($found as $f) {
+        if ($first !== null && $f['pos'] > $first) continue;
+        if (isset($centers[$f['name']])) $hit[] = $f['name'];
+    }
+    if (count($hit) !== 1) return null;
+    [$lat, $lon, $m] = $centers[$hit[0]];
+    return ['lat' => $lat, 'lon' => $lon, 'm' => $m, 'name' => $hit[0]];
+}
+
 // 地名を伏せる。返り値：[伏せた文, 見つかった地名の一覧（名前・区・景観・出現位置）]。長い名前を先に伏せる（西中洲 → 中洲 の順）
 function scene_mask_places(string $scene): array {
     $names = array_keys(scene_place_names());
@@ -116,11 +154,14 @@ function interpret_by_keywords(string $scene): array {
     $mode = preg_match('/((?<!自転|電|列|汽|屋台|下)車|ドライブ|運転)/u', $masked) ? 'car'
           : (preg_match('/(歩|散歩|自転車)/u', $masked) ? 'walk' : 'any');
     $area = scene_area_hint($scene);
+    $near = scene_near_hint($scene);
     $notes = 'キーワードから簡易的に解釈しました';
-    if ($area) {
+    if ($near) {
+        $notes .= '（地名から起点を' . $near['name'] . 'の周辺（約' . $near['m'] . 'm）に絞りました）';
+    } elseif ($area) {
         $label = ['fuk-chuo' => '中央区', 'fuk-hakata' => '博多区', 'fuk-higashi' => '東区', 'fuk-sawara' => '早良区', 'fuk-nishi' => '西区', 'fuk-minami' => '南区', 'fuk-jonan' => '城南区'][$area] ?? '';
         $notes .= '（地名から起点を' . $label . 'に絞りました）';
     }
     return ['sequence' => array_slice(array_keys($hits), 0, 4), 'tags' => $tags ?: ['lonely' => 0.1],
-            'travel_mode' => $mode, 'area' => $area, 'notes' => $notes];
+            'travel_mode' => $mode, 'area' => $area, 'near' => $near, 'notes' => $notes];
 }
