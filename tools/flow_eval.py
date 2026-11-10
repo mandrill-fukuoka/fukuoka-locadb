@@ -46,14 +46,20 @@ def main() -> None:
         for i, scene in enumerate(scenes, 1):
             q = interpret(scene)
             t0 = time.time()
-            rs = c.execute("select build_routes(%s, %s::jsonb, %s, null, null, 8)",
-                           [q["sequence"], json.dumps(q["tags"]), q["travel_mode"]]).fetchone()[0] or []
+            # 画面（web/public/flow.php）と同じ：地名に中心（near）があれば周辺で絞り、なければ区（area）で絞る
+            near = q.get("near")
+            area = None if near else q.get("area")
+            rs = c.execute("select build_routes(%s, %s::jsonb, %s, %s, null, 8, %s, %s, %s)",
+                           [q["sequence"], json.dumps(q["tags"]), q["travel_mode"], area,
+                            near["lat"] if near else None, near["lon"] if near else None,
+                            near["m"] if near else None]).fetchone()[0] or []
+            q["start_filter"] = (f"{near['name']}の周辺（約{near['m']}m）" if near else (f"区：{area}" if area else ""))
             ms = int((time.time() - t0) * 1000)
             matches += [float(r.get("match") or 0) for r in rs]
             results.append({"no": i, "scene": scene, "query": q, "ms": ms, "routes": rs})
             print(f"\n### {i}. {scene}\n")
             print(f"景観：{' → '.join(q['sequence']) or '（なし）'}／タグ：{', '.join(q['tags']) or '-'}／"
-                  f"移動：{q['travel_mode']}／結果 {len(rs)} 件／{ms} ms\n")
+                  f"移動：{q['travel_mode']}／起点の絞り込み：{q['start_filter'] or 'なし'}／結果 {len(rs)} 件／{ms} ms\n")
             if not rs:
                 continue
             print("| 順 | 地点 | 移動 | 適合度 | 内訳 |")
@@ -94,7 +100,7 @@ def write_xlsx(results: list, path: str, top: int) -> None:
     wb = Workbook()
     ws = wb.active
     ws.title = "評価"
-    head = ["No", "シーン文", "読み取った景観の流れ", "雰囲気", "移動", "順位", "流れ（地点）", "移動の目安", "適合度",
+    head = ["No", "シーン文", "読み取った景観の流れ", "雰囲気", "移動", "起点の絞り込み", "順位", "流れ（地点）", "移動の目安", "適合度",
             "内訳", "地図", "判定（○／×）", "理由・メモ"]
     ws.append(head)
     for c in ws[1]:
@@ -110,18 +116,19 @@ def write_xlsx(results: list, path: str, top: int) -> None:
             spots = " → ".join(f"{x.get('label') or x['name']}（{x['group']}）" for x in r["spots"]) if r else "（流れが見つからない）"
             parts = "・".join(f"{key} {float(v):.2f}" for key, v in (r.get("score_parts") or {}).items()) if r else ""
             ws.append([res["no"], res["scene"] if k == 1 else "", " → ".join(q["sequence"]) if k == 1 else "",
-                       ", ".join(q["tags"]) if k == 1 else "", q["travel_mode"] if k == 1 else "", k if r else "",
+                       ", ".join(q["tags"]) if k == 1 else "", q["travel_mode"] if k == 1 else "",
+                       q.get("start_filter", "") if k == 1 else "", k if r else "",
                        spots, f"{r['travel_mode']} {r['total_minutes']}分" if r else "",
                        round(float(r.get("match") or 0), 2) if r else "", parts, "" if not r else "ルート", "", ""])
             row = ws.max_row
             if r:
-                ws.cell(row, 11).hyperlink = route_url(r)
-                ws.cell(row, 11).font = Font(color="0563C1", underline="single")
-            dv.add(ws.cell(row, 12))
+                ws.cell(row, 12).hyperlink = route_url(r)
+                ws.cell(row, 12).font = Font(color="0563C1", underline="single")
+            dv.add(ws.cell(row, 13))
             if res["no"] % 2 == 0:
                 for c in ws[row]:
                     c.fill = band
-    for col, w in zip("ABCDEFGHIJKLM", (5, 36, 24, 22, 7, 5, 60, 11, 7, 30, 7, 11, 30)):
+    for col, w in zip("ABCDEFGHIJKLMN", (5, 36, 24, 22, 7, 16, 5, 60, 11, 7, 30, 7, 11, 30)):
         ws.column_dimensions[col].width = w
     for row in ws.iter_rows(min_row=2):
         for c in row:
