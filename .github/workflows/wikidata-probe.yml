@@ -1,0 +1,23 @@
+# Wikidata が既存の地点にどれだけ結べ、どんな事実が取れるかを数える（読み取りだけ。DBへは SELECT のみ。取り込みはしない）
+# 成果物 wikidata-probe：summary.md / linked.csv / candidates.csv
+name: wikidata-probe
+on: workflow_dispatch
+concurrency: { group: wikidata-probe, cancel-in-progress: false }
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 数える
+        shell: bash
+        run: |
+          python -m tools.wikidata_probe --out wikidata-out | tee wikidata.log
+          { cat wikidata-out/summary.md; } >> "$GITHUB_STEP_SUMMARY"
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: wikidata-probe, path: "wikidata-out/", retention-days: 7 }
