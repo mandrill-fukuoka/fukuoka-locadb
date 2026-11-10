@@ -20,6 +20,7 @@ import json
 import re
 import time
 import unicodedata
+import zipfile
 from datetime import date
 from pathlib import Path
 
@@ -36,7 +37,7 @@ GSI = "https://msearch.gsi.go.jp/address-search/AddressSearch"
 BBOX = ac.BBOX
 LICENSE = "CC BY 4.0"
 
-# kind：table（座標つきCSV）/ address（住所だけのCSV）/ shape（公園のShape）
+# kind：table（座標つきCSV）/ address（住所だけのCSV）/ shape（公園のShape）/ gtfs（GTFS の ZIP の stops.txt）
 # name / lat / lon / addr：列名の候補（最初に値のあるもの）。cat：種別の案（なければ名前の語から決める）。
 # 氏名・届出者・連絡先の列は、ここに書かないかぎり読まない
 SPECS = [
@@ -65,6 +66,8 @@ SPECS = [
     dict(key="yatai", pkg="401307_yataiopendata", label="屋台基本情報", kind="table", formats=["CSV"],
          name=["名称"], lat=["緯度"], lon=["経度"], addr=["所在地_連結表記"], cat="eatery_street",
          detail=["区名", "エリア", "カテゴリー"], skip=("開業／廃業フラグ", "1"), url_col="よかなびURL"),    # 写真の列は読まない
+    dict(key="ferry", pkg="401307_shieitosen2025", label="市営渡船の旅客待合所（GTFS）", kind="gtfs",
+         name=["stop_name"], lat=["stop_lat"], lon=["stop_lon"], addr=[], cat="port", detail=[]),
     dict(key="park", pkg="401307_tosikouen_shape", label="都市公園（Shape）", kind="shape", cat="park"),
     dict(key="bath", pkg="401307_kousyuyokujo_eigyoukyoka", label="公衆浴場営業許可施設一覧", kind="address", cat="commercial_facility",
          name=["施設名称"], addr=["施設所在地"], building=["施設ビル名"], detail=["営業の種類"],
@@ -390,6 +393,27 @@ def extract_shape_files(content: bytes, dest: Path, depth: int = 0) -> int:
     return n
 
 
+def items_from_gtfs(spec: dict, res: list[dict], stats: dict, session=requests, sleep=time.sleep) -> list[dict]:
+    """GTFS の ZIP から stops.txt（停留所＝乗り場・待合所の座標）だけを読む。時刻表・運賃は読まない"""
+    z = next((r for r in res if (r.get("format") or "").upper().lstrip(".") == "ZIP"), None)
+    got = http_get(z["url"], None, session, sleep) if z else None
+    if got is None:
+        stats["fetch_failed"] = stats.get("fetch_failed", 0) + 1
+        return []
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(got.content))
+        member = next((n for n in zf.namelist() if n.rsplit("/", 1)[-1] == "stops.txt"), None)
+        records = read_table(decode(zf.read(member))) if member else []
+    except zipfile.BadZipFile:
+        records, member = [], None
+    if member is None:                                       # 形式が変わったときに、静かに0件にならないようにする
+        stats["no_stops"] = stats.get("no_stops", 0) + 1
+        return []
+    items = items_from_table(spec, records, "stops.txt", stats)
+    stats[f"{spec['key']}_items"] = len(items)
+    return items
+
+
 def collect(conn, spec: dict, stats: dict, workdir: Path, session=requests, sleep=time.sleep) -> list[dict]:
     """1つのデータセットを取って、項目の一覧にする"""
     res = [r for r in package_resources(spec["pkg"], session, sleep) if r.get("url")]
@@ -408,6 +432,8 @@ def collect(conn, spec: dict, stats: dict, workdir: Path, session=requests, slee
         items = items_from_shape(conn, str(shp), stats)
         stats["park_items"] = len(items)
         return items
+    if spec["kind"] == "gtfs":
+        return items_from_gtfs(spec, res, stats, session, sleep)
     formats = spec.get("formats") or ["CSV"]
     res = [r for r in res if (r.get("format") or "").upper() in formats]
     items = []
