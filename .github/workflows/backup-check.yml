@@ -1,0 +1,38 @@
+# 暗号化バックアップの往復確認：pg_dump → 暗号化 → 復号 → pg_restore -l で中身が読めるか。成果物は残さない（読み取りのみ。DBは変更しない）
+name: backup-check
+on: workflow_dispatch
+concurrency: { group: backup-check, cancel-in-progress: false }
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: 暗号化の準備（未登録なら止まる）
+        run: tools/backup_crypt.sh check
+        env: { BACKUP_PASSPHRASE: "${{ secrets.BACKUP_PASSPHRASE }}" }
+      - name: 往復確認
+        shell: bash
+        run: |
+          docker run --rm -v "$PWD:/out" -e DATABASE_URL postgres:17 \
+            pg_dump "$DATABASE_URL" --no-owner --no-privileges -Fc -f /out/check.dump
+          docker run --rm -v "$PWD:/out" postgres:17 pg_restore -l /out/check.dump > before.toc
+          sha256sum check.dump | cut -d' ' -f1 > before.sha
+          tools/backup_crypt.sh encrypt check.dump
+          test ! -e check.dump
+          file check.dump.gpg | grep -qi -E 'gpg|pgp|symmetric|encrypted' || { echo "暗号化の形式を確認できません"; exit 1; }
+          if grep -q 'PGDMP' check.dump.gpg; then echo "平文が残っています"; exit 1; fi
+          tools/backup_crypt.sh decrypt check.dump.gpg restored.dump
+          test "$(sha256sum restored.dump | cut -d' ' -f1)" = "$(cat before.sha)"
+          docker run --rm -v "$PWD:/out" postgres:17 pg_restore -l /out/restored.dump > after.toc
+          diff before.toc after.toc
+          {
+            echo "## バックアップの暗号化 往復確認"
+            echo "- 暗号化ファイルのサイズ：$(stat -c %s check.dump.gpg) バイト"
+            echo "- 復号したダンプは元と一致（SHA-256）、pg_restore の目次 $(wc -l < after.toc) 行が一致"
+            echo "- 成果物は残していない"
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f check.dump* restored.dump *.toc before.sha
+        env:
+          DATABASE_URL: "${{ secrets.DATABASE_URL }}"
+          BACKUP_PASSPHRASE: "${{ secrets.BACKUP_PASSPHRASE }}"
