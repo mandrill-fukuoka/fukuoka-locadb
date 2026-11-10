@@ -77,8 +77,9 @@ web/                   画面（public → heteml の web/locadb/、app/lib.php 
 
 | 名前 | いつ | 何をする |
 |---|---|---|
-| pipeline | 毎週月曜6:00（本番）／手動 | 取得→反映→住所→地形→流れ→AI分類→変化リスク。手動は mode=dry_run（試し）か apply、terrain_only（地形だけ）。本番・地形だけはバックアップを先に取る |
-| db-migrate | 手動 | DBの変更。status / dry_run / apply（バックアップしてから） |
+| pipeline | 毎週月曜6:00（本番）／手動 | 取得→反映→住所→地形→流れ→AI分類→変化リスク。手動は mode=dry_run（試し）か apply、terrain_only（地形だけ）。本番・地形だけはバックアップを先に取る（暗号化して成果物に保存。Secrets の BACKUP_PASSPHRASE が必要） |
+| db-migrate | 手動 | DBの変更。status / dry_run / apply（暗号化バックアップを取ってから） |
+| backup-check | 手動 | 暗号化バックアップの往復確認（dump → 暗号化 → 復号 → 目次の照合）。成果物は残さない。DBは変更しない |
 | deploy-web | 手動 | 画面を heteml へ。probe（フォルダ確認だけ）/ deploy |
 | diagnose | 手動 | データの診断（読み取りのみ） |
 | verify | 月曜の pipeline（本番）の後／手動 | 登録地の自動チェック（種別・住所・説明文の下書き。AIなし）。apply は指摘を spot_checks に保存し確認画面「自動チェック」タブへ（地点・下書きは変えない）。dry_run は読み取りのみ。どちらも一覧 findings.csv を成果物に |
@@ -112,3 +113,10 @@ TEST_PG=postgresql://user:pass@localhost:5432 pytest -q tests
 
 - コード：MIT（[LICENSE](LICENSE)）。© 2026 マンドリル
 - データの一部（Wikipedia 由来の事実・説明文の材料）は CC BY-SA 4.0。詳しくは [NOTICE.md](NOTICE.md)
+
+## バックアップの暗号化と復元
+pipeline（本番）と db-migrate（apply）の反映前バックアップは、このリポジトリが公開なので **gpg（AES256）で暗号化してから** Actions の成果物（90日保存）に置く。パスフレーズは Secrets の `BACKUP_PASSPHRASE`（利用者が登録。値はログに出ない。未登録なら反映の前に止まる）。パスフレーズを失うと復元できないので、パスワード管理ツールにも控える。
+
+復元：成果物 `backup-before`／`backup-before-migrate` の `*.dump.gpg` をダウンロードし、手元で
+`gpg -d -o x.dump before-….dump.gpg`（パスフレーズを聞かれる）→ `pg_restore --no-owner -d <接続先> x.dump`。
+動作確認は Actions「backup-check」。

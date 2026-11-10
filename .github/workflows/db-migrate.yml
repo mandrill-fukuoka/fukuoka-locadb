@@ -17,15 +17,22 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install "psycopg[binary]>=3.2"
-      - name: バックアップ
+      - name: バックアップの暗号化の準備（未登録ならここで止まる）
+        if: inputs.mode == 'apply'
+        run: tools/backup_crypt.sh check
+        env: { BACKUP_PASSPHRASE: "${{ secrets.BACKUP_PASSPHRASE }}" }
+      - name: バックアップ（暗号化してから保存）
         if: inputs.mode == 'apply'
         run: |
           docker run --rm -v "$PWD:/out" -e DATABASE_URL postgres:17 \
             pg_dump "$DATABASE_URL" --no-owner --no-privileges -Fc -f /out/before-migrate-$(date +%Y%m%d-%H%M).dump
-        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+          for f in before-migrate-*.dump; do tools/backup_crypt.sh encrypt "$f"; done
+        env:
+          DATABASE_URL: "${{ secrets.DATABASE_URL }}"
+          BACKUP_PASSPHRASE: "${{ secrets.BACKUP_PASSPHRASE }}"
       - uses: actions/upload-artifact@v4
         if: inputs.mode == 'apply'
-        with: { name: backup-before-migrate, path: "before-migrate-*.dump", retention-days: 90 }
+        with: { name: backup-before-migrate, path: "before-migrate-*.dump.gpg", retention-days: 90 }
       - name: 適用
         run: |
           case "${{ inputs.mode }}" in
