@@ -1,4 +1,5 @@
 """回帰テスト：追加候補にBODIK（福岡市オープンデータ）を加える（DB変更220）。外部へは出ない（取得は偽のセッションで差し替える）"""
+import io
 import json
 import re
 from datetime import date
@@ -44,7 +45,7 @@ class FakeSession:
 
 # ------------------------------------------------------------------ 決まり（DBなし）
 def test_specs_use_valid_categories_and_never_read_personal_name_columns():
-    assert {s["key"] for s in bi.SPECS} == set(bi.SPEC_BY_KEY) and len(bi.SPECS) == 17
+    assert {s["key"] for s in bi.SPECS} == set(bi.SPEC_BY_KEY) and len(bi.SPECS) == 18
     assert {s["cat"] for s in bi.SPECS if s.get("cat")} <= set(CATEGORIES)
     cols = [c for s in bi.SPECS for k in ("name", "addr", "building", "detail", "id_cols") for c in s.get(k, [])]
     assert not [c for c in cols if re.search(r"氏名|届出者|代表者|営業者", c)]        # 氏名・届出者の列は読まない
@@ -287,3 +288,42 @@ def test_save_list_counts_and_adopt_keep_source_and_license(db, tmp_path):
                          "near_m": None}]) == 1
     w = rpc(db, "additions_list", p_source="wikipedia")[0]
     assert w["dataset"] is None and w["detail"] == {} and rpc(db, "additions_counts")["wikipedia"] == 1
+
+
+def _gtfs_zip(stops: str) -> bytes:
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("routes.txt", "route_id\nr1\n")
+        z.writestr("stops.txt", stops)
+    return buf.getvalue()
+
+
+class _Resp:
+    status_code = 200
+
+    def __init__(self, content):
+        self.content = content
+
+
+class _Sess:
+    def __init__(self, content):
+        self.content = content
+
+    def get(self, *a, **k):
+        return _Resp(self.content)
+
+
+def test_ferry_reads_stops_from_gtfs_zip():
+    stops = "stop_id,stop_name,stop_lat,stop_lon\n[03]志賀島旅客待合所,志賀島旅客待合所,33.6622398,130.309634\n[99]海外,海外,10,10\n"
+    res = [{"format": ".ZIP", "url": "http://x"}]
+    st = {}
+    got = bi.items_from_gtfs(bi.SPEC_BY_KEY["ferry"], res, st, _Sess(_gtfs_zip(stops)), lambda s: None)
+    assert [g["name"] for g in got] == ["志賀島旅客待合所"] and st["ferry_items"] == 1
+    assert got[0]["key"].startswith("bodik:ferry:") and got[0]["detail"]["resource"] == "stops.txt"
+
+
+def test_ferry_without_stops_is_counted_not_silent():
+    st = {}
+    got = bi.items_from_gtfs(bi.SPEC_BY_KEY["ferry"], [{"format": "ZIP", "url": "http://x"}], st, _Sess(b"not a zip"), lambda s: None)
+    assert got == [] and st["no_stops"] == 1
