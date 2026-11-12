@@ -160,6 +160,41 @@ def test_kinds_limit_start_and_end_categories(db):
     assert [r["route_key"] for r in run(["institution", "river"], {})] == [r["route_key"] for r in both]
 
 
+def test_island_is_put_behind_unless_the_scene_asks_for_it(db):
+    # 海辺・防波堤の文では、島は同じ条件の中で後ろに回す。島を指す語（p_kinds に island）があれば後ろに回さない（2026-11-12）
+    add(db, "Z港", "port", 0, 0)
+    add(db, "近い島", "island", 300, 0)
+    for i, (dx, dy) in enumerate([(-500, 0), (0, 500), (0, -500), (500, 300)]):
+        add(db, f"防波堤{i}", "breakwater", dx, dy)
+
+    def run(kinds):
+        return db.execute("select build_routes(%s, '{}'::jsonb, 'walk', null, null, 8, p_kinds => %s::jsonb) as r",
+                          [["port_industrial", "sea"], json.dumps(kinds) if kinds is not None else None]).fetchone()["r"]
+
+    rs = run(None)
+    assert rs and all(names(r)[-1] != "近い島" for r in rs)                       # 島以外が3件以上あるので、島は候補に入らない
+    rs = run({"sea": ["island"]})
+    assert rs and {names(r)[-1] for r in rs} == {"近い島"}                         # 島を指す語があれば島が出る
+    rs = run({"sea": ["island", "breakwater"]})
+    assert rs and names(rs[0])[0] == "Z港"                                         # 島の語があるときは後ろに回さない（出るかは点数次第）
+
+
+def test_any_mode_does_not_repeat_the_same_places_for_walk_and_car(db):
+    # 歩きと車で同じ地点の組が2回出ない（2026-11-12）。離れた2組があれば、2組が1回ずつ
+    add(db, "港1", "port", 0, 0)
+    add(db, "海1", "coast", 400, 0)
+    add(db, "港2", "port", 0, 6000)
+    add(db, "海2", "coast", 400, 6000)
+    seq = ["port_industrial", "sea"]
+    assert len(routes(db, seq, mode="walk")) == 2 and len(routes(db, seq, mode="car")) == 2
+    rs = routes(db, seq, mode="any")
+    assert len(rs) == 2 and {tuple(names(r)) for r in rs} == {("港1", "海1"), ("港2", "海2")}
+    assert {r["travel_mode"] for r in rs} <= {"walk", "car"}
+    # 1地点の流れも同じ（同じ地点を歩きと車で2回出さない）
+    one = routes(db, ["sea"], mode="any", limit=8)
+    assert len({names(r)[0] for r in one}) == len(one)
+
+
 def php_kinds(scene, seq):
     code = ("require 'web/app/scene.php'; echo json_encode(scene_kinds($argv[1], json_decode($argv[2], true)), JSON_UNESCAPED_UNICODE);")
     out = subprocess.run(["php", "-r", code, scene, json.dumps(seq)], cwd=ROOT, capture_output=True, text=True, check=True)
@@ -195,6 +230,15 @@ def test_keywords_kinds_are_not_set_by_generic_words_or_place_names():
     assert php_interpret("川端商店街から歩く")["kinds"] == {"old_town": ["shotengai"]}                    # 地名の「川」は伏せる
     # 流れに入っていない景観グループの語は使わない（流れを直接指定したときなど）
     assert not php_kinds("高校から川沿いを歩く", ["river"])["kinds"]
+
+
+def test_keywords_sea_kinds_island_ferry_lighthouse():
+    # 島・フェリー乗り場・灯台の語（2026-11-12）
+    q = php_interpret("島へ渡るフェリー乗り場から、漁港の路地を歩いて丘の上へ")
+    assert set(q["kinds"]["sea"]) == {"island", "harbour_structure", "fishing_port"}
+    q = php_interpret("夕方の灯台のある海辺を歩く")
+    assert q["kinds"] == {"sea": ["lighthouse"]} and "sea" in q["sequence"]
+    assert not php_interpret("夕暮れの海辺で歩く")["kinds"]
 
 
 def test_keywords_port_is_read_in_order():
