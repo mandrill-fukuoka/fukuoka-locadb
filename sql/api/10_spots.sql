@@ -136,13 +136,17 @@ create function search_spots(
   p_group text default null, p_tags text[] default null, p_offset int default 0, p_limit int default 40,
   p_relief_min real default null,
   p_open text default null, p_water text default null, p_road text default null,
-  p_built text default null, p_photo text default null
+  p_built text default null, p_photo text default null,
+  p_sort text default null      -- 並び順：null/relevance（おすすめ順）・name（名前順）・address（住所順）・created（登録が新しい順）・updated（更新が新しい順）・relief（周りより高い順）・facts（事実の多い順）。2026-11-12
 ) returns jsonb language sql stable as $$
-with hits as (
+with opt as (
+  select case when p_sort in ('name','address','created','updated','relief','facts') then p_sort else 'relevance' end as s
+),
+hits as (
   select s.id, s.code, s.name, s.area_code, s.address, s.category as cat, sc.name as category,
          sc.landscape_group as grp_code, lg.name as grp, s.era_feel, s.shoot_scope, s.status, s.confidence,
          s.data_status, s.summary, s.ffc_registered, s.geom, s.line_key, s.position_kind,
-         s.relief_m, s.slope_grade_pct, s.slope_rise_m, s.rail_form,
+         s.relief_m, s.slope_grade_pct, s.slope_rise_m, s.rail_form, s.created_at, s.updated_at,
          (s.name like '（無名）%') as unnamed,
          (select count(*) from spot_facts f where f.spot_id = s.id and f.status = 'approved') as fact_count,
          live_root(s.group_root_id) as groot, s.parent_id
@@ -183,9 +187,27 @@ grouped as (
                                           then h.cat || '|' || h.name || '|' || h.area_code end,
                                      'root:' || h.gkey_root,
                                      h.id::text))
+),
+ranked as (       -- 一覧の件（まとめたあと）に全体の件数と順位をつける。並べ替えは名前・住所などの軽い列だけで行う
+  select g.*, count(*) over () as total,
+         row_number() over (order by g.unnamed,
+            case when o.s = 'relevance' then case when p_q is null then 0 else similarity(g.name, p_q) end end desc,
+            case when o.s = 'relevance' then case when p_relief_min is null then 0 else g.relief_m end end desc,
+            case when o.s = 'relevance' then (g.confidence in ('desk_checked','field_checked'))::int end desc,
+            case when o.s = 'relevance' then (g.fact_count > 0 or g.summary is not null)::int end desc,   -- 事実・説明文のある地点を先に
+            case when o.s = 'name' then g.name end,
+            case when o.s = 'address' then g.address end,
+            case when o.s = 'created' then g.created_at end desc,
+            case when o.s = 'updated' then g.updated_at end desc,
+            case when o.s = 'relief' then g.relief_m end desc nulls last,
+            case when o.s = 'facts' then g.fact_count end desc,
+            md5(g.code)                                       -- 区・種類が偏らないよう散らす（毎回同じ順＝ページ送りは安定）
+         ) as rank
+    from grouped g cross join opt o
+   where g.rn = 1
 )
-select coalesce(jsonb_agg(x), '[]'::jsonb) from (
-  select g.id, g.code, g.name, spot_label(g.name, g.cat, g.address, g.rail_form) as label,
+select coalesce(jsonb_agg(x order by x.rank), '[]'::jsonb) from (
+  select g.rank, g.total, g.id, g.code, g.name, spot_label(g.name, g.cat, g.address, g.rail_form) as label,
          g.area_code, g.address, g.category, g.grp_code, g.grp,
          g.era_feel, g.shoot_scope, g.status, g.confidence, g.data_status, g.summary, g.ffc_registered,
          g.position_kind, ST_Y(g.geom::geometry) as lat, ST_X(g.geom::geometry) as lon,
@@ -204,15 +226,8 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
                                     'license_url', ph.license_url, 'source_url', ph.source_url, 'title', ph.title)
             from spot_photos ph where ph.spot_id = g.id order by ph.id limit 1) as photo,        -- 採用された写真（出典つき）
          exists (select 1 from change_risks rk where rk.spot_id = g.id and rk.risk_type <> 'none') as risk
-    from grouped g
-   where g.rn = 1
-   order by g.unnamed,
-            case when p_q is null then 0 else similarity(g.name, p_q) end desc,
-            case when p_relief_min is null then 0 else g.relief_m end desc,
-            (g.confidence in ('desk_checked','field_checked')) desc,
-            (g.fact_count > 0 or g.summary is not null) desc,     -- 事実・説明文のある地点を先に
-            md5(g.code)                                           -- 区・種類が偏らないよう散らす（毎回同じ順＝ページ送りは安定）
-   offset p_offset limit p_limit
+    from ranked g
+   where g.rank > p_offset and g.rank <= p_offset + p_limit
 ) x;
 $$;
 
