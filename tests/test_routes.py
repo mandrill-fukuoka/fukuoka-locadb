@@ -131,11 +131,13 @@ def test_near_limits_start_spots(db):
 
 def test_kinds_limit_start_and_end_categories(db):
     # 語から種類を絞る（高校→学校だけ、神社→寺社だけ）：起点・終点の種別が p_kinds の範囲に入るものだけ（2026-11-12）
+    # 北（y=0）と南（y=3000）は離れていて、それぞれの組の中でしか流れにならない（起点・終点ごとに最良の1件だけ残るため）
     add(db, "A高校", "school", 0, 0)
-    add(db, "B病院", "hospital", 0, 250)
-    add(db, "那珂川", "river", 500, 0, line_key="river:那珂川")
-    add(db, "D神社", "shrine_temple", 500, 500)
-    add(db, "E古墳", "heritage", 500, 700)
+    add(db, "那珂川", "river", 400, 0, line_key="river:那珂川")
+    add(db, "D神社", "shrine_temple", 0, 400)
+    add(db, "B病院", "hospital", 0, 3000)
+    add(db, "博多川", "river", 400, 3000, line_key="river:博多川")
+    add(db, "E古墳", "heritage", 0, 3400)
 
     def run(seq, kinds, mode="walk"):
         return db.execute("select build_routes(%s, '{}'::jsonb, %s, null, null, 8, p_kinds => %s::jsonb) as r",
