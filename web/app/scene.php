@@ -37,6 +37,50 @@ function scene_tag_words(): array {
     ];
 }
 
+// 語が指す「種類」（spot_categories.code）。景観グループの中で、シーン文に種類を指す語があれば、その種類だけに絞る
+//   例：「高校」→ 学校・大学だけ（病院・クリニックは外す）、「神社」→ 寺社だけ（慰霊碑・教会・像は外す）、「屋台」→ 屋台・飲食店街だけ（2026-11-12）
+//   景観グループごとに [語（正規表現）, 種類コードの配列, 画面に出す名前] を並べる。種類を指す語がなければ絞らない（景観グループ全体）。
+//   複数の語が当てはまれば、その種類をすべて入れる（和集合）。景観の語（scene_group_words）と合わせて育てる
+function scene_kind_words(): array {
+    return [
+        'institution' => [['小学校|中学|高校|高等学校|学校|校舎|校門|校庭|大学|キャンパス|母校', ['school'], '学校・大学'],
+                          ['病院|医院|クリニック', ['hospital'], '病院'], ['役所|図書館|市民センター|公民館', ['civic'], '役所・図書館など']],
+        'historic' => [['神社|神宮|寺|参道|鳥居|境内|八幡|稲荷|社殿', ['shrine_temple'], '寺社'],
+                       ['城跡|城址|石垣|天守|お城|城壁|城', ['castle'], '城跡・石垣'], ['史跡|遺跡|古墳|洋館', ['heritage'], '歴史的建築・遺跡']],
+        'commercial' => [['屋台', ['yatai_area', 'eatery_street'], '屋台・飲食店街'], ['飲み屋|歓楽街', ['nightlife_area'], '飲み屋街']],
+        'old_town' => [['商店街|アーケード', ['shotengai'], '商店街'], ['路地|細い道|狭い道|裏通り|小路', ['alley'], '路地']],
+        'transport' => [['歩道橋|橋(?!脚)|高架橋|陸橋', ['bridge_overpass'], '橋・歩道橋'], ['駅', ['station'], '駅'],
+                        ['高速道路|高速の|都市高速|高架(?!下)', ['expressway'], '高速道路の高架']],
+        'rail' => [['踏切', ['level_crossing'], '踏切'], ['線路|列車|電車の見え', ['railway'], '線路沿い']],
+        'vacant' => [['廃墟|廃校|廃工場|廃屋|廃ビル|閉鎖|空き', ['ruins', 'vacant'], '廃墟・閉鎖施設'], ['廃線', ['disused_railway'], '廃線跡'],
+                     ['再開発|工事現場|更地|工事中', ['redevelopment_site'], '工事中・再開発地']],
+        'port_industrial' => [['倉庫', ['warehouse'], '倉庫'], ['工場', ['factory'], '工場'],
+                              ['コンテナ|ふ頭|埠頭|港湾|(?<![漁空])港', ['port'], '港湾・ふ頭']],
+        'river' => [['河川敷|土手|河原|河畔|川べり', ['riverbank'], '河川敷・土手']],
+        'sea' => [['防波堤|堤防', ['breakwater'], '防波堤・堤防'], ['漁港', ['fishing_port'], '漁港']],
+        'green' => [['公園|庭園', ['park'], '公園・庭園'], ['山|丘|展望台', ['hill'], '山・丘・展望地点']],
+        'urban_new' => [['高層|摩天楼|オフィス|ビル街|ビル群', ['new_building'], '高層ビル・ホテル'], ['広場', ['public_space'], '広場'],
+                        ['立体駐車場', ['parking_multi'], '立体駐車場']],
+    ];
+}
+
+// シーン文から、流れに入っている景観グループごとの種類の絞り込みを作る。返り値：['kinds' => [グループ => [種類コード…]], 'labels' => [名前…]]
+//   $seq：検索に使う景観の流れ（これに入っていないグループは絞らない）。地名の中の字（大橋の「橋」など）は伏せてから読む
+function scene_kinds(string $scene, array $seq): array {
+    [$masked] = scene_mask_places($scene);
+    $kinds = []; $labels = [];
+    foreach (scene_kind_words() as $g => $rows) {
+        if (!in_array($g, $seq, true)) continue;
+        foreach ($rows as [$re, $codes, $label]) {
+            if (!preg_match("/($re)/u", $masked)) continue;
+            foreach ($codes as $c) $kinds[$g][$c] = $c;
+            $labels[$label] = $label;
+        }
+        if (isset($kinds[$g])) $kinds[$g] = array_values($kinds[$g]);
+    }
+    return ['kinds' => $kinds, 'labels' => array_values($labels)];
+}
+
 // 福岡市の地名（区の判定つき）。景観の語と同じ字を含む地名（川端・山笠・城南・大橋・柳橋など）が景観に誤反応しないよう、
 // 景観の判定の前に伏せる。地名は区の絞り込み（起点の区）に回す。値：[区コード, 景観が他に読めないときだけ使う景観 or null]
 // 区が確かなものだけを入れる（誤ると検索が狭まるため）。育てる場合も、区が複数にまたがる地名・広域の地名（博多湾など）は入れない。
@@ -155,6 +199,8 @@ function interpret_by_keywords(string $scene): array {
           : (preg_match('/(歩|散歩|自転車)/u', $masked) ? 'walk' : 'any');
     $area = scene_area_hint($scene);
     $near = scene_near_hint($scene);
+    $seq = array_slice(array_keys($hits), 0, 4);
+    $kindHint = scene_kinds($scene, $seq);
     $notes = 'キーワードから簡易的に解釈しました';
     if ($near) {
         $notes .= '（地名から起点を' . $near['name'] . 'の周辺（約' . $near['m'] . 'm）に絞りました）';
@@ -162,6 +208,7 @@ function interpret_by_keywords(string $scene): array {
         $label = ['fuk-chuo' => '中央区', 'fuk-hakata' => '博多区', 'fuk-higashi' => '東区', 'fuk-sawara' => '早良区', 'fuk-nishi' => '西区', 'fuk-minami' => '南区', 'fuk-jonan' => '城南区'][$area] ?? '';
         $notes .= '（地名から起点を' . $label . 'に絞りました）';
     }
-    return ['sequence' => array_slice(array_keys($hits), 0, 4), 'tags' => $tags ?: ['lonely' => 0.1],
-            'travel_mode' => $mode, 'area' => $area, 'near' => $near, 'notes' => $notes];
+    if ($kindHint['labels']) $notes .= '（語から種類を絞りました：' . implode('・', $kindHint['labels']) . '）';
+    return ['sequence' => $seq, 'tags' => $tags ?: ['lonely' => 0.1],
+            'travel_mode' => $mode, 'area' => $area, 'near' => $near, 'kinds' => $kindHint['kinds'], 'notes' => $notes];
 }

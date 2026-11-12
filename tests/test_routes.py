@@ -129,6 +129,72 @@ def test_near_limits_start_spots(db):
     assert [r["route_key"] for r in routes(db, seq, mode="walk")] == [r["route_key"] for r in allr]
 
 
+def test_kinds_limit_start_and_end_categories(db):
+    # 語から種類を絞る（高校→学校だけ、神社→寺社だけ）：起点・終点の種別が p_kinds の範囲に入るものだけ（2026-11-12）
+    add(db, "A高校", "school", 0, 0)
+    add(db, "B病院", "hospital", 0, 250)
+    add(db, "那珂川", "river", 500, 0, line_key="river:那珂川")
+    add(db, "D神社", "shrine_temple", 500, 500)
+    add(db, "E古墳", "heritage", 500, 700)
+
+    def run(seq, kinds, mode="walk"):
+        return db.execute("select build_routes(%s, '{}'::jsonb, %s, null, null, 8, p_kinds => %s::jsonb) as r",
+                          [seq, mode, json.dumps(kinds) if kinds is not None else None]).fetchone()["r"]
+
+    both = run(["institution", "river"], None)
+    assert {names(r)[0] for r in both} == {"A高校", "B病院"}
+    for mode in ("walk", "car", "any"):
+        only_school = run(["institution", "river"], {"institution": ["school"]}, mode)
+        assert only_school and {names(r)[0] for r in only_school} == {"A高校"}, mode
+    # 終点の段にも効く。種類のないグループ（river）は景観全体のまま
+    ends = run(["institution", "historic"], None)
+    assert {names(r)[-1] for r in ends} == {"D神社", "E古墳"}
+    ends = run(["institution", "historic"], {"historic": ["shrine_temple"]})
+    assert ends and {names(r)[-1] for r in ends} == {"D神社"}
+    # 指定の種類の地点がなければ0件（画面は絞らずに探し直す）
+    assert run(["institution", "river"], {"institution": ["civic"]}) == []
+    # 指定がなければ従来どおり（同じ条件なら同じ順）
+    assert [r["route_key"] for r in run(["institution", "river"], None)] == [r["route_key"] for r in both]
+    assert [r["route_key"] for r in run(["institution", "river"], {})] == [r["route_key"] for r in both]
+
+
+def php_kinds(scene, seq):
+    code = ("require 'web/app/scene.php'; echo json_encode(scene_kinds($argv[1], json_decode($argv[2], true)), JSON_UNESCAPED_UNICODE);")
+    out = subprocess.run(["php", "-r", code, scene, json.dumps(seq)], cwd=ROOT, capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)
+
+
+def test_keywords_kinds_from_words():
+    # 種類を指す語があれば、その種類だけに絞る
+    q = php_interpret("放課後、高校から川沿いの土手を二人で歩いて帰る")
+    assert q["kinds"] == {"institution": ["school"], "river": ["riverbank"]}
+    assert "語から種類を絞りました" in q["notes"] and "学校・大学" in q["notes"]
+    q = php_interpret("実家のある住宅地から、小学校の前を通って神社へ向かう")
+    assert q["kinds"] == {"institution": ["school"], "historic": ["shrine_temple"]}
+    q = php_interpret("入院中の父を見舞った帰り、病院の前のバス停から川沿いを歩く")
+    assert q["kinds"].get("institution") == ["hospital"] and "transport" not in q["kinds"]        # バス停は種類に結びつけない
+    # 複数の語は和集合。屋台と飲み屋街
+    q = php_interpret("仕事帰り、ネオンの飲み屋街を抜けて屋台に座る")
+    assert set(q["kinds"]["commercial"]) == {"yatai_area", "eatery_street", "nightlife_area"}
+    # 城跡・お堀、商店街と路地、踏切、工場、高層ビルと広場
+    assert php_interpret("城跡の石垣の下を歩き、お堀沿いに進む")["kinds"] == {"historic": ["castle"]}
+    assert php_interpret("自転車で坂道を下り、踏切を渡って商店街に入る")["kinds"] == {"rail": ["level_crossing"], "old_town": ["shotengai"]}
+    assert php_interpret("追われている男が、狭い路地から工場の裏手へ逃げ込む")["kinds"] == {"old_town": ["alley"], "port_industrial": ["factory"]}
+    assert php_interpret("天神の高層ビルから川沿いへ歩く")["kinds"] == {"urban_new": ["new_building"]}
+    assert set(php_interpret("高層ビルのオフィスを出て、昼休みに広場のベンチで弁当を食べる")["kinds"]["urban_new"]) == {"new_building", "public_space"}
+    # 「商店街」と「路地」の両方があるときは、その2つの種類（景観の全体と同じ）
+    assert set(php_interpret("商店街から路地へ")["kinds"]["old_town"]) == {"shotengai", "alley"}
+
+
+def test_keywords_kinds_are_not_set_by_generic_words_or_place_names():
+    assert php_interpret("繁華街から路地を抜けると、川沿いに出る")["kinds"] == {"old_town": ["alley"]}     # 繁華街・川沿いは景観全体
+    assert not php_interpret("夕暮れの海辺で歩く")["kinds"]                     # 種類を指す語がなければ絞らない（PHPの空の配列は [] になる）
+    assert php_interpret("大橋駅から高宮の住宅街へ")["kinds"] == {"transport": ["station"]}              # 地名の「橋」は種類にしない
+    assert php_interpret("川端商店街から歩く")["kinds"] == {"old_town": ["shotengai"]}                    # 地名の「川」は伏せる
+    # 流れに入っていない景観グループの語は使わない（流れを直接指定したときなど）
+    assert not php_kinds("高校から川沿いを歩く", ["river"])["kinds"]
+
+
 def test_keywords_port_is_read_in_order():
     q = php_interpret("港の倉庫街を抜けて海沿いに出る")
     assert q["sequence"] == ["port_industrial", "sea"]
