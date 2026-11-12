@@ -165,7 +165,7 @@ def test_island_is_put_behind_unless_the_scene_asks_for_it(db):
     add(db, "Z港", "port", 0, 0)
     add(db, "近い島", "island", 300, 0)
     for i, (dx, dy) in enumerate([(-500, 0), (0, 500), (0, -500), (500, 300)]):
-        add(db, f"防波堤{i}", "breakwater", dx, dy)
+        add(db, f"海岸{i}", "coast", dx, dy)
 
     def run(kinds):
         return db.execute("select build_routes(%s, '{}'::jsonb, 'walk', null, null, 8, p_kinds => %s::jsonb) as r",
@@ -175,7 +175,7 @@ def test_island_is_put_behind_unless_the_scene_asks_for_it(db):
     assert rs and all(names(r)[-1] != "近い島" for r in rs)                       # 島以外が3件以上あるので、島は候補に入らない
     rs = run({"sea": ["island"]})
     assert rs and {names(r)[-1] for r in rs} == {"近い島"}                         # 島を指す語があれば島が出る
-    rs = run({"sea": ["island", "breakwater"]})
+    rs = run({"sea": ["island", "coast"]})
     assert rs and names(rs[0])[0] == "Z港"                                         # 島の語があるときは後ろに回さない（出るかは点数次第）
 
 
