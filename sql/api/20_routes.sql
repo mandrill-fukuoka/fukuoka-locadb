@@ -46,6 +46,8 @@ declare
   v_anychk boolean;
   v_cats   jsonb;
   v_kinds  jsonb := coalesce(p_kinds, '{}'::jsonb);
+  -- 島は、シーン文に島を指す語（p_kinds に island）がないかぎり、同じ条件の中で後ろに回す（海辺・防波堤の文で島が先に出るため。2026-11-12）
+  v_isle   boolean := not exists (select 1 from jsonb_each(coalesce(p_kinds, '{}'::jsonb)) e, jsonb_array_elements_text(e.value) x where x.value = 'island');
   v_sgrp   text;
   v_n      int;
   v_seed   text;
@@ -57,12 +59,27 @@ declare
   v_ok     boolean;
   v_out    jsonb;
 begin
-  if p_mode = 'any' then        -- 徒歩と車を半分ずつ求め、適合度の高い順に並べる
-    return (select coalesce(jsonb_agg(e.value order by (e.value ->> 'match')::numeric desc, e.ord), '[]'::jsonb)
-              from jsonb_array_elements(
-                     coalesce(build_routes(p_seq, p_tags, 'walk', p_area, p_start, greatest(p_limit - p_limit / 2, 1), p_near_lat, p_near_lon, p_near_m, p_kinds), '[]'::jsonb)
-                  || coalesce(build_routes(p_seq, p_tags, 'car',  p_area, p_start, greatest(p_limit / 2, 1), p_near_lat, p_near_lon, p_near_m, p_kinds), '[]'::jsonb))
-                   with ordinality e(value, ord));
+  if p_mode = 'any' then        -- 徒歩と車を半分ずつ求め、適合度の高い順に並べる。同じ地点の組は1つにする（歩きと車で同じ流れが2回出ない。2026-11-12）
+    v_cand := (select coalesce(jsonb_agg(e.value order by (e.value ->> 'match')::numeric desc, e.ord), '[]'::jsonb)
+                 from jsonb_array_elements(
+                        coalesce(build_routes(p_seq, p_tags, 'walk', p_area, p_start, greatest(p_limit - p_limit / 2, 1), p_near_lat, p_near_lon, p_near_m, p_kinds), '[]'::jsonb)
+                     || coalesce(build_routes(p_seq, p_tags, 'car',  p_area, p_start, greatest(p_limit / 2, 1), p_near_lat, p_near_lon, p_near_m, p_kinds), '[]'::jsonb))
+                      with ordinality e(value, ord));
+    for c in select value from jsonb_array_elements(v_cand) loop
+      v_ok := true;
+      for k in select value from jsonb_array_elements(v_keys) loop
+        if (select count(*) from jsonb_array_elements(c -> 'spots') a
+             where (a.value ->> 'id') in (select jsonb_array_elements_text(k)))
+           >= least(2, jsonb_array_length(c -> 'spots')) then
+          v_ok := false; exit;
+        end if;
+      end loop;
+      if v_ok then
+        v_kept := v_kept || jsonb_build_array(c);
+        v_keys := v_keys || jsonb_build_array((select jsonb_agg(a.value ->> 'id') from jsonb_array_elements(c -> 'spots') a));
+      end if;
+    end loop;
+    return v_kept;
   end if;
 
   v_maxm := v_budget * v_speed / 1.3;    -- 直線距離 × 迂回係数1.3 で概算
@@ -97,6 +114,7 @@ begin
   create temp table _route_cand on commit drop as
   select st.o::int as stage, s.id, s.geom, ST_Transform(s.geom::geometry, 6670) as g,
          (s.name like '（無名）%') as unnamed,
+         (v_isle and s.category = 'island') as isle,
          (s.confidence in ('desk_checked','field_checked')) as checked,
          route_name_key(s.name) as nkey,
          array_remove(array[s.id, s.parent_id], null) as self_fam,
@@ -116,6 +134,7 @@ begin
   with recursive base as (
     select s.id, s.geom,
            (s.name like '（無名）%') as unnamed,
+           (v_isle and s.category = 'island') as isle,
            (s.confidence in ('desk_checked','field_checked')) as checked,
            route_name_key(s.name) as nkey,
            array_remove(array[s.id, s.parent_id, live_root(s.group_root_id)], null) as fam,
@@ -141,7 +160,7 @@ begin
            (case when c.checked then 1 else 0 end) as checked_n,
            array[c.nkey] as nkeys, c.fam as fams, array[c.place] as places
       from (select b.* from base b
-             order by coalesce(b.sig, 0.5) + coalesce(b.typ, 0.5) desc, b.checked desc, b.unnamed, md5(b.id::text || v_seed)
+             order by b.isle, coalesce(b.sig, 0.5) + coalesce(b.typ, 0.5) desc, b.checked desc, b.unnamed, md5(b.id::text || v_seed)
              limit 150) c
     union all
     -- 次の景観へ（近い30件から、条件と景観らしさの合う地点を最大3件ずつ）
@@ -169,7 +188,7 @@ begin
           ) k
          where (k.nkey = '' or not (k.nkey = any (p.nkeys)))                  -- 同じ名前の地点は並べない
            and not (k.place = any (p.places))                                  -- 同じ川・同じ敷地は並べない
-         order by coalesce(k.sig, 0.5) + coalesce(k.typ, 0.5) desc, k.checked desc, k.unnamed, k.d
+         order by k.isle, coalesce(k.sig, 0.5) + coalesce(k.typ, 0.5) desc, k.checked desc, k.unnamed, k.d
          limit 3
       ) n
   ),
