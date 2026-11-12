@@ -14,10 +14,11 @@ def make(db):
     i = add(db, "い岸", "coast", 300, 0, address="福岡市中央区あ", relief_m=30)
     u = add(db, "う岸", "coast", 600, 0, address="福岡市中央区ず")
     n = add(db, "（無名）岸", "coast", 900, 0, address="福岡市中央区ん", relief_m=99)
-    db.execute("update spots set created_at = %s, updated_at = %s where id = %s", ("2026-01-01", "2026-03-01", a))
-    db.execute("update spots set created_at = %s, updated_at = %s where id = %s", ("2026-02-01", "2026-01-01", i))
-    db.execute("update spots set created_at = %s, updated_at = %s where id = %s", ("2026-03-01", "2026-02-01", u))
-    db.commit()
+    # updated_at は更新のたびにトリガーで now() になる。更新を順にコミットして、あ → い → う の順に新しくする
+    for sid, created in ((a, "2026-01-01"), (i, "2026-02-01"), (u, "2026-03-01")):
+        db.execute("update spots set created_at = %s where id = %s", (created, sid))
+        db.commit()
+        db.execute("select pg_sleep(0.05)")
 
 
 def names(rows):
@@ -39,7 +40,7 @@ def test_sort_orders_and_unnamed_always_last(db):
     assert by("name") == ["あ岸", "い岸", "う岸", "（無名）岸"]
     assert by("address") == ["い岸", "う岸", "あ岸", "（無名）岸"]                                         # あ < ず < ま
     assert by("created") == ["う岸", "い岸", "あ岸", "（無名）岸"]
-    assert by("updated") == ["あ岸", "う岸", "い岸", "（無名）岸"]
+    assert by("updated") == ["う岸", "い岸", "あ岸", "（無名）岸"]
     assert by("relief") == ["い岸", "あ岸", "う岸", "（無名）岸"]          # 高い順。標高差のない地点は後ろ
     # 並び順を変えても件数と、ページ送りの順は同じ
     page1 = names(search(db, p_category="coast", p_sort="created", p_limit=2))
