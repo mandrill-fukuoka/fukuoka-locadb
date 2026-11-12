@@ -78,11 +78,23 @@ if ($isPost && $action === 'search' && !$error) {
             if (!$query['sequence'] && !$start) {
                 $error = '景観の流れを読み取れませんでした。「繁華街」「路地」「川」「海」「港」などの言葉を入れるか、下の「流れを直接指定」を使ってください。';
             } else {
-                $results = sb_rpc('build_routes', [
+                $rpcArgs = [
                     'p_seq' => $query['sequence'], 'p_tags' => (object)$query['tags'],
                     'p_mode' => $query['travel_mode'] ?? 'any', 'p_area' => $areaUse,
                     'p_start' => $start, 'p_limit' => 8,
-                ] + ($near ? ['p_near_lat' => $near['lat'], 'p_near_lon' => $near['lon'], 'p_near_m' => $near['m']] : [])) ?? [];
+                ] + ($near ? ['p_near_lat' => $near['lat'], 'p_near_lon' => $near['lon'], 'p_near_m' => $near['m']] : []);
+                // シーン文の「高校」「神社」「屋台」などの語から、起点・終点の種類を絞る（見つからなければ絞らずに探し直す）
+                $kindHint = $scene !== '' ? scene_kinds($scene, $query['sequence']) : ['kinds' => [], 'labels' => []];
+                $results = sb_rpc('build_routes', $rpcArgs + ($kindHint['kinds'] ? ['p_kinds' => $kindHint['kinds']] : [])) ?? [];
+                if ($kindHint['kinds']) {
+                    $query['notes'] = preg_replace('/（語から種類を絞りました[^）]*）/u', '', (string)($query['notes'] ?? ''));
+                    if ($results) {
+                        $query['notes'] .= '（語から種類を絞りました：' . implode('・', $kindHint['labels']) . '）';
+                    } else {
+                        $results = sb_rpc('build_routes', $rpcArgs) ?? [];
+                        $query['notes'] .= '（種類を絞ると見つからなかったため、景観全体から探しました）';
+                    }
+                }
                 // 記録（上位3件は「おすすめの流れ」に自動で蓄積）
                 try {
                     sb_rpc('record_route_search', [

@@ -32,7 +32,8 @@ $$;
 create function build_routes(
   p_seq text[], p_tags jsonb default '{}'::jsonb, p_mode text default 'walk',
   p_area text default null, p_start bigint default null, p_limit int default 8,
-  p_near_lat double precision default null, p_near_lon double precision default null, p_near_m real default null   -- 起点を「この点から p_near_m 以内」に絞る（地名：天神・大名など。2026-11-10）
+  p_near_lat double precision default null, p_near_lon double precision default null, p_near_m real default null,   -- 起点を「この点から p_near_m 以内」に絞る（地名：天神・大名など。2026-11-10）
+  p_kinds jsonb default null    -- 景観グループごとの種類の絞り込み {"institution": ["school"], "historic": ["shrine_temple"]}（シーン文の「高校」「神社」など。2026-11-12）。ないグループは景観全体
 ) returns jsonb language plpgsql volatile as $$
 declare
   v_speed  real := case when p_mode = 'car' then 300 else 80 end;   -- m/分
@@ -44,6 +45,7 @@ declare
   v_human  bigint[];
   v_anychk boolean;
   v_cats   jsonb;
+  v_kinds  jsonb := coalesce(p_kinds, '{}'::jsonb);
   v_sgrp   text;
   v_n      int;
   v_seed   text;
@@ -58,8 +60,8 @@ begin
   if p_mode = 'any' then        -- 徒歩と車を半分ずつ求め、適合度の高い順に並べる
     return (select coalesce(jsonb_agg(e.value order by (e.value ->> 'match')::numeric desc, e.ord), '[]'::jsonb)
               from jsonb_array_elements(
-                     coalesce(build_routes(p_seq, p_tags, 'walk', p_area, p_start, greatest(p_limit - p_limit / 2, 1), p_near_lat, p_near_lon, p_near_m), '[]'::jsonb)
-                  || coalesce(build_routes(p_seq, p_tags, 'car',  p_area, p_start, greatest(p_limit / 2, 1), p_near_lat, p_near_lon, p_near_m), '[]'::jsonb))
+                     coalesce(build_routes(p_seq, p_tags, 'walk', p_area, p_start, greatest(p_limit - p_limit / 2, 1), p_near_lat, p_near_lon, p_near_m, p_kinds), '[]'::jsonb)
+                  || coalesce(build_routes(p_seq, p_tags, 'car',  p_area, p_start, greatest(p_limit / 2, 1), p_near_lat, p_near_lon, p_near_m, p_kinds), '[]'::jsonb))
                    with ordinality e(value, ord));
   end if;
 
@@ -82,10 +84,13 @@ begin
   end if;
   v_n := cardinality(v_seq);
   if v_n = 0 then return '[]'::jsonb; end if;
-  -- 各段の景観に当たる種別（近傍探しで、重い距離の計算より先に種別で絞る）
-  select jsonb_agg(coalesce((select jsonb_agg(sc.code) from spot_categories sc where grp_match(g, sc.landscape_group)), '[]'::jsonb) order by o)
+  -- 各段の景観に当たる種別（近傍探しで、重い距離の計算より先に種別で絞る）。p_kinds にその景観グループがあれば、その種別だけ
+  select jsonb_agg(coalesce((select jsonb_agg(sc.code) from spot_categories sc
+                              where grp_match(g, sc.landscape_group)
+                                and (not (v_kinds ? g) or sc.code in (select jsonb_array_elements_text(v_kinds -> g)))), '[]'::jsonb) order by o)
     into v_cats from unnest(v_seq) with ordinality u(g, o);
-  v_seed := array_to_string(v_seq, ',') || '|' || p_mode || '|' || coalesce(p_area, '') || case when p_near_m is null then '' else '|' || p_near_m::text end;   -- 同じ条件なら同じ順（random() は使わない）
+  v_seed := array_to_string(v_seq, ',') || '|' || p_mode || '|' || coalesce(p_area, '') || case when p_near_m is null then '' else '|' || p_near_m::text end
+            || case when v_kinds = '{}'::jsonb then '' else '|' || v_kinds::text end;   -- 同じ条件なら同じ順（random() は使わない）
 
   -- 2段目以降の候補を先に1回だけ集める（平面直角座標 II系 で距離を測る。検索ごとの一時表。2026-10-29 速さの改善）
   if to_regclass('pg_temp._route_cand') is not null then drop table pg_temp._route_cand; end if;
@@ -122,7 +127,8 @@ begin
      where s.data_status <> 'archived'
        and case when p_start is not null then s.id = p_start
                 else live_root(s.group_root_id) is null   -- 境内・敷地内でまとめた地点は親で代表させる
-                 and grp_match(v_seq[1], sc.landscape_group) and (p_area is null or s.area_code = p_area)
+                 and s.category in (select jsonb_array_elements_text(v_cats -> 0))        -- 1段目の景観（p_kinds があればその種別だけ）
+                 and (p_area is null or s.area_code = p_area)
                  and (p_near_m is null or p_near_lat is null or p_near_lon is null
                       or ST_DWithin(s.geom, ST_SetSRID(ST_MakePoint(p_near_lon, p_near_lat), 4326)::geography, p_near_m)) end
   ),
