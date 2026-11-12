@@ -15,6 +15,11 @@ $spWater = in_array($_GET['sp_water'] ?? '', ['near', 'within150'], true) ? $_GE
 $spBuilt = in_array($_GET['sp_built'] ?? '', ['few', 'many'], true) ? $_GET['sp_built'] : '';
 $spRoad  = in_array($_GET['sp_road'] ?? '', ['narrow', 'wide'], true) ? $_GET['sp_road'] : '';
 $photoSt = photo_state_filter();
+// 並び順（search_spots の p_sort）。指定なし＝おすすめ順
+$sortLabels = ['relevance' => 'おすすめ順', 'name' => '名前順', 'address' => '住所順', 'created' => '登録が新しい順',
+               'updated' => '更新が新しい順', 'relief' => '周りより高い順', 'facts' => '事実の多い順'];
+$sort  = $_GET['sort'] ?? '';
+if (!isset($sortLabels[$sort]) || $sort === 'relevance') $sort = '';
 $near  = (int)($_GET['near'] ?? 0);
 $page  = max(0, (int)($_GET['p'] ?? 0));
 $per   = 40;
@@ -39,13 +44,17 @@ try {
             'p_q' => $q ?: null, 'p_area' => $area ?: null, 'p_category' => $cat ?: null,
             'p_group' => $grp ?: null, 'p_tags' => $tag ? [$tag] : null,
             'p_offset' => $page * $per, 'p_limit' => $per, 'p_relief_min' => $terr === 'high' ? HIGH_GROUND_M : null,
-            'p_open' => $spOpen ?: null, 'p_water' => $spWater ?: null, 'p_road' => $spRoad ?: null, 'p_built' => $spBuilt ?: null, 'p_photo' => $photoSt ?: null]) ?? [];
+            'p_open' => $spOpen ?: null, 'p_water' => $spWater ?: null, 'p_road' => $spRoad ?: null, 'p_built' => $spBuilt ?: null, 'p_photo' => $photoSt ?: null,
+            'p_sort' => $sort ?: null]) ?? [];
     }
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
 $embedKey = cfg('google_maps_embed_key');
 $qs = fn(array $o) => '?' . http_build_query(array_merge(['q' => $q, 'area' => $area, 'cat' => $cat, 'grp' => $grp, 'tag' => $tag, 'terrain' => $terr,
-    'sp_open' => $spOpen, 'sp_water' => $spWater, 'sp_road' => $spRoad, 'sp_built' => $spBuilt, 'photo' => $photoSt], $o));
+    'sp_open' => $spOpen, 'sp_water' => $spWater, 'sp_road' => $spRoad, 'sp_built' => $spBuilt, 'photo' => $photoSt, 'sort' => $sort], $o));
+// 全件数（まとめたあとの件数）。ページ送りの終わりもこれで決める
+$total = $rows ? (int)($rows[0]['total'] ?? count($rows)) : 0;
+$pages = max(1, (int)ceil($total / $per));
 
 
 page_header('場所を探す', 'index.php');
@@ -83,6 +92,7 @@ page_header('場所を探す', 'index.php');
     <label>写真の状態（ログイン時のみ）<select name="photo"><option value="">指定なし</option>
       <?php foreach (PHOTO_STATE_LABEL as $k => $v): ?><option value="<?= h($k) ?>" <?= $photoSt === $k ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></label>
   </div><?php endif; ?>
+  <input type="hidden" name="sort" value="<?= h($sort) ?>">
   <button>検索</button>
   <p class="small muted">雰囲気での絞り込みは、雰囲気のタグが付いた地点だけが対象です（「推定」のタグは、種別や位置から機械的に付けたものです）。「推定」の条件は、OpenStreetMapの建物・道・水辺から計算した目安で、周りに建物のデータが少ない地点（未判定）は対象外です。</p>
 </form>
@@ -119,10 +129,16 @@ page_header('場所を探す', 'index.php');
 <?php endif; ?>
 
 <?php if ($searched): ?>
-  <?php if (!$rows && !$error): ?><p class="card">該当する場所がありません。条件をゆるめて試してください。</p><?php endif; ?>
+  <?php if (!$rows && !$error): ?><p class="card">該当する場所がありません。条件をゆるめて試してください。<?= $page > 0 ? '（<a href="' . h($qs(['p' => 0])) . '">1ページ目へ</a>）' : '' ?></p><?php endif; ?>
   <?php if ($rows): ?>
     <section class="card places-wrap">
-      <h2>検索結果 <?= count($rows) ?>件<?= count($rows) === $per ? '（このページ）' : '' ?></h2>
+      <h2>検索結果 全<?= number_format($total) ?>件<?= $total > $per ? '（' . number_format($page * $per + 1) . '〜' . number_format($page * $per + count($rows)) . '件目を表示）' : '' ?></h2>
+      <p class="small sortbar"><label>並び順
+        <select onchange="location.href=this.value">
+          <?php foreach ($sortLabels as $k => $v): $cur = ($k === 'relevance' ? '' : $k) === $sort; ?>
+            <option value="<?= h($qs(['sort' => $k === 'relevance' ? '' : $k, 'p' => 0])) ?>" <?= $cur ? 'selected' : '' ?>><?= h($v) ?></option>
+          <?php endforeach; ?></select></label>
+        <span class="muted">件数は、川・線路・境内などを「ほか○か所」として1件にまとめたあとの数です。</span></p>
       <?php overview_map(array_map(fn($s) => ['lat' => $s['lat'], 'lon' => $s['lon'], 'name' => sn($s), 'grp' => $s['grp_code'] ?? '',
             'sub' => $s['category'] . '・' . (AREA_LABEL[$s['area_code']] ?? '')], $rows), 'ovmap'); ?>
       <p class="small muted">ピン、または一覧の「全体地図で表示」を押すと、その地点に寄ります。各候補の右の地図は周辺地図です（押すとGoogleマップで開きます）。川・線路など長いものは、同じ区の地点を「ほか○か所」として1件にまとめています（詳細ページで流域の地点を確認できます）。寺社の境内、大きな公園・大学の敷地内の地点も、同じ景観のものは代表の地点に「ほか○か所」としてまとめています（詳細ページで敷地内の地点を確認できます）。</p>
@@ -160,8 +176,9 @@ page_header('場所を探す', 'index.php');
         <?php endforeach; ?>
       </ol>
       <nav class="pager">
-        <?php if ($page > 0): ?><a href="<?= h($qs(['p' => $page - 1])) ?>">← 前へ</a><?php endif; ?>
-        <?php if (count($rows) === $per): ?><a href="<?= h($qs(['p' => $page + 1])) ?>">次へ →</a><?php endif; ?>
+        <span><?php if ($page > 0): ?><a href="<?= h($qs(['p' => $page - 1])) ?>">← 前へ</a><?php endif; ?></span>
+        <span class="muted small"><?= $page + 1 ?> / <?= $pages ?> ページ</span>
+        <span><?php if (($page + 1) * $per < $total): ?><a href="<?= h($qs(['p' => $page + 1])) ?>">次へ →</a><?php endif; ?></span>
       </nav>
     </section>
   <?php endif; ?>
