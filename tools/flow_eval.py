@@ -28,6 +28,32 @@ def interpret(scene: str) -> dict:
     return json.loads(out.stdout)
 
 
+def search_scene(c, scene: str) -> tuple[dict, list, int]:
+    """シーン文を画面と同じやり方で解釈して build_routes を呼ぶ。(解釈, 流れの一覧, ミリ秒) を返す。
+    解釈の q["start_filter"] に、起点の絞り込みと種類の絞り込みの説明を入れる。rollback は呼び側"""
+    q = interpret(scene)
+    t0 = time.time()
+    # 画面（web/public/flow.php）と同じ：地名に中心（near）があれば周辺で絞り、なければ区（area）で絞る
+    near = q.get("near")
+    area = None if near else q.get("area")
+    # 語から種類を絞る（高校→学校など。見つからなければ絞らずに探し直す）。画面と同じ
+    kinds = q.get("kinds") or None
+    args = [q["sequence"], json.dumps(q["tags"]), q["travel_mode"], area,
+            near["lat"] if near else None, near["lon"] if near else None, near["m"] if near else None]
+    rs = c.execute("select build_routes(%s, %s::jsonb, %s, %s, null, 8, %s, %s, %s, %s::jsonb)",
+                   args + [json.dumps(kinds) if kinds else None]).fetchone()[0] or []
+    kinds_note = ""
+    if kinds and not rs:
+        rs = c.execute("select build_routes(%s, %s::jsonb, %s, %s, null, 8, %s, %s, %s)", args).fetchone()[0] or []
+        kinds_note = "（種類を絞ると0件のため絞らず）"
+    elif kinds:
+        kinds_note = "種類：" + "／".join(f"{g}={'・'.join(v)}" for g, v in kinds.items())
+    q["start_filter"] = (f"{near['name']}の周辺（約{near['m']}m）" if near else (f"区：{area}" if area else ""))
+    if kinds_note:
+        q["start_filter"] = (q["start_filter"] + "　" if q["start_filter"] else "") + kinds_note
+    return q, rs, int((time.time() - t0) * 1000)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scenes", default=str(ROOT / "data" / "flow_eval" / "scenes.txt"))
@@ -44,27 +70,7 @@ def main() -> None:
                                   then has_database_privilege('service_role', current_database(), 'TEMP') end""").fetchone()[0]
         print(f"service_role の一時表の権限：{ {True: 'あり', False: 'なし（！画面の検索が失敗します）', None: '-'}[tmp] }")
         for i, scene in enumerate(scenes, 1):
-            q = interpret(scene)
-            t0 = time.time()
-            # 画面（web/public/flow.php）と同じ：地名に中心（near）があれば周辺で絞り、なければ区（area）で絞る
-            near = q.get("near")
-            area = None if near else q.get("area")
-            # 語から種類を絞る（高校→学校など。見つからなければ絞らずに探し直す）。画面と同じ
-            kinds = q.get("kinds") or None
-            args = [q["sequence"], json.dumps(q["tags"]), q["travel_mode"], area,
-                    near["lat"] if near else None, near["lon"] if near else None, near["m"] if near else None]
-            rs = c.execute("select build_routes(%s, %s::jsonb, %s, %s, null, 8, %s, %s, %s, %s::jsonb)",
-                           args + [json.dumps(kinds) if kinds else None]).fetchone()[0] or []
-            kinds_note = ""
-            if kinds and not rs:
-                rs = c.execute("select build_routes(%s, %s::jsonb, %s, %s, null, 8, %s, %s, %s)", args).fetchone()[0] or []
-                kinds_note = "（種類を絞ると0件のため絞らず）"
-            elif kinds:
-                kinds_note = "種類：" + "／".join(f"{g}={'・'.join(v)}" for g, v in kinds.items())
-            q["start_filter"] = (f"{near['name']}の周辺（約{near['m']}m）" if near else (f"区：{area}" if area else ""))
-            if kinds_note:
-                q["start_filter"] = (q["start_filter"] + "　" if q["start_filter"] else "") + kinds_note
-            ms = int((time.time() - t0) * 1000)
+            q, rs, ms = search_scene(c, scene)
             matches += [float(r.get("match") or 0) for r in rs]
             results.append({"no": i, "scene": scene, "query": q, "ms": ms, "routes": rs})
             print(f"\n### {i}. {scene}\n")

@@ -1,0 +1,158 @@
+{
+ "note": "利用者の地点リスト（2026-10-30「66カットDB照合」）のうち、リポジトリ内の資料（tools/target_probe.py と data/curated）で名前の当たりが分かる20カット。残りの○だった46カットの元表（xlsx）はリポジトリにないため未収録。表が入手できたら cuts に足す（pattern は spots.name・alt_names への正規表現、categories は種類の限定）。baseline は最後に確かめた結果（ok＝DBで見つかる／ng＝見つからない。null は未測定で、tools/yardstick.py の初回実行後に埋める）",
+ "total_cuts": 66,
+ "cuts": [
+  {
+   "no": 1,
+   "name": "西新・高取の商店街",
+   "pattern": "(西新|高取|藤崎).*(商店街|商店会|名店街)|サザエさん通り|リヤカー部隊",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 4,
+   "name": "天神交差点",
+   "pattern": "天神交差点|^天神$",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 10,
+   "name": "早良区脇山の田園",
+   "pattern": "脇山.*(田園|農地)",
+   "categories": [
+    "farmland"
+   ],
+   "baseline": null
+  },
+  {
+   "no": 11,
+   "name": "西区元岡の田園",
+   "pattern": "元岡.*(田園|農地)",
+   "categories": [
+    "farmland"
+   ],
+   "baseline": null
+  },
+  {
+   "no": 12,
+   "name": "今宿周辺の田園",
+   "pattern": "今宿.*(田園|農地)",
+   "categories": [
+    "farmland"
+   ],
+   "baseline": null
+  },
+  {
+   "no": 14,
+   "name": "大名・今泉の路地",
+   "pattern": "(大名|今泉).*路地",
+   "categories": [
+    "alley"
+   ],
+   "baseline": null
+  },
+  {
+   "no": 18,
+   "name": "福岡空港ターミナル",
+   "pattern": "福岡空港|旅客ターミナル",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 21,
+   "name": "高宮の住宅街",
+   "pattern": "高宮.*(住宅|団地)",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 24,
+   "name": "長浜屋台",
+   "pattern": "長浜.*屋台|屋台.*長浜",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 25,
+   "name": "ONE FUKUOKA BLDG.",
+   "pattern": "ONE FUKUOKA|ワン.?フクオカ",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 26,
+   "name": "天神ビジネスセンター",
+   "pattern": "天神ビジネスセンター",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 33,
+   "name": "志賀島の海岸道路",
+   "pattern": "志賀島.*(循環|海岸|道路)",
+   "categories": [
+    "coast"
+   ],
+   "baseline": null
+  },
+  {
+   "no": 50,
+   "name": "天神・博多の大通りの歩道橋",
+   "pattern": "(天神|博多駅).*歩道橋|歩道橋.*(天神|博多駅)",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 53,
+   "name": "博多駅の地下街",
+   "pattern": "博多駅地下街|博多地下街|デイトス",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 54,
+   "name": "キャナルシティ博多",
+   "pattern": "キャナルシティ",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 58,
+   "name": "天神・警固の交差点",
+   "pattern": "警固.*交差点|天神西通り|国体道路",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 59,
+   "name": "博多駅前の大通り（大博通り）",
+   "pattern": "大博通り|博多駅前通り",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 60,
+   "name": "親不孝通り",
+   "pattern": "親不孝通り|親富孝",
+   "categories": null,
+   "baseline": null
+  },
+  {
+   "no": 61,
+   "name": "中洲の路地",
+   "pattern": "中洲.*路地",
+   "categories": [
+    "alley"
+   ],
+   "baseline": null
+  },
+  {
+   "no": 64,
+   "name": "博多港の岸壁・倉庫街",
+   "pattern": "中央ふ頭|中央埠頭|那の津.*上屋",
+   "categories": null,
+   "baseline": null
+  }
+ ]
+}

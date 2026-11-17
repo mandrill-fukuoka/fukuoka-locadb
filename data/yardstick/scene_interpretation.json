@@ -1,0 +1,819 @@
+{
+ "30代の男性が深夜、一人で歩く。繁華街から路地を抜けると、川沿いに出る": {
+  "area": null,
+  "kinds": {
+   "old_town": [
+    "alley"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "commercial",
+   "old_town",
+   "river"
+  ],
+  "tags": {
+   "lonely": 1,
+   "low_traffic": 1,
+   "narrow_street": 1,
+   "night_ok": 1,
+   "river_view": 1
+  },
+  "travel_mode": "walk"
+ },
+ "デートの帰り、夜の川沿いを歩き、橋の上で立ち止まる": {
+  "area": null,
+  "kinds": {
+   "transport": [
+    "bridge_overpass"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "river",
+   "transport"
+  ],
+  "tags": {
+   "night_ok": 1,
+   "river_view": 1,
+   "romantic": 1
+  },
+  "travel_mode": "walk"
+ },
+ "人気のない早朝の公園で、ジョギング中の男が何かを見つける": {
+  "area": null,
+  "kinds": {
+   "green": [
+    "park"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "green"
+  ],
+  "tags": {
+   "dawn_ok": 1,
+   "greenery": 1,
+   "lonely": 1,
+   "low_traffic": 1
+  },
+  "travel_mode": "any"
+ },
+ "仕事帰り、ネオンの飲み屋街を抜けて屋台に座る": {
+  "area": null,
+  "kinds": {
+   "commercial": [
+    "yatai_area",
+    "eatery_street",
+    "nightlife_area"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "commercial"
+  ],
+  "tags": {
+   "neon": 1
+  },
+  "travel_mode": "any"
+ },
+ "入院中の父を見舞った帰り、病院の前のバス停から川沿いを歩く": {
+  "area": null,
+  "kinds": {
+   "institution": [
+    "hospital"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "institution",
+   "transport",
+   "river"
+  ],
+  "tags": {
+   "river_view": 1
+  },
+  "travel_mode": "walk"
+ },
+ "再開発の工事現場の前を通り、まだ残る古い路地に入っていく": {
+  "area": null,
+  "kinds": {
+   "old_town": [
+    "alley"
+   ],
+   "vacant": [
+    "redevelopment_site"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "vacant",
+   "old_town"
+  ],
+  "tags": {
+   "narrow_street": 1
+  },
+  "travel_mode": "any"
+ },
+ "刑事が車で港湾道路を流しながら、コンテナヤードを見回る": {
+  "area": null,
+  "kinds": {
+   "port_industrial": [
+    "port"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "port_industrial"
+  ],
+  "tags": {
+   "industrial_structure": 1,
+   "tense": 1
+  },
+  "travel_mode": "car"
+ },
+ "古い団地の階段を上り、ベランダから夕日の街を見下ろす": {
+  "area": null,
+  "kinds": [],
+  "near": null,
+  "sequence": [
+   "residential",
+   "slope"
+  ],
+  "tags": {
+   "slope_stairs": 1,
+   "sunset_ok": 1,
+   "wide_open": 1
+  },
+  "travel_mode": "any"
+ },
+ "城跡の石垣の下を歩き、お堀沿いに進む": {
+  "area": null,
+  "kinds": {
+   "historic": [
+    "castle"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "historic",
+   "lake"
+  ],
+  "tags": {
+   "lonely": 0.1
+  },
+  "travel_mode": "walk"
+ },
+ "夕方、車で港の倉庫街を抜けて海沿いに出る": {
+  "area": null,
+  "kinds": {
+   "port_industrial": [
+    "warehouse",
+    "port"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "port_industrial",
+   "sea"
+  ],
+  "tags": {
+   "industrial_structure": 1,
+   "sea_view": 1,
+   "sunset_ok": 1
+  },
+  "travel_mode": "car"
+ },
+ "夕暮れの海辺で告白し、そのまま防波堤の先まで歩く": {
+  "area": null,
+  "kinds": {
+   "sea": [
+    "breakwater"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "sea"
+  ],
+  "tags": {
+   "romantic": 1,
+   "sea_view": 1,
+   "sunset_ok": 1
+  },
+  "travel_mode": "walk"
+ },
+ "大名の古い路地を抜けて、高層ビルの見える通りへ出る": {
+  "area": "fuk-chuo",
+  "kinds": {
+   "old_town": [
+    "alley"
+   ],
+   "urban_new": [
+    "new_building"
+   ]
+  },
+  "near": {
+   "lat": 33.589,
+   "lon": 130.3935,
+   "m": 500,
+   "name": "大名"
+  },
+  "sequence": [
+   "old_town",
+   "urban_new"
+  ],
+  "tags": {
+   "narrow_street": 1,
+   "skyline": 1
+  },
+  "travel_mode": "any"
+ },
+ "大濠の池のほとりを歩いて、神社へ向かう": {
+  "area": "fuk-chuo",
+  "kinds": {
+   "historic": [
+    "shrine_temple"
+   ]
+  },
+  "near": {
+   "lat": 33.5865,
+   "lon": 130.377,
+   "m": 900,
+   "name": "大濠"
+  },
+  "sequence": [
+   "lake",
+   "historic"
+  ],
+  "tags": {
+   "lonely": 0.1
+  },
+  "travel_mode": "walk"
+ },
+ "天神の高層ビルから川沿いへ歩く": {
+  "area": "fuk-chuo",
+  "kinds": {
+   "urban_new": [
+    "new_building"
+   ]
+  },
+  "near": {
+   "lat": 33.5911,
+   "lon": 130.3992,
+   "m": 700,
+   "name": "天神"
+  },
+  "sequence": [
+   "urban_new",
+   "river"
+  ],
+  "tags": {
+   "river_view": 1,
+   "skyline": 1
+  },
+  "travel_mode": "walk"
+ },
+ "実家のある住宅地から、小学校の前を通って神社へ向かう": {
+  "area": null,
+  "kinds": {
+   "historic": [
+    "shrine_temple"
+   ],
+   "institution": [
+    "school"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "residential",
+   "institution",
+   "historic"
+  ],
+  "tags": {
+   "lonely": 0.1
+  },
+  "travel_mode": "any"
+ },
+ "容疑者を追って、繁華街の裏路地から高架下へ走り抜ける": {
+  "area": null,
+  "kinds": {
+   "old_town": [
+    "alley"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "commercial",
+   "old_town",
+   "rail"
+  ],
+  "tags": {
+   "narrow_street": 1,
+   "tense": 1
+  },
+  "travel_mode": "any"
+ },
+ "山の上の展望台から、坂道を下りて古い寺の門前に出る": {
+  "area": null,
+  "kinds": {
+   "green": [
+    "hill"
+   ],
+   "historic": [
+    "shrine_temple"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "green",
+   "slope",
+   "historic"
+  ],
+  "tags": {
+   "slope_stairs": 1
+  },
+  "travel_mode": "any"
+ },
+ "島へ渡るフェリー乗り場から、漁港の路地を歩いて丘の上へ": {
+  "area": null,
+  "kinds": {
+   "green": [
+    "hill"
+   ],
+   "old_town": [
+    "alley"
+   ],
+   "sea": [
+    "fishing_port",
+    "island",
+    "harbour_structure"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "port_industrial",
+   "sea",
+   "old_town",
+   "green"
+  ],
+  "tags": {
+   "narrow_street": 1
+  },
+  "travel_mode": "walk"
+ },
+ "川端の商店街から橋を渡って川沿いを歩く": {
+  "area": "fuk-hakata",
+  "kinds": {
+   "old_town": [
+    "shotengai"
+   ],
+   "transport": [
+    "bridge_overpass"
+   ]
+  },
+  "near": {
+   "lat": 33.5935,
+   "lon": 130.409,
+   "m": 350,
+   "name": "川端"
+  },
+  "sequence": [
+   "old_town",
+   "transport",
+   "river"
+  ],
+  "tags": {
+   "river_view": 1
+  },
+  "travel_mode": "walk"
+ },
+ "廃線跡の線路をたどって、草むらの中の古い橋に出る": {
+  "area": null,
+  "kinds": {
+   "rail": [
+    "railway"
+   ],
+   "transport": [
+    "bridge_overpass"
+   ],
+   "vacant": [
+    "disused_railway"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "vacant",
+   "rail",
+   "transport"
+  ],
+  "tags": {
+   "lonely": 0.1
+  },
+  "travel_mode": "any"
+ },
+ "引っ越しの朝、荷物を積んだ車で団地を出て、高速の高架沿いを走る": {
+  "area": null,
+  "kinds": {
+   "transport": [
+    "expressway"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "residential",
+   "transport"
+  ],
+  "tags": {
+   "lonely": 0.1
+  },
+  "travel_mode": "car"
+ },
+ "放課後、高校から川沿いの土手を二人で歩いて帰る": {
+  "area": null,
+  "kinds": {
+   "institution": [
+    "school"
+   ],
+   "river": [
+    "riverbank"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "institution",
+   "river"
+  ],
+  "tags": {
+   "river_view": 1,
+   "romantic": 1
+  },
+  "travel_mode": "walk"
+ },
+ "早朝の砂浜から、漁港の堤防へ歩く": {
+  "area": null,
+  "kinds": {
+   "sea": [
+    "breakwater",
+    "fishing_port"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "beach",
+   "sea"
+  ],
+  "tags": {
+   "dawn_ok": 1,
+   "low_traffic": 1
+  },
+  "travel_mode": "walk"
+ },
+ "昨日まで暮らした団地から、公園を抜けて駅へ向かう": {
+  "area": null,
+  "kinds": {
+   "green": [
+    "park"
+   ],
+   "transport": [
+    "station"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "residential",
+   "green",
+   "transport"
+  ],
+  "tags": {
+   "greenery": 1
+  },
+  "travel_mode": "any"
+ },
+ "昭和の面影が残る商店街で、子どもの頃に通った店を訪ねる": {
+  "area": null,
+  "kinds": {
+   "old_town": [
+    "shotengai"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "old_town"
+  ],
+  "tags": {
+   "nostalgic": 1
+  },
+  "travel_mode": "any"
+ },
+ "朝の通勤で、駅の改札を出て歩道橋を渡る": {
+  "area": null,
+  "kinds": {
+   "transport": [
+    "bridge_overpass",
+    "station"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "transport"
+  ],
+  "tags": {
+   "lonely": 0.1
+  },
+  "travel_mode": "walk"
+ },
+ "深夜、中洲の飲み屋街から路地を抜けて川沿いに出る": {
+  "area": "fuk-hakata",
+  "kinds": {
+   "commercial": [
+    "nightlife_area"
+   ],
+   "old_town": [
+    "alley"
+   ]
+  },
+  "near": {
+   "lat": 33.5917,
+   "lon": 130.4053,
+   "m": 450,
+   "name": "中洲"
+  },
+  "sequence": [
+   "commercial",
+   "old_town",
+   "river"
+  ],
+  "tags": {
+   "low_traffic": 1,
+   "narrow_street": 1,
+   "neon": 1,
+   "night_ok": 1,
+   "river_view": 1
+  },
+  "travel_mode": "any"
+ },
+ "深夜、倉庫街の岸壁で取引の現場を張り込む": {
+  "area": null,
+  "kinds": {
+   "port_industrial": [
+    "warehouse"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "port_industrial",
+   "sea"
+  ],
+  "tags": {
+   "industrial_structure": 1,
+   "low_traffic": 1,
+   "night_ok": 1,
+   "tense": 1
+  },
+  "travel_mode": "any"
+ },
+ "百道の砂浜から海沿いを歩く": {
+  "area": "fuk-sawara",
+  "kinds": [],
+  "near": {
+   "lat": 33.5915,
+   "lon": 130.351,
+   "m": 700,
+   "name": "百道"
+  },
+  "sequence": [
+   "beach",
+   "sea"
+  ],
+  "tags": {
+   "sea_view": 1
+  },
+  "travel_mode": "walk"
+ },
+ "神社の参道から坂道を上がり、高台から海を見下ろす": {
+  "area": null,
+  "kinds": {
+   "historic": [
+    "shrine_temple"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "historic",
+   "slope",
+   "sea"
+  ],
+  "tags": {
+   "sea_view": 1,
+   "slope_stairs": 1,
+   "wide_open": 1
+  },
+  "travel_mode": "any"
+ },
+ "神社の夏祭りの帰り、池のほとりのベンチで話し込む": {
+  "area": null,
+  "kinds": {
+   "historic": [
+    "shrine_temple"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "historic",
+   "lake"
+  ],
+  "tags": {
+   "night_ok": 1
+  },
+  "travel_mode": "any"
+ },
+ "箱崎の神社の参道から古い商店街を抜けて公園へ向かう": {
+  "area": "fuk-higashi",
+  "kinds": {
+   "green": [
+    "park"
+   ],
+   "historic": [
+    "shrine_temple"
+   ],
+   "old_town": [
+    "shotengai"
+   ]
+  },
+  "near": {
+   "lat": 33.619,
+   "lon": 130.4187,
+   "m": 800,
+   "name": "箱崎"
+  },
+  "sequence": [
+   "historic",
+   "old_town",
+   "green"
+  ],
+  "tags": {
+   "greenery": 1
+  },
+  "travel_mode": "any"
+ },
+ "終電を逃した二人が、駅前から屋台の並ぶ通りへ流れていく": {
+  "area": null,
+  "kinds": {
+   "commercial": [
+    "yatai_area",
+    "eatery_street"
+   ],
+   "transport": [
+    "station"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "transport",
+   "commercial"
+  ],
+  "tags": {
+   "night_ok": 1,
+   "romantic": 1
+  },
+  "travel_mode": "any"
+ },
+ "自転車で坂道を下り、踏切を渡って商店街に入る": {
+  "area": null,
+  "kinds": {
+   "old_town": [
+    "shotengai"
+   ],
+   "rail": [
+    "level_crossing"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "slope",
+   "rail",
+   "old_town"
+  ],
+  "tags": {
+   "slope_stairs": 1
+  },
+  "travel_mode": "walk"
+ },
+ "西新の商店街から住宅地を抜けて海辺へ出る": {
+  "area": "fuk-sawara",
+  "kinds": {
+   "old_town": [
+    "shotengai"
+   ]
+  },
+  "near": {
+   "lat": 33.5836,
+   "lon": 130.3556,
+   "m": 700,
+   "name": "西新"
+  },
+  "sequence": [
+   "old_town",
+   "residential",
+   "sea"
+  ],
+  "tags": {
+   "sea_view": 1
+  },
+  "travel_mode": "any"
+ },
+ "車で海沿いの道を走り、砂浜の駐車場に停めて海へ降りる": {
+  "area": null,
+  "kinds": [],
+  "near": null,
+  "sequence": [
+   "sea",
+   "beach"
+  ],
+  "tags": {
+   "sea_view": 1
+  },
+  "travel_mode": "car"
+ },
+ "追われている男が、狭い路地から工場の裏手へ逃げ込む": {
+  "area": null,
+  "kinds": {
+   "old_town": [
+    "alley"
+   ],
+   "port_industrial": [
+    "factory"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "old_town",
+   "port_industrial"
+  ],
+  "tags": {
+   "industrial_structure": 1,
+   "narrow_street": 1,
+   "tense": 1
+  },
+  "travel_mode": "any"
+ },
+ "閉鎖された工場の敷地で、死体が見つかる": {
+  "area": null,
+  "kinds": {
+   "port_industrial": [
+    "factory"
+   ],
+   "vacant": [
+    "ruins",
+    "vacant"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "vacant",
+   "port_industrial"
+  ],
+  "tags": {
+   "industrial_structure": 1,
+   "tense": 1
+  },
+  "travel_mode": "any"
+ },
+ "高層ビルのオフィスを出て、昼休みに広場のベンチで弁当を食べる": {
+  "area": null,
+  "kinds": {
+   "urban_new": [
+    "new_building",
+    "public_space"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "urban_new"
+  ],
+  "tags": {
+   "skyline": 1
+  },
+  "travel_mode": "any"
+ },
+ "高層ビルのオフィス街から、古い商店街へ辿り着く": {
+  "area": null,
+  "kinds": {
+   "old_town": [
+    "shotengai"
+   ],
+   "urban_new": [
+    "new_building"
+   ]
+  },
+  "near": null,
+  "sequence": [
+   "urban_new",
+   "old_town"
+  ],
+  "tags": {
+   "skyline": 1
+  },
+  "travel_mode": "any"
+ }
+}
