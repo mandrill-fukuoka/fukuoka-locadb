@@ -53,10 +53,18 @@ def check_cut(conn, cut: dict) -> dict:
 
 # ---- 流れ検索（シーン）----
 
+WATER = {"river", "sea", "beach", "lake", "water"}
+
+
+def grp_match(want: str, actual: str) -> bool:
+    """sql/api/10_spots.sql の grp_match と同じ：水辺（water）は川・海・浜・湖のどれでもよい"""
+    return want == actual or (want == "water" and actual in WATER)
+
+
 def covers(route: dict, sequence: list[str]) -> bool:
-    """流れの地点の group が、読み取った景観の順（sequence）を、順番どおりに（間に別の地点があってもよい）含むか"""
-    it = iter(s.get("group") for s in route.get("spots", []))
-    return all(any(g == want for g in it) for want in sequence)
+    """流れの地点の景観の種類（grp_code）が、読み取った景観の順（sequence）を、順番どおりに（間に別の地点があってもよい）含むか"""
+    it = iter(s.get("grp_code") for s in route.get("spots", []))
+    return all(any(grp_match(want, g) for g in it) for want in sequence)
 
 
 def judge_scene(q: dict, routes: list[dict]) -> dict:
