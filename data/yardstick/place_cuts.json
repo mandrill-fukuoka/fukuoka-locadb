@@ -6,7 +6,9 @@
    "no": 1,
    "name": "西新・高取の商店街",
    "pattern": "(西新|高取|藤崎).*(商店街|商店会|名店街)|サザエさん通り|リヤカー部隊",
-   "categories": null,
+   "categories": [
+    "shotengai"
+   ],
    "baseline": null
   },
   {
@@ -14,7 +16,7 @@
    "name": "天神交差点",
    "pattern": "天神交差点|^天神$",
    "categories": null,
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 10,
@@ -23,7 +25,7 @@
    "categories": [
     "farmland"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 11,
@@ -32,7 +34,7 @@
    "categories": [
     "farmland"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 12,
@@ -41,7 +43,7 @@
    "categories": [
     "farmland"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 14,
@@ -50,41 +52,47 @@
    "categories": [
     "alley"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 18,
    "name": "福岡空港ターミナル",
    "pattern": "福岡空港|旅客ターミナル",
    "categories": null,
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 21,
    "name": "高宮の住宅街",
    "pattern": "高宮.*(住宅|団地)",
    "categories": null,
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 24,
    "name": "長浜屋台",
    "pattern": "長浜.*屋台|屋台.*長浜",
-   "categories": null,
+   "categories": [
+    "yatai_area"
+   ],
    "baseline": null
   },
   {
    "no": 25,
    "name": "ONE FUKUOKA BLDG.",
    "pattern": "ONE FUKUOKA|ワン.?フクオカ",
-   "categories": null,
+   "categories": [
+    "new_building"
+   ],
    "baseline": null
   },
   {
    "no": 26,
    "name": "天神ビジネスセンター",
    "pattern": "天神ビジネスセンター",
-   "categories": null,
+   "categories": [
+    "new_building"
+   ],
    "baseline": null
   },
   {
@@ -94,27 +102,31 @@
    "categories": [
     "coast"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 50,
    "name": "天神・博多の大通りの歩道橋",
    "pattern": "(天神|博多駅).*歩道橋|歩道橋.*(天神|博多駅)",
    "categories": null,
-   "baseline": null
+   "baseline": "ng"
   },
   {
    "no": 53,
    "name": "博多駅の地下街",
    "pattern": "博多駅地下街|博多地下街|デイトス",
-   "categories": null,
+   "categories": [
+    "commercial_facility"
+   ],
    "baseline": null
   },
   {
    "no": 54,
    "name": "キャナルシティ博多",
    "pattern": "キャナルシティ",
-   "categories": null,
+   "categories": [
+    "commercial_facility"
+   ],
    "baseline": null
   },
   {
@@ -122,20 +134,22 @@
    "name": "天神・警固の交差点",
    "pattern": "警固.*交差点|天神西通り|国体道路",
    "categories": null,
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 59,
    "name": "博多駅前の大通り（大博通り）",
    "pattern": "大博通り|博多駅前通り",
    "categories": null,
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 60,
    "name": "親不孝通り",
    "pattern": "親不孝通り|親富孝",
-   "categories": null,
+   "categories": [
+    "nightlife_area"
+   ],
    "baseline": null
   },
   {
@@ -145,14 +159,14 @@
    "categories": [
     "alley"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 64,
    "name": "博多港の岸壁・倉庫街",
    "pattern": "中央ふ頭|中央埠頭|那の津.*上屋",
    "categories": null,
-   "baseline": null
+   "baseline": "ok"
   }
  ]
 }
