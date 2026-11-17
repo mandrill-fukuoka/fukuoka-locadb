@@ -9,7 +9,7 @@
    "categories": [
     "shotengai"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 4,
@@ -75,7 +75,7 @@
    "categories": [
     "yatai_area"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 25,
@@ -84,7 +84,7 @@
    "categories": [
     "new_building"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 26,
@@ -93,7 +93,7 @@
    "categories": [
     "new_building"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 33,
@@ -118,7 +118,7 @@
    "categories": [
     "commercial_facility"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 54,
@@ -127,7 +127,7 @@
    "categories": [
     "commercial_facility"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 58,
@@ -150,7 +150,7 @@
    "categories": [
     "nightlife_area"
    ],
-   "baseline": null
+   "baseline": "ok"
   },
   {
    "no": 61,
