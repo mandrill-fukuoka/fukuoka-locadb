@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 JST = timezone(timedelta(hours=9))
 # 毎週動くはずの処理と、最後の成功がこの日数より古ければ「止まっている疑い」とする日数
 EXPECTED_WEEKLY = {"pipeline": 9, "verify": 9}
-WATCHED = ["pipeline", "verify", "keepalive", "ci", "deploy-web", "db-migrate"]
+WATCHED = ["pipeline", "verify", "keepalive", "ci", "deploy-web", "db-migrate", "yardstick"]
 
 
 def summarize_runs(runs: list[dict]) -> dict[str, Counter]:
