@@ -28,7 +28,7 @@ page_header('収集の記録', 'runs.php');
     <dt>住所なし</dt><dd><?= (int)$diag['no_address'] ?></dd>
     <dt>OSMで見つからない要素</dt><dd><?= (int)$diag['features_missing'] ?></dd>
     <dt>再確認が必要な保存済みの流れ</dt><dd><a href="flows.php?f=saved"><?= (int)$diag['clusters_needing_review'] ?></a></dd>
-    <dt>紐付けの不整合</dt><dd><?= (int)$diag['orphan_links'] + (int)$diag['spots_without_feature'] + (int)$diag['area_mismatch'] ?></dd>
+    <dt>紐付けの不整合</dt><dd><?= (int)$diag['orphan_links'] + (int)$diag['spots_without_feature'] ?></dd>
   </dl>
   <?php endif; ?>
 </section>

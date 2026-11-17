@@ -22,6 +22,7 @@ jobs:
                       print(f"- {t}: {n}")
               else:
                   d = c.execute("select diag_summary()").fetchone()[0]
+                  d.update(c.execute("select diag_heavy()").fetchone()[0])      # 区の境界との照合（重い。画面では出さない）
                   print("```json\n" + json.dumps(d, ensure_ascii=False, indent=1, default=str) + "\n```")
           PY
         env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
@@ -32,6 +33,7 @@ jobs:
           import os, time, psycopg
           Q = {
             "diag_summary() 全体": "select diag_summary()",
+            "diag_heavy() 全体": "select diag_heavy()",
             "area_mismatch": "select count(*) from spots s join areas a on a.code = s.area_code where a.geom is not null and s.data_status <> 'archived' and not ST_Covers(a.geom, s.geom)",
             "duplicate_candidates(1000,150)": "select jsonb_array_length(duplicate_candidates(1000, 150))",
             "orphan_links": "select count(*) from spot_features sf where not exists (select 1 from features f where f.key = sf.feature_key)",
