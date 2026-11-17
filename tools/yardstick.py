@@ -111,12 +111,11 @@ def cmd_interp(a) -> int:
 
 def cmd_run(a) -> int:
     import psycopg
-    from psycopg.rows import dict_row
     from tools.flow_eval import search_scene
     cuts = json.loads(CUTS.read_text(encoding="utf-8"))["cuts"]
     scenes = load_scenes()
     fb = json.loads(FLOW_BASE.read_text(encoding="utf-8")) if FLOW_BASE.exists() else {"scenes": {}, "match_mean": None}
-    with psycopg.connect(os.environ["DATABASE_URL"], row_factory=dict_row) as c:
+    with psycopg.connect(os.environ["DATABASE_URL"]) as c:
         place = [check_cut(c, cut) for cut in cuts]
         flow = []
         for i, sc in enumerate(scenes, 1):
