@@ -378,6 +378,16 @@ function score_parts_line(array $parts): string {
     return $out ? '（' . implode('・', $out) . '）' : '';
 }
 
+// 流れの見出しの区名：最初の地点の区だけでなく、通る区を順に並べる（区をまたぐ流れで、見出しと説明が食い違って見えるため）。
+// 区は各地点の住所（「福岡市博多区…」）から取る。住所のない地点は数えず、1つも取れなければ最初の地点の区にする
+function route_area_label(array $r, array $spots): string {
+    $wards = [];
+    foreach ($spots as $s) {
+        if (preg_match('/福岡市(東区|博多区|中央区|南区|西区|城南区|早良区)/u', (string)($s['address'] ?? ''), $m) && !in_array($m[1], $wards, true)) $wards[] = $m[1];
+    }
+    return $wards ? implode('・', $wards) : (AREA_LABEL[$r['area_code'] ?? ''] ?? '');
+}
+
 // ---------- ルートカード（流れで探す・おすすめの流れで共通） ----------
 // $opt: save_key（保存ボタン）, saved（保存済み表示）, archive_id（外すボタン）, extra（メタ情報の追記）
 function render_route_card(array $r, int $i, array $opt = []): void {
@@ -399,7 +409,7 @@ function render_route_card(array $r, int $i, array $opt = []): void {
             <?php foreach ($spots as $k => $s): ?><?php if ($k): ?><span class="arr" aria-label="から">→</span><?php endif; ?><span class="g"><?= dot((string)($s['grp_code'] ?? $s['group'] ?? '')) ?><?= h($s['group'] ?? '') ?></span><?php endforeach; ?>
           </h3>
           <p class="meta">
-            <span><?= h(AREA_LABEL[$r['area_code'] ?? ''] ?? '') ?></span>
+            <span><?= h(route_area_label($r, $spots)) ?></span>
             <span><?= h($modeLabel) ?><?php if (count($spots) > 1): ?> 約<?= h(round((float)($r['total_minutes'] ?? 0))) ?>分<span class="muted">（直線距離からの目安）</span><?php else: ?>（単独の地点）<?php endif; ?></span>
             <?php if (!empty($r['needs_review'])): ?><span class="chip warn" title="<?= h($r['review_note'] ?? '') ?>">地点に変化あり・要再確認</span><?php endif; ?>
             <?php if (isset($r['match'])): ?><span>適合度 <?= h(round((float)$r['match'] * 100)) ?>%<?php if (current_user() && !empty($r['score_parts'])): ?> <span class="muted small" title="各項目は0〜1。データのない項目は除き、重みを残りに割り戻しています"><?= h(score_parts_line((array)$r['score_parts'])) ?></span><?php endif; ?></span><?php endif; ?>

@@ -191,19 +191,47 @@ def town_key(addr: str | None) -> str:
 
 
 REGEO_STATS: dict = {}
+REGEO_SKIP = object()          # 時間切れで比べなかった地点の目印
 
 
-def check_regeo(rows, lookup, workers=4) -> list[Finding]:
-    """国土地理院の逆ジオコーダーで引き直し、保存した住所と町名まで比べる（取れなかった地点は比べない）"""
+def regeo_slice(rows, parts: int, week: int):
+    """毎週すべてを引き直すと国土地理院への問い合わせが多すぎる（地点が1万を超え、30分で終わらなかった）。
+    地点の番号で parts 個に分け、週ごとに1つを回す。parts 週で全地点を一巡する"""
+    parts = max(1, parts)
+    return [r for r in rows if r["id"] % parts == week % parts]
+
+
+def check_regeo(rows, lookup, workers=4, parts=1, week=0, budget_s=None) -> list[Finding]:
+    """国土地理院の逆ジオコーダーで引き直し、保存した住所と町名まで比べる（取れなかった・時間切れの地点は比べない）
+
+    parts/week：全地点を parts 個に分けて週ごとに1つを調べる。budget_s：この秒数を過ぎたら残りは比べずに終える"""
     import requests
+    import sys
+    import time
     out = []
-    targets = [r for r in rows if r["address"]]
-    REGEO_STATS.update(target=len(targets), compared=0, failed=0)
+    targets = regeo_slice([r for r in rows if r["address"]], parts, week)
+    REGEO_STATS.update(target=len(targets), compared=0, failed=0, skipped=0, parts=parts, week=week % max(1, parts),
+                       checked_ids=set())
+    deadline = time.monotonic() + budget_s if budget_s else None
+
+    def one(r, sess):
+        if deadline and time.monotonic() > deadline:
+            return REGEO_SKIP
+        return lookup(r["lon"], r["lat"], sess)
+
     with requests.Session() as sess, ThreadPoolExecutor(max_workers=workers) as pool:
-        for r, now in zip(targets, pool.map(lambda r: lookup(r["lon"], r["lat"], sess), targets)):
-            REGEO_STATS["compared" if now else "failed"] += 1
-            if now and town_key(now) != town_key(r["address"]):
-                out.append(Finding(r["id"], "address_regeo", f"保存：{r['address']} ／ 現在：{now}"))
+        for i, (r, now) in enumerate(zip(targets, pool.map(lambda r: one(r, sess), targets)), 1):
+            if now is REGEO_SKIP:
+                REGEO_STATS["skipped"] += 1
+            else:
+                REGEO_STATS["compared" if now else "failed"] += 1
+                if now:
+                    REGEO_STATS["checked_ids"].add(r["id"])
+                    if town_key(now) != town_key(r["address"]):
+                        out.append(Finding(r["id"], "address_regeo", f"保存：{r['address']} ／ 現在：{now}"))
+            if i % 500 == 0:
+                print(f"  住所の引き直し {i:,}/{len(targets):,}（比べた {REGEO_STATS['compared']:,}・"
+                      f"取れず {REGEO_STATS['failed']:,}・時間切れ {REGEO_STATS['skipped']:,}）", file=sys.stderr, flush=True)
     return out
 
 
@@ -502,7 +530,7 @@ def write_outputs(found, spots, notes, out_dir: Path, web_base: str) -> str:
         spots_hit[t] = len({x.spot_id for x in found if x.target == t})
     lines = ["## 自動チェック", "",
              f"掲載中の地点 {len(spots):,} ／ 採用待ちの下書き {len(notes):,} ／ 指摘 {len(found):,} 件", "",
-             (f"住所の引き直し：比べた {REGEO_STATS['compared']:,} ／ 取れなかった {REGEO_STATS['failed']:,}\n"
+             (f"住所の引き直し：今回の対象 {REGEO_STATS['target']:,}（{REGEO_STATS['parts']}週で一巡・今週は {REGEO_STATS['week'] + 1} 番目）／ 比べた {REGEO_STATS['compared']:,} ／ 取れなかった {REGEO_STATS['failed']:,} ／ 時間切れ {REGEO_STATS['skipped']:,}\n"
               if REGEO_STATS else "住所の引き直し：今回はしていない\n"),
              f"指摘のある地点：種別 {spots_hit['category']:,} ／ 住所 {spots_hit['address']:,} ／ 説明文 {spots_hit['summary']:,}", "",
              "| 対象 | 重さ | チェック | 件数 | 例 |", "|---|---|---|---:|---|"]
@@ -540,8 +568,9 @@ def fkey(x: Finding) -> str:
     return f"{x.check}|{x.note_id or ''}|{x.detail}"[:1000]
 
 
-def store(conn, found: list[Finding], ran: set[str], job_id: int) -> dict:
-    """指摘を保存する（1つのトランザクション）。今回調べたチェックで見つからなくなった未対応の指摘は resolved"""
+def store(conn, found: list[Finding], ran: set[str], job_id: int, regeo_checked: set[int] | None = None) -> dict:
+    """指摘を保存する（1つのトランザクション）。今回調べたチェックで見つからなくなった未対応の指摘は resolved。
+    住所の引き直しは一部の地点しか調べないので、今回比べた地点（regeo_checked）の分だけ resolved にする"""
     rows = [(x.spot_id, x.check, x.target, x.severity, CHECKS[x.check][2], x.detail, x.note_id, fkey(x), job_id)
             for x in found]
     with conn.cursor() as cur:
@@ -550,6 +579,11 @@ def store(conn, found: list[Finding], ran: set[str], job_id: int) -> dict:
                         where status = 'open' and check_code = any(%s) and last_job is distinct from %s""",
                     (sorted(ran), job_id))
         resolved = cur.rowcount
+        if regeo_checked:
+            cur.execute("""update spot_checks set status = 'resolved', closed_by = 'verify', closed_at = now()
+                            where status = 'open' and check_code = 'address_regeo' and spot_id = any(%s)
+                              and last_job is distinct from %s""", (sorted(regeo_checked), job_id))
+            resolved += cur.rowcount
         n = {r["status"]: r["n"] for r in cur.execute("select status, count(*) n from spot_checks group by status").fetchall()}
     return {"saved": len(rows), "resolved_now": resolved, "open": n.get("open", 0), "dismissed": n.get("dismissed", 0)}
 
@@ -561,12 +595,17 @@ def main(argv=None):
     g.add_argument("--apply", action="store_true", help="指摘を spot_checks に保存する")
     ap.add_argument("--out", default="verify-out")
     ap.add_argument("--geocode", action="store_true", help="国土地理院で住所を引き直して比べる（数分かかる）")
+    ap.add_argument("--geocode-parts", type=int, default=4, help="全地点をこの数に分け、週ごとに1つを引き直す（1で全件）")
+    ap.add_argument("--geocode-budget-min", type=float, default=15, help="住所の引き直しにかける時間の上限（分）。超えたら残りは次回以降")
     ap.add_argument("--web-base", default="https://fukanim.heteml.net/locadb/")
     a = ap.parse_args(argv)
 
     from . import address
     from .db import connect, job
-    regeo = (lambda rows: check_regeo(rows, address.lookup)) if a.geocode else None
+    import datetime
+    week = datetime.date.today().isocalendar()[1]
+    regeo = (lambda rows: check_regeo(rows, address.lookup, parts=a.geocode_parts, week=week,
+                                      budget_s=a.geocode_budget_min * 60)) if a.geocode else None
     REGEO_STATS.clear()
     with connect() as conn:
         if a.dry_run:
@@ -580,11 +619,11 @@ def main(argv=None):
                     raise SystemExit("掲載中の地点が0件のため止めました")
                 found = run_checks(spots, notes, pairs, regeo)
                 ran = set(CHECKS)
-                # 住所を引き直していない回、または一部が取れなかった回は、引き直しの指摘を閉じない
-                if not a.geocode or REGEO_STATS.get("failed"):
-                    ran.discard("address_regeo")
+                # 引き直しの指摘は、今回比べられた地点の分だけ閉じる（store の regeo_checked）。全体では閉じない
+                ran.discard("address_regeo")
                 jid = conn.execute("select max(id) i from job_runs where job = 'verify' and finished_at is null").fetchone()["i"]
-                stats.update(store(conn, found, ran, jid), spots=len(spots), drafts=len(notes), geocode=a.geocode,
+                stats.update(store(conn, found, ran, jid, REGEO_STATS.get("checked_ids")), spots=len(spots), drafts=len(notes), geocode=a.geocode,
+                             regeo={k: v for k, v in REGEO_STATS.items() if k != "checked_ids"},
                              by_check=dict(Counter(x.check for x in found)))
             print(json.dumps(stats, ensure_ascii=False))
     md = write_outputs(found, spots, notes, Path(a.out), a.web_base)

@@ -25,6 +25,43 @@ jobs:
                   print("```json\n" + json.dumps(d, ensure_ascii=False, indent=1, default=str) + "\n```")
           PY
         env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      # 診断の各項目の所要時間と、画面（service_role）が受ける時間制限（読み取りのみ）。runs.php が500になる原因の切り分け用
+      - name: 診断の所要時間
+        run: |
+          python - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import os, time, psycopg
+          Q = {
+            "diag_summary() 全体": "select diag_summary()",
+            "area_mismatch": "select count(*) from spots s join areas a on a.code = s.area_code where a.geom is not null and s.data_status <> 'archived' and not ST_Covers(a.geom, s.geom)",
+            "duplicate_candidates(1000,150)": "select jsonb_array_length(duplicate_candidates(1000, 150))",
+            "orphan_links": "select count(*) from spot_features sf where not exists (select 1 from features f where f.key = sf.feature_key)",
+            "spots_without_feature": "select count(*) from spots s where s.origin = 'osm' and not exists (select 1 from spot_features sf where sf.spot_id = s.id)",
+            "clusters_with_archived_spot": "select count(*) from clusters c where c.status <> 'archived' and exists (select 1 from cluster_spots cs join spots s on s.id = cs.spot_id where cs.cluster_id = c.id and s.data_status = 'archived')",
+            "by_category など集計": "select count(*) from (select category, count(*) n from spots where data_status <> 'archived' group by 1) x",
+            "data_runs 15件（report つき）": "select id, report, summary, error from data_runs order by id desc limit 15",
+            "job_runs 30件": "select run_id, job, stats, error from job_runs order by id desc limit 30",
+          }
+          print("## 診断の所要時間\n")
+          with psycopg.connect(os.environ["DATABASE_URL"], autocommit=True) as c:
+              print("直接接続の statement_timeout：", c.execute("show statement_timeout").fetchone()[0])
+              try:
+                  c.execute("set role service_role")
+                  print("service_role の statement_timeout：", c.execute("show statement_timeout").fetchone()[0])
+              except Exception as e:
+                  print("service_role に切り替えられません：", type(e).__name__)
+              c.execute("reset role")
+              print("\n| 項目 | 秒 |\n|---|---:|")
+              for k, q in Q.items():
+                  t = time.perf_counter()
+                  try:
+                      c.execute(q).fetchall()
+                      print(f"| {k} | {time.perf_counter() - t:.2f} |")
+                  except Exception as e:
+                      print(f"| {k} | 失敗 {type(e).__name__} |")
+              n = c.execute("select count(*), coalesce(max(length(report)),0), coalesce(sum(length(report)),0) from (select report from data_runs order by id desc limit 15) x").fetchone()
+              print(f"\ndata_runs 直近15件の report：最大 {n[1]:,} 字・合計 {n[2]:,} 字")
+          PY
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
       # AIの下書きを出どころ・状態・プロンプトの版ごとに数える（本文は出さない。読み取りのみ）
       - name: AIの下書き（版ごと）
         run: |
