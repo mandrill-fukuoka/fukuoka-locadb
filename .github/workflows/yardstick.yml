@@ -22,7 +22,9 @@ jobs:
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq php-cli
       - run: pip install "psycopg[binary]>=3.2"
       - name: 採点
+        shell: bash
         run: |
+          set -o pipefail
           flags=""
           if [ "${{ inputs.write_baseline }}" = "true" ]; then flags="--write-baseline"; fi
           python tools/yardstick.py run --json yardstick.json $flags | tee -a "$GITHUB_STEP_SUMMARY"
