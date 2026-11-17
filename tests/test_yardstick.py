@@ -7,13 +7,14 @@ from tools import yardstick as y
 
 
 def route(*groups):
-    return {"spots": [{"name": f"地点{i}", "group": g} for i, g in enumerate(groups)]}
+    return {"spots": [{"name": f"地点{i}", "group": f"名{g}", "grp_code": g} for i, g in enumerate(groups)]}
 
 
 def test_covers_needs_the_sequence_in_order():
     assert y.covers(route("a", "b", "c"), ["a", "c"])          # 間に別の地点があってよい
     assert not y.covers(route("c", "a"), ["a", "c"])           # 順番が違う
     assert not y.covers(route("a", "a"), ["a", "b"])
+    assert y.covers(route("river"), ["water"]) and not y.covers(route("road"), ["water"])   # 水辺は川・海などを含む
     assert y.covers(route("a"), [])                            # 景観を読み取れなかったときは流れがあれば満たす
 
 
