@@ -19,6 +19,11 @@ KEYWORDS = [
     ("redevelopment", r"再開発|建て替え|建替|新築計画|都市計画決定"),
     ("use_change", r"用途変更|移転|跡地|リノベーション"),
 ]
+# 橋・道路・川・線路などは、再開発の記事に「経路の目印」として名前が出るだけで反応しやすい（2026-11-17：天神ビッグバンの
+# ページに西大橋・天神橋・博多大橋が反応）。建物・施設と違い、記事の語で「なくなる」とは言えないので照合の対象にしない
+INFRA_CATEGORIES = ("bridge_overpass", "underpass", "expressway", "railway", "river", "riverbank", "coast",
+                    "breakwater", "alley", "slope_street")
+CTX = 60            # 根拠として見る範囲：地点名の前後の文字数（同じ文の中だけ）
 CONFIG = Path(__file__).resolve().parent.parent / "config" / "watch_pages.txt"
 
 
@@ -34,6 +39,14 @@ def expand_url(url: str) -> list[str]:
 def page_text(html: str) -> str:
     html = re.sub(r"(?is)<(script|style).*?</\1>", " ", html)
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+
+
+def context(text: str, start: int, end: int) -> str:
+    """地点名の前後 CTX 文字。ただし文の区切り（。！？）は越えない（別の話題の語を拾わない）"""
+    lo = max(start - CTX, text.rfind("。", 0, start) + 1, text.rfind("！", 0, start) + 1, text.rfind("？", 0, start) + 1)
+    stops = [i for i in (text.find(c, end) for c in "。！？") if i != -1]
+    hi = min([end + CTX] + stops)
+    return text[lo:hi]
 
 
 def sync_config(conn):
@@ -55,7 +68,8 @@ def run(run_id: int | None = None) -> dict:
         # 同じ名前の地点（川の流域の地点など）は1件だけ照合する（同じ根拠で何件も「要確認」にしない）
         names = conn.execute(
             "select distinct on (name) id, name from spots where data_status<>'archived' and char_length(name) >= 4 "
-            "and name not like '（無名）%%' order by name, (sample_key is not null), id").fetchall()
+            "and name not like '（無名）%%' and category <> all(%s) order by name, (sample_key is not null), id",
+            (list(INFRA_CATEGORIES),)).fetchall()
         changed = found = failed = 0
         for p in conn.execute("select * from watch_pages").fetchall():
             texts, errors = [], []
@@ -86,7 +100,7 @@ def run(run_id: int | None = None) -> dict:
             changed += 1
             for s in names:
                 for m in re.finditer(re.escape(s["name"]), text):
-                    ctx = text[max(0, m.start() - 120): m.end() + 120]
+                    ctx = context(text, m.start(), m.end())
                     rtype = next((t for t, pat in KEYWORDS if re.search(pat, ctx)), None)
                     if not rtype:
                         continue

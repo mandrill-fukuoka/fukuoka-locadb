@@ -371,7 +371,8 @@ def test_C_diagnostics_clean(db, tmp_path):
     w = World(); temples(w, 3); w.line(500, RIVER, waterway="river", name="那珂川")
     w.run(db, tmp_path)
     d = db.execute("select diag_summary() d").fetchone()["d"]
-    assert d["orphan_links"] == 0 and d["spots_without_feature"] == 0 and d["area_mismatch"] == 0
+    assert d["orphan_links"] == 0 and d["spots_without_feature"] == 0
+    assert db.execute("select diag_heavy() h").fetchone()["h"]["area_mismatch"] == 0
 
 
 # =====================================================================

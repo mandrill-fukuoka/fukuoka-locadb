@@ -1,0 +1,27 @@
+# 週次の実行結果のまとめ：直近1週間の収集・自動チェック・取り込みの成否を、GitHub の Issue に1通出す（管理者に通知が届く）
+#  - 毎週月曜 12:00（日本時間）。月曜 6:00 の収集と、その後の自動チェックが終わった頃
+#  - 読み取りのみ（DBには書かない）。手動で動かすときは notify を false にすると Issue を作らない
+name: weekly-report
+on:
+  schedule: [{ cron: "0 3 * * 1" }]
+  workflow_dispatch:
+    inputs:
+      notify: { description: "Issue を作る", type: boolean, default: true }
+permissions:
+  contents: read
+  actions: read
+  issues: write
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "psycopg[binary]>=3.2" requests
+      - name: まとめ
+        run: python tools/weekly_report.py $([ "${{ inputs.notify }}" = "false" ] && echo --no-issue) | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

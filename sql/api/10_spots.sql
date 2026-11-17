@@ -5,7 +5,7 @@ begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname in (
               'grp_match','spot_label','search_spots','spots_nearby','spot_detail','review_queue','review_spot',
-              'photo_state','spatial_view','logistics_view','drone_view','tide_view','aed_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','duplicate_candidates','merge_spots','spots_by_ids','live_root','precinct_word')
+              'photo_state','spatial_view','logistics_view','drone_view','tide_view','aed_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','diag_heavy','duplicate_candidates','merge_spots','spots_by_ids','live_root','precinct_word')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
@@ -522,8 +522,6 @@ select jsonb_build_object(
                 from spots where data_status <> 'archived'),
   'orphan_links', (select count(*) from spot_features sf where not exists (select 1 from features f where f.key = sf.feature_key)),
   'spots_without_feature', (select count(*) from spots s where s.origin = 'osm' and not exists (select 1 from spot_features sf where sf.spot_id = s.id)),
-  'area_mismatch', (select count(*) from spots s join areas a on a.code = s.area_code
-                     where a.geom is not null and s.data_status <> 'archived' and not ST_Covers(a.geom, s.geom)),
   'duplicate_pairs', (select jsonb_array_length(duplicate_candidates(1000, 150))),
   'features_missing', (select count(*) from features where missing_runs > 0),
   'clusters_needing_review', (select count(*) from clusters where needs_review and status <> 'archived'),
@@ -534,5 +532,14 @@ select jsonb_build_object(
                                                      'code', code_version, 'rules', rules_version, 'summary', summary)
                                   order by id desc)
                   from (select * from data_runs order by id desc limit 5) r)
+);
+$$;
+
+-- 重い診断（区の境界との照合。約11秒かかり、画面（PostgREST）の時間制限に掛かるため diag_summary から分けた。2026-11-17）
+-- 画面からは呼ばない。diagnose（Actions）から読む
+create function diag_heavy() returns jsonb language sql stable as $$
+select jsonb_build_object(
+  'area_mismatch', (select count(*) from spots s join areas a on a.code = s.area_code
+                     where a.geom is not null and s.data_status <> 'archived' and not ST_Covers(a.geom, s.geom))
 );
 $$;

@@ -71,6 +71,20 @@ def test_regeo_compares_town(monkeypatch):
     assert [(f.spot_id, f.check) for f in found] == [(2, "address_regeo")]                    # 丁目の違い・表記ゆれは指摘しない
 
 
+def test_regeo_rotates_and_respects_budget():
+    rows = [S(id=i, address="福岡市中央区大名二丁目") for i in range(1, 13)]
+    # 4週で一巡：週ごとに別の地点を引き、4週分を合わせると全地点になる
+    picked = [{r["id"] for r in verify.regeo_slice(rows, 4, w)} for w in range(4)]
+    assert sum(len(x) for x in picked) == 12 and set().union(*picked) == {r["id"] for r in rows}
+    assert verify.regeo_slice(rows, 1, 0) == rows                                              # 1なら全件
+    # 時間切れ：残りは比べず（指摘にもしない）、比べた地点だけを記録する
+    calls = []
+    found = verify.check_regeo(rows, lambda lon, lat, sess: calls.append(1) or "福岡市中央区大名二丁目",
+                               workers=1, parts=1, budget_s=-1)
+    assert found == [] and calls == []
+    assert verify.REGEO_STATS["skipped"] == 12 and verify.REGEO_STATS["checked_ids"] == set()
+
+
 def _places():
     return PlaceIndex([S(id=10, name="博多駅", lat=33.5897, lon=130.4207),
                        S(id=11, name="姪浜駅", lat=33.5833, lon=130.3260),
