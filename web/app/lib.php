@@ -90,7 +90,7 @@ function check_csrf(): void {
 }
 
 // ---------- Supabase（REST / RPC） ----------
-function sb_request(string $method, string $path, $body = null) {
+function sb_request(string $method, string $path, $body = null, int $timeout = 30) {
     $url = rtrim(cfg('supabase_url'), '/') . '/rest/v1/' . ltrim($path, '/');
     $key = cfg('supabase_service_key');
     $ch = curl_init($url);
@@ -100,7 +100,7 @@ function sb_request(string $method, string $path, $body = null) {
     curl_setopt_array($ch, [
         CURLOPT_CUSTOMREQUEST => $method,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 30,
+        CURLOPT_TIMEOUT => $timeout,
         CURLOPT_HTTPHEADER => $headers,
     ]);
     if ($body !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_UNESCAPED_UNICODE));
@@ -113,6 +113,15 @@ function sb_request(string $method, string $path, $body = null) {
         throw new RuntimeException('データベースに接続できませんでした（' . $code . '）');
     }
     return $res === '' ? null : json_decode($res, true);
+}
+// 利用の記録（search_logs。DB変更なし）。個人を特定する情報（IP・UA・Cookie）は保存しない。
+// ログイン中（自分の操作）とボットは記録しない。失敗しても画面は止めない
+function usage_log(string $kind, array $f = []): void {
+    if (current_user()) return;
+    if (preg_match('/bot|crawl|spider|slurp|facebookexternalhit|preview|monitor|curl|wget/i', (string)($_SERVER['HTTP_USER_AGENT'] ?? ''))) return;
+    try {
+        sb_request('POST', 'search_logs', array_merge(['kind' => $kind], $f), 3);
+    } catch (Throwable $e) { /* 記録の失敗は無視 */ }
 }
 function sb_rpc(string $fn, array $args = []) { return sb_request('POST', 'rpc/' . $fn, (object)$args); }
 function sb_get(string $pathWithQuery) { return sb_request('GET', $pathWithQuery); }
@@ -250,7 +259,7 @@ function analytics_tag(): string {
 
 function page_header(string $title, string $active = ''): void {
     $nav = ['index.php' => '場所を探す', 'flow.php' => '流れで探す', 'flows.php' => 'おすすめの流れ', 'list.php' => 'ロケハンリスト'];
-    if (current_user()) $nav += ['spots.php' => '地点の確認', 'risks.php' => '変化リスク', 'runs.php' => '収集の記録',
+    if (current_user()) $nav += ['spots.php' => '地点の確認', 'risks.php' => '変化リスク', 'runs.php' => '収集の記録', 'usage.php' => '利用の記録',
                                  'edit.php' => '＋地点を追加'];
     echo '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
        . '<meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -620,6 +629,6 @@ function page_footer(): void {
     echo '</main><footer>FUKUOKA LOCATIONS　候補は組み合わせの提案であり、撮影の許可・立入の可否・撮影できることを保証するものではありません。'
        . '地点の位置はOpenStreetMapのデータに基づく手がかりです。移動時間は直線距離からの目安です。'
        . '地図データ © Google / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>（ODbL）'
-       . '・住所 国土地理院</footer>'
+       . '・住所 国土地理院　<a href="privacy.php">記録の取り扱い</a></footer>'
        . '<script src="assets/list.js"></script></body></html>';
 }

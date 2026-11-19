@@ -46,6 +46,12 @@ try {
             'p_offset' => $page * $per, 'p_limit' => $per, 'p_relief_min' => $terr === 'high' ? HIGH_GROUND_M : null,
             'p_open' => $spOpen ?: null, 'p_water' => $spWater ?: null, 'p_road' => $spRoad ?: null, 'p_built' => $spBuilt ?: null, 'p_photo' => $photoSt ?: null,
             'p_sort' => $sort ?: null]) ?? [];
+        if ($page === 0) {   // 利用の記録：何で探して何件だったか（0件の検索が辞書を育てる材料）
+            $cond = array_filter(['cat' => $cat, 'grp' => $grp, 'tag' => $tag, 'terrain' => $terr, 'sp_open' => $spOpen,
+                'sp_water' => $spWater, 'sp_road' => $spRoad, 'sp_built' => $spBuilt, 'photo' => $photoSt, 'sort' => $sort], fn($v) => $v !== '');
+            usage_log('spots', ['scene' => $q !== '' ? mb_substr($q, 0, 100) : null, 'tags' => (object)$cond, 'area_code' => $area ?: null,
+                'result_count' => $rows ? (int)($rows[0]['total'] ?? count($rows)) : 0]);
+        }
     }
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
