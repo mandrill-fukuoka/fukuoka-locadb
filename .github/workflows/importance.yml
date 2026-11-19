@@ -1,0 +1,35 @@
+# 重要度の材料（Wikipedia の閲覧数・Wikidata）を取り込んで点数を作り直す（順2、DB変更260の後）
+#  Actions →「importance」→ Run workflow：dry_run（取り込んでから取り消す）/ apply（取り込む）
+#  command：run（取得して書き込み）／ refresh（取得せず手元の材料で点数だけ）／ revoke（Wikidata の事実をまとめて取り消す）
+#  本番への書き込みなので、apply の前に了承を取る。取得は Wikidata・Wikipedia（CC0）へ直列・間隔をあけて行う
+name: importance
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        type: choice
+        options: [run, refresh, revoke]
+        default: run
+      mode:
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+concurrency: { group: database, cancel-in-progress: false }
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "psycopg[binary]>=3.2"
+      - name: 取り込み
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/importance_import.py "$CMD" $([ "$MODE" = "apply" ] && echo --apply) --json importance.json | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CMD: ${{ inputs.command }}
+          MODE: ${{ inputs.mode }}

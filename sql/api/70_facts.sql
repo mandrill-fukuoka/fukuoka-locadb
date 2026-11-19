@@ -58,7 +58,7 @@ begin
     if v_val is null or length(v_val) > 200 then
       rej := rej || jsonb_build_object('spot_id', v_id, 'item', v_item, 'reason', '値が空、または200字を超えている'); continue;
     end if;
-    if v_kind is null or v_kind not in ('wikipedia','web','osm','manual') then
+    if v_kind is null or v_kind not in ('wikipedia','web','osm','manual','wikidata') then
       rej := rej || jsonb_build_object('spot_id', v_id, 'item', v_item, 'reason', '取得元の種類が不正'); continue;
     end if;
     if v_kind <> 'manual' and (v_url is null or v_url !~ '^https://') then
