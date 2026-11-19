@@ -99,6 +99,7 @@ $osmUrl = fn($f) => $f['kind'] === 'element'
     : (!empty($f['way_ids'][0]) ? 'https://www.openstreetmap.org/way/' . $f['way_ids'][0] : '');
 $lineName = ($s['shape'] ?? '') === 'line' ? preg_replace('/^（無名）.*/u', '', (string)($s['osm'][0]['name'] ?? '')) : '';
 
+if ($_SERVER['REQUEST_METHOD'] === 'GET') usage_log('spot_view', ['start_spot' => $id]);   // 利用の記録（どの地点が見られたか）
 page_header(sn($s), '');
 ?>
 <article class="spotpage">
