@@ -20,6 +20,9 @@ return [
     // 検索エンジンに載せる場合は true（公開準備が整うまでは false のまま）
     'allow_indexing'         => false,
 
+    // アクセス解析（Cloudflare Web Analytics のサイトトークン。空欄なら計測しない。トークンはページに出る公開値）
+    'cf_analytics_token'     => '',
+
     // ログインユーザー（地点の確認・変化リスク・おすすめの保存ができる人）（パスワードは php app/make_password.php で生成したハッシュ）
     'users' => [
         // 'hirata' => '$2y$10$....',
