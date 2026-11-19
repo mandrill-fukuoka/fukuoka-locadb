@@ -241,6 +241,13 @@ const MODE_LABEL = ['walk' => '徒歩', 'car' => '車', 'mixed' => '徒歩＋車
 const AREA_LABEL = ['fuk-chuo' => '中央区', 'fuk-hakata' => '博多区', 'fuk-higashi' => '東区',
                     'fuk-sawara' => '早良区', 'fuk-nishi' => '西区', 'fuk-minami' => '南区', 'fuk-jonan' => '城南区'];
 
+// アクセス解析（Cloudflare Web Analytics。Cookieなし・個人を特定しない）。トークン未設定、またはログイン中（自分の閲覧）は出さない
+function analytics_tag(): string {
+    $t = (string)cfg('cf_analytics_token', '');
+    if ($t === '' || current_user()) return '';
+    return '<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon=\'{"token": "' . h($t) . '"}\'></script>';
+}
+
 function page_header(string $title, string $active = ''): void {
     $nav = ['index.php' => '場所を探す', 'flow.php' => '流れで探す', 'flows.php' => 'おすすめの流れ', 'list.php' => 'ロケハンリスト'];
     if (current_user()) $nav += ['spots.php' => '地点の確認', 'risks.php' => '変化リスク', 'runs.php' => '収集の記録',
@@ -252,7 +259,8 @@ function page_header(string $title, string $active = ''): void {
        . '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
        . '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Noto+Sans+JP:wght@400;500&family=Shippori+Mincho:wght@600;700&display=swap">'
        . '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">'
-       . '<link rel="stylesheet" href="assets/style.css"></head><body>'
+       . '<link rel="stylesheet" href="assets/style.css">'
+       . analytics_tag() . '</head><body>'
        . '<header class="top"><a class="brand" href="index.php">FUKUOKA LOCATIONS</a>';
     echo '<nav class="mainnav">';
     foreach ($nav as $href => $label) echo '<a href="' . $href . '"' . ($active === $href ? ' class="on" aria-current="page"' : '') . '>' . $label . '</a>';
