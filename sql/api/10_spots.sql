@@ -137,10 +137,10 @@ create function search_spots(
   p_relief_min real default null,
   p_open text default null, p_water text default null, p_road text default null,
   p_built text default null, p_photo text default null,
-  p_sort text default null      -- 並び順：null/relevance（おすすめ順）・name（名前順）・address（住所順）・created（登録が新しい順）・updated（更新が新しい順）・relief（周りより高い順）・facts（事実の多い順）。2026-11-12
+  p_sort text default null      -- 並び順：null/relevance（おすすめ順）・name（名前順）・address（住所順）・created（登録が新しい順）・updated（更新が新しい順）・relief（周りより高い順）・facts（事実の多い順）・importance（重要度順）・hidden（穴場順）。2026-11-12／重要度は2026-11-19（順2）
 ) returns jsonb language sql stable as $$
 with opt as (
-  select case when p_sort in ('name','address','created','updated','relief','facts') then p_sort else 'relevance' end as s
+  select case when p_sort in ('name','address','created','updated','relief','facts','importance','hidden') then p_sort else 'relevance' end as s
 ),
 hits as (
   select s.id, s.code, s.name, s.area_code, s.address, s.category as cat, sc.name as category,
@@ -148,11 +148,13 @@ hits as (
          s.data_status, s.summary, s.ffc_registered, s.geom, s.line_key, s.position_kind,
          s.relief_m, s.slope_grade_pct, s.slope_rise_m, s.rail_form, s.created_at, s.updated_at,
          (s.name like '（無名）%') as unnamed,
+         coalesce(im.score, 0) as importance, coalesce(im.hidden_score, 0) as hidden_score,   -- 重要度・穴場度（DB変更260。材料のない地点は0＝後ろへ）
          (select count(*) from spot_facts f where f.spot_id = s.id and f.status = 'approved') as fact_count,
          live_root(s.group_root_id) as groot, s.parent_id
     from spots s
     join spot_categories sc on sc.code = s.category
     join landscape_groups lg on lg.code = sc.landscape_group
+    left join spot_importance im on im.spot_id = s.id
    where s.data_status <> 'archived'
      and (p_q is null or s.name ilike '%' || p_q || '%' or s.address ilike '%' || p_q || '%'
           or array_to_string(s.alt_names, ' ') ilike '%' || p_q || '%' or similarity(s.name, p_q) > 0.3)
@@ -193,6 +195,8 @@ ranked as (       -- 一覧の件（まとめたあと）に全体の件数と�
          row_number() over (order by g.unnamed,
             case when o.s = 'relevance' then case when p_q is null then 0 else similarity(g.name, p_q) end end desc,
             case when o.s = 'relevance' then case when p_relief_min is null then 0 else g.relief_m end end desc,
+            case when o.s in ('relevance','importance') then g.importance end desc,                      -- 重要度（既定の並び順。材料のない地点は0で後ろ）
+            case when o.s = 'hidden' then g.hidden_score end desc,                                       -- 穴場順
             case when o.s = 'relevance' then (g.confidence in ('desk_checked','field_checked'))::int end desc,
             case when o.s = 'relevance' then (g.fact_count > 0 or g.summary is not null)::int end desc,   -- 事実・説明文のある地点を先に
             case when o.s = 'name' then g.name end,

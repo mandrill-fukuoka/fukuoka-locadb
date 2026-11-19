@@ -92,6 +92,8 @@ web/                   画面（public → heteml の web/locadb/、app/lib.php 
 | diagnose | 手動 | データの診断（読み取りのみ）。件数に加え、各項目の所要時間も出す（重い診断 diag_heavy は画面では呼ばない） |
 | weekly-report | 毎週月曜12:00（日本時間）／手動 | 直近1週間の収集・自動チェックなどの成否と、DBに残る最後の成功を Issue に1通まとめる（止まっていても気づけるように）。読み取りのみ |
 | verify | 月曜の pipeline（本番）の後／手動 | 登録地の自動チェック（種別・住所・説明文の下書き。AIなし）。住所の引き直しは4週で一巡（毎週1/4）・15分の上限つき（地点が1万を超え、全件では30分で終わらなかったため）。apply は指摘を spot_checks に保存し確認画面「自動チェック」タブへ（地点・下書きは変えない）。dry_run は読み取りのみ。どちらも一覧 findings.csv を成果物に |
+| yardstick | 手動／db-migrate・pipeline の成功後 | 評価の物差し（読み取りのみ）。場所検索の地点リスト・流れ検索40シーンを採点し、基準から後退したら失敗（赤） |
+| importance | 手動 | 重要度の材料（Wikipedia の閲覧数・Wikidata の言語版数）を取り込み、点数（spot_importance）を作り直す。Wikidata の創設・開設年は事実カードへ（出どころ wikidata。revoke でまとめて取り消し）。command=run/refresh/revoke、mode=dry_run/apply |
 | ci | push のたび | 回帰テストとPHPの構文チェック |
 | keepalive | 木・土 | Supabase 無料枠の休止防止 |
 

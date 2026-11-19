@@ -17,7 +17,8 @@ $spRoad  = in_array($_GET['sp_road'] ?? '', ['narrow', 'wide'], true) ? $_GET['s
 $photoSt = photo_state_filter();
 // 並び順（search_spots の p_sort）。指定なし＝おすすめ順
 $sortLabels = ['relevance' => 'おすすめ順', 'name' => '名前順', 'address' => '住所順', 'created' => '登録が新しい順',
-               'updated' => '更新が新しい順', 'relief' => '周りより高い順', 'facts' => '事実の多い順'];
+               'updated' => '更新が新しい順', 'relief' => '周りより高い順', 'facts' => '事実の多い順',
+               'importance' => '重要度順', 'hidden' => '穴場順'];
 $sort  = $_GET['sort'] ?? '';
 if (!isset($sortLabels[$sort]) || $sort === 'relevance') $sort = '';
 $near  = (int)($_GET['near'] ?? 0);
