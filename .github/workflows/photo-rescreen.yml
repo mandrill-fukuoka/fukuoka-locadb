@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       command:
-        description: analyze（読み取りのみ）／apply（未決の候補を整える。DB変更270のあと）
+        description: analyze（読み取りのみ）／apply（未決の候補を整える。DB変更270のあと）／reject-sign（看板・標識・地図の語がある未決を不採用）
         type: choice
-        options: [analyze, apply]
+        options: [analyze, apply, reject-sign]
         default: analyze
       mode:
-        description: apply のとき：dry_run（最後に取り消す）／apply（保存する）
+        description: apply・reject-sign のとき：dry_run（最後に取り消す）／apply（保存する）
         type: choice
         options: [dry_run, apply]
         default: dry_run
@@ -32,7 +32,7 @@ jobs:
             { echo '## 写真候補のふるい直し（分析）'; cat photo-rescreen-out/summary.md; } >> "$GITHUB_STEP_SUMMARY"
           else
             flag=""; [ "${{ inputs.mode }}" = "apply" ] && flag="--yes"
-            python -m tools.photo_rescreen apply $flag | tee rescreen.log
+            python -m tools.photo_rescreen ${{ inputs.command }} $flag | tee rescreen.log
           fi
         env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
       - uses: actions/upload-artifact@v4

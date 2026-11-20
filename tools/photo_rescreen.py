@@ -2,6 +2,8 @@
 
   python -m tools.photo_rescreen analyze --out DIR [--no-categories]    読み取りだけ（DBは SELECT のみ。Commons の API を読む）
   python -m tools.photo_rescreen apply                                   未決の候補だけを整える（下記）。人が決めたものは変えない
+  python -m tools.photo_rescreen reject-sign [--yes]                     未決で、説明文・題名に看板・標識・地図などの語がある候補を、理由 sign でまとめて不採用にする
+                                                                         （過去の採用率 0%＝0/50。利用者の指示 2026-11-20。decided_by = bulk:sign。確認画面の「候補に戻す」で戻せる）
 
 調べること
   1. 照合の拡張：地点名（別名を含む）のローマ字・英語名、Commons のカテゴリ名での照合を足す（locadb/photo_match.py）。
@@ -196,13 +198,38 @@ def cmd_apply(a):
         print({**stats, "applied": a.yes})
 
 
+REJECT_SIGN_SQL = """
+select c.id from spot_photo_candidates c join spots s on s.id = c.spot_id and s.data_status <> 'archived'
+ where c.status = 'candidate'
+   and photo_suggest(c.source, c.name_match, c.description, c.file_title, s.category, c.dist_m::numeric, c.match_kind) = 'low'
+   and photo_suggest_reason(c.source, c.description, c.file_title) = 'sign'
+ order by c.id
+"""
+
+
+def cmd_reject_sign(a):
+    """photo_decide_bulk（確認画面の一括不採用と同じ関数）で、見込み低のうち理由が sign のものだけを不採用にする"""
+    with connect() as conn, job(conn, "photo_reject_sign", None) as stats:
+        ids = [r["id"] for r in conn.execute(REJECT_SIGN_SQL).fetchall()]
+        stats["targets"] = len(ids)
+        if ids:
+            res = conn.execute("select photo_decide_bulk(%s, 'reject', 'bulk:sign', 'sign') r", (ids,)).fetchone()["r"]
+            stats.update(decided=res.get("decided"), skipped=res.get("skipped"))
+        if not a.yes:
+            conn.rollback()
+        else:
+            conn.commit()
+        print({**stats, "applied": a.yes})
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("analyze"); p.add_argument("--out", default="photo-rescreen-out"); p.add_argument("--no-categories", action="store_true")
     q = sub.add_parser("apply"); q.add_argument("--yes", action="store_true", help="付けないときは試し実行（最後に取り消す）")
+    r = sub.add_parser("reject-sign"); r.add_argument("--yes", action="store_true", help="付けないときは試し実行（最後に取り消す）")
     a = ap.parse_args(argv)
-    {"analyze": cmd_analyze, "apply": cmd_apply}[a.cmd](a)
+    {"analyze": cmd_analyze, "apply": cmd_apply, "reject-sign": cmd_reject_sign}[a.cmd](a)
 
 
 if __name__ == "__main__":
