@@ -13,16 +13,18 @@ end $$;
 --         名前が一致しない Commons で、地点から30m以上離れている（採用10/76）、または 史跡・学校・官公庁（採用 34/168）
 --         Mapillary（商業施設以外。採用 11/118）
 --  high ：Commons で、名前が一致し、low でないもの（採用620/649）
---  unknown：それ以外（名前が一致しない Commons の近い写真・商業施設など）
+--  unknown：それ以外（名前が一致しない Commons の近い写真・商業施設など。ローマ字・英語名・カテゴリ名で一致したもの＝match_kind。順4）
 --  印は並べ替えと絞り込み、まとめて採用の対象を決めるためだけに使う。採用・不採用を決めるのは人（photo_decide / photo_decide_bulk）
 --  p_category / p_dist を渡さないとき（null）は、その条件は見ない
 create function photo_suggest(p_source text, p_name_match boolean, p_description text, p_title text,
-                              p_category text default null, p_dist numeric default null) returns text
+                              p_category text default null, p_dist numeric default null,
+                              p_match_kind text default null) returns text
 language sql immutable as $$
 select case
   when coalesce(p_description, '') ~* '(看板|標識|案内|駅名標|地図|ポスター|\msigns?\M|\mplaque\M|\mmap\M|\mposter\M)'
     or coalesce(p_title, '') ~* '(看板|標識|案内|駅名標|地図|ポスター|\msigns?\M|\mplaque\M|\mmap\M|\mposter\M)' then 'low'
   when p_source = 'commons' and p_name_match then 'high'
+  when p_source = 'commons' and p_match_kind in ('romaji', 'category') then 'unknown'   -- ローマ字・英語名・カテゴリ名での一致（過去の採用率 61%。見込み高にはしないが、低にもしない。順4）
   when p_source = 'commons' and coalesce(p_dist, 0) >= 30 then 'low'
   when p_source = 'commons' and p_category in ('heritage', 'school', 'civic') then 'low'
   when p_source = 'mapillary' and p_category is not null and p_category <> 'commercial_facility' then 'low'
@@ -69,14 +71,14 @@ select coalesce(jsonb_agg(x), '[]'::jsonb) from (
   select c.id, c.spot_id, s.name, s.code, sc.name as category, s.address,
          c.file_title, c.page_url, c.image_url, c.author, c.license, c.license_url, c.description, c.shot_at,
          round(c.dist_m::numeric) as dist_m, c.name_match, c.status, c.decided_by, c.decided_at, c.reject_reason,
-         photo_suggest(c.source, c.name_match, c.description, c.file_title, s.category, c.dist_m::numeric) as suggest,
+         photo_suggest(c.source, c.name_match, c.description, c.file_title, s.category, c.dist_m::numeric, c.match_kind) as suggest,
          case when c.status = 'adopted' then '[]'::jsonb else photo_targets(c.source, c.file_title, c.description, c.spot_id) end as targets
     from spot_photo_candidates c
     join spots s on s.id = c.spot_id and s.data_status <> 'archived'
     join spot_categories sc on sc.code = s.category
    where c.status = p_status
-     and (p_suggest is null or photo_suggest(c.source, c.name_match, c.description, c.file_title, s.category, c.dist_m::numeric) = p_suggest)
-   order by (case photo_suggest(c.source, c.name_match, c.description, c.file_title, s.category, c.dist_m::numeric) when 'high' then 0 when 'unknown' then 1 else 2 end),
+     and (p_suggest is null or photo_suggest(c.source, c.name_match, c.description, c.file_title, s.category, c.dist_m::numeric, c.match_kind) = p_suggest)
+   order by (case photo_suggest(c.source, c.name_match, c.description, c.file_title, s.category, c.dist_m::numeric, c.match_kind) when 'high' then 0 when 'unknown' then 1 else 2 end),
             c.name_match desc, s.id, c.dist_m nulls last, c.id
    offset p_offset limit least(p_limit, 100)
 ) x;
@@ -120,7 +122,7 @@ end $$;
 -- おすすめ度ごとの件数（未決の候補）
 create function photos_suggest_counts() returns jsonb language sql stable as $$
 select coalesce(jsonb_object_agg(k, n), '{}'::jsonb) from (
-  select photo_suggest(c.source, c.name_match, c.description, c.file_title, s.category, c.dist_m::numeric) k, count(*) n
+  select photo_suggest(c.source, c.name_match, c.description, c.file_title, s.category, c.dist_m::numeric, c.match_kind) k, count(*) n
     from spot_photo_candidates c join spots s on s.id = c.spot_id and s.data_status <> 'archived'
    where c.status = 'candidate' group by 1) x;
 $$;
@@ -135,7 +137,7 @@ begin
   if p_decision not in ('adopt', 'reject') then return jsonb_build_object('ok', false, 'reason', '決め方が正しくありません'); end if;
   for c in select k.*, s.category as spot_category from spot_photo_candidates k join spots s on s.id = k.spot_id
             where k.id = any (p_ids) and k.status = 'candidate' order by k.id loop
-    sg := photo_suggest(c.source, c.name_match, c.description, c.file_title, c.spot_category, c.dist_m::numeric);
+    sg := photo_suggest(c.source, c.name_match, c.description, c.file_title, c.spot_category, c.dist_m::numeric, c.match_kind);
     -- 採用は「見込み高」だけ、不採用は「見込み低」だけ（サーバー側でも確かめる）
     if (p_decision = 'adopt' and sg <> 'high') or (p_decision = 'reject' and sg <> 'low') then
       n_skip := n_skip + 1; continue;
