@@ -177,15 +177,9 @@ function scene_area_hint(string $scene): ?string {
     return count($areas) === 1 ? (string)array_key_first($areas) : null;
 }
 
-function interpret_by_keywords(string $scene): array {
-    [$masked, $places] = scene_mask_places($scene);
-    $hits = [];
-    foreach (scene_group_words() as $g => $re) {
-        if (preg_match("/($re)/u", $masked, $m, PREG_OFFSET_CAPTURE)) $hits[$g] = $m[0][1];
-    }
-    // 景観の語が1つも読めないときだけ、地名に結びつく景観（天神・中洲 → 繁華街）を使う
-    if (!$hits) foreach ($places as $p) if ($p['group']) { $hits[$p['group']] = 0; break; }
-    asort($hits);
+// 雰囲気の語 → タグ（地名を伏せた文から読む）。返り値：[タグコード => 1.0]。語が1つもなければ空
+//   否定（「人のいない」など）と時間帯（早朝・深夜）の規則もここで扱う。流れ検索（interpret_by_keywords）と場所検索（scene_to_conditions）で共通
+function scene_tag_hits(string $masked): array {
     $tags = [];
     foreach (scene_tag_words() as $t => $re) if (preg_match("/($re)/u", $masked)) $tags[$t] = 1.0;
     // 否定：「人のいない」「人通りの少ない」「賑わいのない」は、賑やか・人通りの多いの逆（人が少ない）
@@ -195,6 +189,19 @@ function interpret_by_keywords(string $scene): array {
     }
     // 時間帯：早朝・明け方・深夜は、人が少ない（夜の賑わいの語がなければ）
     if (preg_match('/早朝|明け方|未明|夜明け前|深夜|真夜中/u', $masked) && !isset($tags['lively']) && !isset($tags['high_traffic'])) $tags['low_traffic'] = 1.0;
+    return $tags;
+}
+
+function interpret_by_keywords(string $scene): array {
+    [$masked, $places] = scene_mask_places($scene);
+    $hits = [];
+    foreach (scene_group_words() as $g => $re) {
+        if (preg_match("/($re)/u", $masked, $m, PREG_OFFSET_CAPTURE)) $hits[$g] = $m[0][1];
+    }
+    // 景観の語が1つも読めないときだけ、地名に結びつく景観（天神・中洲 → 繁華街）を使う
+    if (!$hits) foreach ($places as $p) if ($p['group']) { $hits[$p['group']] = 0; break; }
+    asort($hits);
+    $tags = scene_tag_hits($masked);
     // 「自転車」「電車」「列車」の「車」は車の移動にしない
     $mode = preg_match('/((?<!自転|電|列|汽|屋台|下)車|ドライブ|運転)/u', $masked) ? 'car'
           : (preg_match('/(歩|散歩|自転車)/u', $masked) ? 'walk' : 'any');
@@ -212,4 +219,49 @@ function interpret_by_keywords(string $scene): array {
     if ($kindHint['labels']) $notes .= '（語から種類を絞りました：' . implode('・', $kindHint['labels']) . '）';
     return ['sequence' => $seq, 'tags' => $tags ?: ['lonely' => 0.1],
             'travel_mode' => $mode, 'area' => $area, 'near' => $near, 'kinds' => $kindHint['kinds'], 'notes' => $notes];
+}
+
+// 場所を探す：入力欄の文 → 検索条件（辞書と規則だけ。AI・APIは使わない）
+//   名前・住所で1件も見つからなかったときに使う。景観・雰囲気・区・種類を語から読み、読めなかった語（辞書にない語）も返す。
+//   返り値：
+//     'group'    景観グループ（最初に出てきた1つ。なければ null）
+//     'groups'   景観グループの出てきた順（2つ以上あれば、流れの指定に見える）
+//     'tags'     雰囲気のタグコード（どれか1つでも当てはまればよい）
+//     'area'     区コード（地名から。なければ null）
+//     'kinds'    種類の絞り込み（scene_kinds と同じ形）
+//     'flow'     「から・抜けて・→」など、流れの言い方があり、景観が2つ以上あるとき true
+//     'unparsed' 辞書で読めなかった語（辞書を育てる材料。最大5語）
+//     'any'      条件が1つでも読めたとき true
+function scene_to_conditions(string $q): array {
+    [$masked, $places] = scene_mask_places($q);
+    $hits = [];
+    foreach (scene_group_words() as $g => $re) {
+        if (preg_match("/($re)/u", $masked, $m, PREG_OFFSET_CAPTURE)) $hits[$g] = $m[0][1];
+    }
+    if (!$hits) foreach ($places as $p) if ($p['group']) { $hits[$p['group']] = 0; break; }
+    asort($hits);
+    $groups = array_keys($hits);
+    $tags = array_keys(scene_tag_hits($masked));
+    $area = scene_area_hint($q);
+    $kindHint = scene_kinds($q, array_slice($groups, 0, 4));
+    $flowWords = (bool)preg_match('/から|抜けて|通って|経由|越えて|→|＞|>|を経て|を過ぎ|へ向か|まで/u', $q);
+    // 読めなかった語：読めた語・地名・助詞を取り除いた残り（2字以上）
+    $rest = $masked;
+    $dicts = array_merge(array_values(scene_group_words()), array_values(scene_tag_words()));
+    foreach (scene_kind_words() as $rows) foreach ($rows as $r) $dicts[] = $r[0];
+    foreach ($dicts as $re) $rest = preg_replace("/($re)/u", ' ', $rest) ?? $rest;
+    $rest = preg_replace('/◆+/u', ' ', $rest) ?? $rest;
+    // 流れの言い方・否定・時間帯の語も、辞書で読んだ語として取り除く
+    $rest = preg_replace('/(人|人通り|人影|人けも?|賑わい|活気)(が|は|の)?(いない|おらず|少な|ほとんどいな|ない|なく)|閑散|ひっそり|さびれ|早朝|明け方|未明|夜明け前|深夜|真夜中|を抜けて|抜けて|を通って|通って|を経由|経由|を越えて|越えて|から|まで/u', ' ', $rest) ?? $rest;
+    $parts = preg_split('/[\s、。,\/・→＞>「」『』()（）]+|(?:の|が|を|に|で|と|は|も|へ|や)(?=[\p{Han}\p{Katakana}ー])|(?<=[\p{Han}\p{Katakana}ー])(?:の|が|を|に|で|と|は|も|へ|や)$/u', $rest, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+    $unparsed = [];
+    foreach ($parts as $w) {
+        $w = preg_replace('/^[なのいたしてでにをがはもへや]+/u', '', trim($w)) ?? $w;   // 読めた語の語尾（静か「な」など）を落とす
+        if (mb_strlen($w) < 2 || mb_strlen($w) > 20 || !preg_match('/[\p{Han}\p{Katakana}\p{Latin}]/u', $w)) continue;
+        $unparsed[$w] = $w;
+        if (count($unparsed) >= 5) break;
+    }
+    return ['group' => $groups[0] ?? null, 'groups' => $groups, 'tags' => $tags, 'area' => $area, 'kinds' => $kindHint['kinds'],
+            'flow' => $flowWords && count($groups) >= 2, 'unparsed' => array_values($unparsed),
+            'any' => (bool)($groups || $tags || $area)];
 }
