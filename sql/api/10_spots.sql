@@ -163,7 +163,7 @@ hits as (
    where s.data_status <> 'archived'
      and (p_q is null or similarity(s.name, p_q) > 0.3 or not exists (        -- 全文検索（順5・S3）：空白で区切った語のすべてが、名前・別名・住所・種類・タグ・説明文・事実のどれかに入っていること
             select 1 from unnest(string_to_array(btrim(regexp_replace(p_q, '[[:space:]　]+', ' ', 'g')), ' ')) w(t)
-             where w.t <> '' and not (
+             where w.t <> '' and (          -- null（住所・別名がない地点）は「当てはまらない」として扱う（is not true）
                    s.name ilike '%' || w.t || '%' or s.address ilike '%' || w.t || '%'
                 or array_to_string(s.alt_names, ' ') ilike '%' || w.t || '%'
                 or sc.name ilike '%' || w.t || '%' or lg.name ilike '%' || w.t || '%'
@@ -171,7 +171,7 @@ hits as (
                 or exists (select 1 from spot_tags st join tags tg on tg.code = st.tag_code
                             where st.spot_id = s.id and tg.name ilike '%' || w.t || '%')
                 or exists (select 1 from spot_facts f where f.spot_id = s.id and f.status = 'approved'
-                              and (f.value ilike '%' || w.t || '%' or coalesce(f.note, '') ilike '%' || w.t || '%'))))
+                              and (f.value ilike '%' || w.t || '%' or coalesce(f.note, '') ilike '%' || w.t || '%'))) is not true)
           )
      and (p_area is null or s.area_code = p_area)
      and (p_category is null or s.category = p_category or p_category = any (s.extra_categories))

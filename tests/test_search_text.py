@@ -55,3 +55,10 @@ def test_similar_spots(db):
     r = db.execute("select spots_similar(%s) as r", (a,)).fetchone()["r"]
     assert [x["name"] for x in r] == ["雰囲気が同じ", "近い同種"]            # 共通タグが多い順→近い順。別の種類・遠すぎるものは出さない
     assert db.execute("select spots_similar(%s, 1) as r", (a,)).fetchone()["r"][0]["name"] == "雰囲気が同じ"
+
+
+def test_spots_without_address_or_alt_names_do_not_match_everything(db):
+    add(db, "住所なし", "coast", 0, 0)                     # address・alt_names が null の地点
+    add(db, "住所あり", "coast", 300, 0, address="福岡市中央区")
+    assert search(db, p_q="存在しない語") == []
+    assert names(search(db, p_q="中央区")) == ["住所あり"]
