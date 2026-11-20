@@ -4,7 +4,7 @@ declare f record;
 begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname in (
-              'grp_match','spot_label','search_spots','spots_nearby','spot_detail','review_queue','review_spot',
+              'grp_match','spot_label','search_spots','spots_nearby','spots_similar','spot_detail','review_queue','review_spot',
               'photo_state','spatial_view','logistics_view','drone_view','tide_view','aed_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','diag_heavy','duplicate_candidates','merge_spots','spots_by_ids','live_root','precinct_word')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
@@ -161,8 +161,18 @@ hits as (
     join landscape_groups lg on lg.code = sc.landscape_group
     left join spot_importance im on im.spot_id = s.id
    where s.data_status <> 'archived'
-     and (p_q is null or s.name ilike '%' || p_q || '%' or s.address ilike '%' || p_q || '%'
-          or array_to_string(s.alt_names, ' ') ilike '%' || p_q || '%' or similarity(s.name, p_q) > 0.3)
+     and (p_q is null or similarity(s.name, p_q) > 0.3 or not exists (        -- 全文検索（順5・S3）：空白で区切った語のすべてが、名前・別名・住所・種類・タグ・説明文・事実のどれかに入っていること
+            select 1 from unnest(string_to_array(btrim(regexp_replace(p_q, '[[:space:]　]+', ' ', 'g')), ' ')) w(t)
+             where w.t <> '' and not (
+                   s.name ilike '%' || w.t || '%' or s.address ilike '%' || w.t || '%'
+                or array_to_string(s.alt_names, ' ') ilike '%' || w.t || '%'
+                or sc.name ilike '%' || w.t || '%' or lg.name ilike '%' || w.t || '%'
+                or coalesce(s.summary, '') ilike '%' || w.t || '%'
+                or exists (select 1 from spot_tags st join tags tg on tg.code = st.tag_code
+                            where st.spot_id = s.id and tg.name ilike '%' || w.t || '%')
+                or exists (select 1 from spot_facts f where f.spot_id = s.id and f.status = 'approved'
+                              and (f.value ilike '%' || w.t || '%' or coalesce(f.note, '') ilike '%' || w.t || '%'))))
+          )
      and (p_area is null or s.area_code = p_area)
      and (p_category is null or s.category = p_category or p_category = any (s.extra_categories))
      and (p_group is null or grp_match(p_group, sc.landscape_group))
@@ -289,6 +299,35 @@ select coalesce(jsonb_agg(x order by x.meters), '[]'::jsonb) from (
   order by d.meters
   limit 30
 ) x;
+$$;
+
+-- 似た場所（地点ページ用。順5・S6）：同じ種類の地点を、共通の雰囲気タグが多い順・重要度の高い順・近い順に並べる。
+--  自分・同じ線・まとめ先が同じ地点・名前のない地点・対象外は除き、同じ名前は最も近い1件だけ。距離は p_radius m 以内
+create function spots_similar(p_id bigint, p_limit int default 6, p_radius real default 8000)
+returns jsonb language sql stable as $$
+select coalesce(jsonb_agg(to_jsonb(x) - 'ord' order by x.ord), '[]'::jsonb) from (
+  select row_number() over (order by d.shared desc, d.imp desc, d.meters) as ord, d.*
+    from (
+      select distinct on (n.name)
+             n.id, n.name, spot_label(n.name, n.category, n.address, n.rail_form) as label, n.area_code,
+             sc.name as category, sc.landscape_group as grp_code,
+             round(ST_Distance(n.geom, s.geom)) as meters,
+             (select count(*) from spot_tags a join spot_tags b on b.tag_code = a.tag_code and b.spot_id = n.id
+               where a.spot_id = s.id) as shared,
+             coalesce(im.score, 0) as imp
+        from spots s
+        join spots n on n.id <> s.id and n.category = s.category and n.data_status <> 'archived'
+                    and ST_DWithin(n.geom, s.geom, p_radius)
+        join spot_categories sc on sc.code = n.category
+        left join spot_importance im on im.spot_id = n.id
+       where s.id = p_id and n.name not like '（無名）%' and n.name <> s.name
+         and (s.line_key is null or n.line_key is distinct from s.line_key)
+         and live_root(n.group_root_id) is null
+         and n.parent_id is distinct from s.id and n.id is distinct from s.parent_id
+       order by n.name, ST_Distance(n.geom, s.geom)
+    ) d
+) x
+where x.ord <= greatest(least(p_limit, 20), 1);
 $$;
 
 -- 地点の詳細（地点ページ用）

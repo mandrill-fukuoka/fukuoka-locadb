@@ -8,8 +8,22 @@ $msg = ''; $error = '';
 // ログインした人の操作（要確認の解消・対象外・戻す・位置の固定）
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     check_csrf();
-    deny_unless_logged_in();
     $action = (string)($_POST['action'] ?? '');
+    if ($action === 'report') {
+        // 誤りの連絡（ログインなしでも送れる。名前・連絡先は取らない。回数を制限し、見えない欄に入力があれば捨てる）
+        $note = trim((string)($_POST['note'] ?? ''));
+        $kind = (string)($_POST['kind'] ?? '');
+        if (trim((string)($_POST['website'] ?? '')) !== '') { header('Location: spot.php?id=' . $id . '&done=reported'); exit; }
+        if (!array_key_exists($kind, REPORT_KIND_LABEL)) $error = '連絡の種類を選んでください';
+        elseif ($note === '' || mb_strlen($note) > 1000) $error = '内容を1,000字以内で入れてください';
+        elseif (!rate_limit_ok('report', 5, 3600) || !rate_limit_ok('report_all', 200, 86400, false)) $error = '送信が続いたため、しばらくしてからもう一度お試しください';
+        else {
+            try {
+                sb_rpc('report_submit', ['p_spot_id' => $id ?: null, 'p_kind' => $kind, 'p_note' => $note]);
+                header('Location: spot.php?id=' . $id . '&done=reported'); exit;
+            } catch (Throwable $e) { $error = '送信できませんでした。時間をおいてお試しください'; }
+        }
+    } else deny_unless_logged_in();
     if (in_array($action, ['resolve', 'archive', 'restore', 'lock', 'unlock'], true)) {
         try {
             sb_rpc('set_spot_state', ['p_id' => $id, 'p_action' => $action, 'p_user' => current_user(),
@@ -48,13 +62,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 $msg = $msg ?: (['created' => '地点を追加しました（手入力の地点として、自動収集では変わりません）',
-                 'edited' => '保存しました'][$_GET['done'] ?? ''] ?? '');
+                 'edited' => '保存しました',
+                 'reported' => 'ご連絡ありがとうございます。内容を確認します（お返事はしていません）。'][$_GET['done'] ?? ''] ?? '');
 
 $s = null; $nearby = [];
 try {
     $s = $id ? sb_rpc('spot_detail', ['p_id' => $id, 'p_with_history' => (bool)current_user()]) : null;
     if ($s) $nearby = sb_rpc('spots_nearby', ['p_id' => $id, 'p_radius' => 600]) ?? [];
 } catch (Throwable $e) { $error = $e->getMessage(); }
+$similar = [];                                         // 似た場所（同じ種類。取れなくてもページは出す）
+if ($s) { try { $similar = sb_rpc('spots_similar', ['p_id' => $id, 'p_limit' => 6]) ?? []; } catch (Throwable $e) { $similar = []; } }
 $facts = [];                                           // 承認済みの事実（DB変更180。誰にでも出す）。取れなくてもページは出す
 if ($s) { try { $facts = sb_rpc('facts_for_spot', ['p_id' => $id]) ?? []; } catch (Throwable $e) { $facts = []; } }
 
@@ -306,6 +323,19 @@ page_header(sn($s), '');
       </section>
       <?php endif; ?>
 
+      <?php if ($similar): ?>
+      <section class="block">
+        <h2>似た場所</h2>
+        <ul class="nearby compact">
+          <?php foreach ($similar as $n): ?>
+            <li><?= dot($n['grp_code'] ?? '') ?><a class="plain" href="spot.php?id=<?= (int)$n['id'] ?>"><?= h(sn($n)) ?></a>
+              <span class="muted small"><?= h($n['category']) ?>・<?= h(AREA_LABEL[$n['area_code']] ?? '') ?>・<?= $n['meters'] >= 1000 ? number_format($n['meters'] / 1000, 1) . 'km' : (int)$n['meters'] . 'm' ?></span></li>
+          <?php endforeach; ?>
+        </ul>
+        <p class="small muted">同じ種類の場所を、雰囲気の共通点の多い順・代表的な順に並べています。</p>
+      </section>
+      <?php endif; ?>
+
       <section class="block">
         <h2>周辺の景観（600m）</h2>
         <?php if (!$nearby): ?><p class="muted small">周辺に登録地点がありません。</p><?php else: ?>
@@ -362,6 +392,20 @@ page_header(sn($s), '');
           <?php if (($s['terrain_status'] ?? null) === 'ok'): ?><li>地形：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院 標高タイル</a></li><?php endif; ?>
         </ul>
         <p class="small muted">更新 <?= h(substr((string)$s['updated_at'], 0, 10)) ?></p>
+      </section>
+
+      <section class="block">
+        <details class="reportbox"<?= $error && ($_POST['action'] ?? '') === 'report' ? ' open' : '' ?>>
+          <summary>この情報は違う</summary>
+          <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="report">
+            <p class="small muted">位置・名前・説明・写真などの誤りをお知らせください。お名前や連絡先は不要です（お返事はできません）。</p>
+            <p><select name="kind" required><option value="">何が違いますか</option>
+              <?php foreach (REPORT_KIND_LABEL as $k => $v): ?><option value="<?= h($k) ?>" <?= ($_POST['kind'] ?? '') === $k ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></p>
+            <p><textarea name="note" maxlength="1000" required placeholder="どこがどう違うか（例：入口は反対側です）"><?= h((string)($_POST['note'] ?? '')) ?></textarea></p>
+            <p class="hp" aria-hidden="true"><label>入力しないでください<input name="website" tabindex="-1" autocomplete="off"></label></p>
+            <p><button class="secondary small-btn">送る</button></p>
+          </form>
+        </details>
       </section>
 
       <?php if (current_user()): ?>

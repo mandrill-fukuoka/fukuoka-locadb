@@ -89,6 +89,38 @@ try {
     }
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
+// 0件のとき：条件を1つずつ外すと何件になるか（S6）。外して1件以上になるものだけ、件数の多い順に出す
+$relax = [];
+if ($searched && !$rows && !$error && $page === 0) {
+    $catNames = array_column($cats, 'name', 'code');
+    $cand = [];
+    if ($q !== '')       $cand[] = ['語「' . mb_substr($q, 0, 20) . '」', ['p_q' => null], ['q' => '']];
+    if ($area !== '')    $cand[] = [AREA_LABEL[$area] ?? $area, ['p_area' => null], ['area' => '']];
+    if ($cat !== '')     $cand[] = [$catNames[$cat] ?? $cat, ['p_category' => null], ['cat' => '']];
+    if ($grp !== '')     $cand[] = [$groupNames[$grp] ?? $grp, ['p_group' => null], ['grp' => '']];
+    if ($tagList)        $cand[] = ['雰囲気の指定', ['p_tags' => null, 'p_tags_all' => false], ['tag' => []]];
+    if ($terr !== '')    $cand[] = ['高台', ['p_relief_min' => null], ['terrain' => '']];
+    if ($spOpen !== '')  $cand[] = ['開放感', ['p_open' => null], ['sp_open' => '']];
+    if ($spWater !== '') $cand[] = ['水辺', ['p_water' => null], ['sp_water' => '']];
+    if ($spRoad !== '')  $cand[] = ['道', ['p_road' => null], ['sp_road' => '']];
+    if ($spBuilt !== '') $cand[] = ['建物の多さ', ['p_built' => null], ['sp_built' => '']];
+    if ($spQuiet !== '') $cand[] = ['静かさ', ['p_quiet' => null], ['sp_quiet' => '']];
+    if ($spToilet)       $cand[] = ['公衆トイレ', ['p_toilet_m' => null], ['sp_toilet' => '']];
+    if ($spParking)      $cand[] = ['駐車場', ['p_parking_m' => null], ['sp_parking' => '']];
+    if ($spDrone !== '') $cand[] = ['ドローン', ['p_drone' => null], ['sp_drone' => '']];
+    if (count($cand) >= 2 || ($cand && $interp)) {              // 条件が1つだけなら「外す」は意味がない
+        try {
+            foreach (array_slice($cand, 0, 8) as [$label, $ov, $qo]) {
+                $r = sb_rpc('search_spots', array_merge($base, $ov, ['p_offset' => 0, 'p_limit' => 1])) ?? [];
+                $n = $r ? (int)($r[0]['total'] ?? 1) : 0;
+                if ($n > 0) $relax[] = [$label, $n, $qo];
+            }
+            usort($relax, fn($a, $b) => $b[1] <=> $a[1]);
+            $relax = array_slice($relax, 0, 5);
+        } catch (Throwable $e) { $relax = []; }
+    }
+}
+
 $embedKey = cfg('google_maps_embed_key');
 $qs = fn(array $o) => '?' . http_build_query(array_merge(['q' => $q, 'area' => $area, 'cat' => $cat, 'grp' => $grp, 'tag' => $tagList, 'terrain' => $terr,
     'sp_open' => $spOpen, 'sp_water' => $spWater, 'sp_road' => $spRoad, 'sp_built' => $spBuilt, 'sp_quiet' => $spQuiet, 'sp_toilet' => $spToilet ?: '',
@@ -204,7 +236,9 @@ page_header('場所を探す', 'index.php');
 <?php endif; ?>
 
 <?php if ($searched): ?>
-  <?php if (!$rows && !$error): ?><p class="card">該当する場所がありません。条件をゆるめて試してください。<?= $page > 0 ? '（<a href="' . h($qs(['p' => 0])) . '">1ページ目へ</a>）' : '' ?></p><?php endif; ?>
+  <?php if (!$rows && !$error): ?><p class="card">該当する場所がありません。条件をゆるめて試してください。<?= $page > 0 ? '（<a href="' . h($qs(['p' => 0])) . '">1ページ目へ</a>）' : '' ?></p>
+  <?php if ($relax): ?><section class="card"><p class="small">条件を1つ外すと、見つかります：</p>
+    <p><?php foreach ($relax as [$label, $n, $qo]): ?><a class="chip" href="<?= h($qs(array_merge($qo, ['p' => 0]))) ?>"><?= h($label) ?>を外す（<?= number_format($n) ?>件）</a> <?php endforeach; ?></p></section><?php endif; ?><?php endif; ?>
   <?php if ($rows): ?>
     <section class="card places-wrap">
       <h2>検索結果 全<?= number_format($total) ?>件<?= $total > $per ? '（' . number_format($page * $per + 1) . '〜' . number_format($page * $per + count($rows)) . '件目を表示）' : '' ?></h2>
