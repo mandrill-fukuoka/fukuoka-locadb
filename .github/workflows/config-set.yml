@@ -1,0 +1,68 @@
+# heteml 上の config.php の「公開してよい設定値」を1つだけ追記・更新する（FTP）。
+# 許可する項目：cf_analytics_token（Cloudflare Web Analytics のトークン。32桁の英数字）
+# 手順：config.php を取得 → サーバー上にバックアップ → 該当の行だけ追記/更新 → 構文チェック → 戻す → 確認。確認に失敗したらバックアップに戻す。
+# config.php の中身（キー・パスワード）は表示しない。
+name: config-set
+on:
+  workflow_dispatch:
+    inputs:
+      key:
+        description: "設定項目"
+        type: choice
+        options: [cf_analytics_token]
+        default: cf_analytics_token
+      value:
+        description: "値（cf_analytics_token は32桁の英数字。空欄で無効化）"
+        type: string
+        required: false
+        default: ""
+concurrency: { group: deploy-web, cancel-in-progress: false }
+jobs:
+  set:
+    runs-on: ubuntu-latest
+    environment: FTP_HOST
+    steps:
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq lftp php-cli
+      - name: 追記して確認
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST || vars.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER || vars.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD || vars.FTP_PASSWORD }}
+          FTP_DIR: ${{ secrets.FTP_DIR || vars.FTP_DIR }}
+          KEY: ${{ inputs.key }}
+          VALUE: ${{ inputs.value }}
+        run: |
+          set -eu
+          DIR="${FTP_DIR:-web/locadb}"
+          [ "$KEY" = "cf_analytics_token" ]
+          if [ -n "$VALUE" ]; then echo "$VALUE" | grep -Eq '^[0-9a-f]{32}$'; fi
+          W=$(mktemp -d); cd "$W"
+          LFTP='set ftp:ssl-allow true; set ssl:verify-certificate no; set net:max-retries 3; set net:timeout 30;'
+          lftp -u "$FTP_USER","$FTP_PASSWORD" "$FTP_HOST" -e "$LFTP get -O $W $DIR/_app/config.php; bye"
+          [ -s config.php ]
+          cp config.php config.bak
+          php -r '
+            $f="config.php"; $k=getenv("KEY"); $v=getenv("VALUE");
+            $s=file_get_contents($f);
+            $line = $v === "" ? "" : "    \x27$k\x27 => \x27$v\x27,\n";
+            $re = "/^[ \t]*\x27".preg_quote($k,"/")."\x27[ \t]*=>.*\n/m";
+            if (preg_match($re,$s)) $s=preg_replace($re,$line,$s,1);
+            elseif ($line!=="") { $p=strrpos($s,"];"); if($p===false){fwrite(STDERR,"config.php の末尾が想定と違う\n");exit(1);} $s=substr($s,0,$p).$line.substr($s,$p); }
+            file_put_contents($f,$s);'
+          php -l config.php >/dev/null
+          STAMP=$(date -u +%Y%m%d%H%M%S)
+          cp config.bak "config.php.bak-$STAMP"
+          lftp -u "$FTP_USER","$FTP_PASSWORD" "$FTP_HOST" -e "$LFTP put -O $DIR/_app config.php.bak-$STAMP; put -O $DIR/_app config.php; bye"
+          sleep 3
+          ok=1
+          code=$(curl -s -o /dev/null -w "%{http_code}" "https://fukanim.heteml.net/locadb/index.php"); echo "index.php → $code"; [ "$code" = 200 ] || ok=0
+          code=$(curl -s -o /dev/null -w "%{http_code}" "https://fukanim.heteml.net/locadb/_app/config.php"); echo "_app/config.php（外から見えないこと）→ $code"; { [ "$code" = 403 ] || [ "$code" = 404 ]; } || ok=0
+          if [ -n "$VALUE" ]; then
+            curl -s "https://fukanim.heteml.net/locadb/index.php" | grep -q "static.cloudflareinsights.com/beacon.min.js" && echo "計測タグ：出ています" || { echo "計測タグが出ていません"; ok=0; }
+          fi
+          if [ "$ok" != 1 ]; then
+            echo "確認に失敗したため、バックアップに戻します"
+            lftp -u "$FTP_USER","$FTP_PASSWORD" "$FTP_HOST" -e "$LFTP put -O $DIR/_app config.bak -o config.php; bye"
+            exit 1
+          fi
+          echo "完了（バックアップ：_app/config.php.bak-$STAMP）"
