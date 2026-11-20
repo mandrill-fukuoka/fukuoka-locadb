@@ -190,6 +190,9 @@ function conf_stage(array $s): string {
 const PHOTO_SUGGEST_LABEL = ['high' => '採用の見込み高', 'unknown' => '判断材料なし（要確認）', 'low' => '不採用の見込み高'];
 const PHOTO_REJECT_REASON = ['sign' => '看板・標識・地図', 'person' => '人が写っている', 'quality' => '画質・構図', 'wrong_place' => '別の場所',
                              'rights' => '商標・権利', 'other' => 'その他', 'closed' => '現存しない（地点を対象外にする）'];
+// 誤りの連絡の種類（DB変更280 の spot_reports.kind と同じ）
+const REPORT_KIND_LABEL = ['wrong_place' => '位置・住所が違う', 'wrong_name' => '名前・呼び方が違う', 'closed' => 'なくなった・使えなくなった',
+                           'wrong_info' => '説明・事実が違う', 'photo' => '写真が違う・外してほしい', 'other' => 'その他'];
 const PHOTO_STATE_LABEL = ['has' => '写真あり', 'cand' => '写真候補あり（未確認）', 'none' => '写真候補なし（探索済み）', 'todo' => '写真は未探索'];
 function photo_state_chip(array $s): string {
     if (!current_user()) return '';
@@ -260,7 +263,7 @@ function analytics_tag(): string {
 function page_header(string $title, string $active = ''): void {
     $nav = ['index.php' => '場所を探す', 'flow.php' => '流れで探す', 'flows.php' => 'おすすめの流れ', 'list.php' => 'ロケハンリスト'];
     if (current_user()) $nav += ['spots.php' => '地点の確認', 'risks.php' => '変化リスク', 'runs.php' => '収集の記録', 'usage.php' => '利用の記録',
-                                 'edit.php' => '＋地点を追加'];
+                                 'reports.php' => '誤りの連絡', 'edit.php' => '＋地点を追加'];
     echo '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
        . '<meta name="viewport" content="width=device-width,initial-scale=1">'
        . (cfg('allow_indexing', false) ? '' : '<meta name="robots" content="noindex,nofollow">')
@@ -270,7 +273,7 @@ function page_header(string $title, string $active = ''): void {
        . '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">'
        . '<link rel="stylesheet" href="assets/style.css">'
        . analytics_tag() . '</head><body>'
-       . '<header class="top"><a class="brand" href="index.php">FUKUOKA LOCATIONS</a>';
+       . '<header class="top"><a class="brand" href="index.php">FUKUOKA LOCATIONS<span class="beta" title="β版です。内容・表示は予告なく変わります">β</span></a>';
     echo '<nav class="mainnav">';
     foreach ($nav as $href => $label) echo '<a href="' . $href . '"' . ($active === $href ? ' class="on" aria-current="page"' : '') . '>' . $label . '</a>';
     echo current_user()
@@ -626,9 +629,14 @@ function overview_map_script(): void {
 <?php }
 
 function page_footer(): void {
-    echo '</main><footer>FUKUOKA LOCATIONS　候補は組み合わせの提案であり、撮影の許可・立入の可否・撮影できることを保証するものではありません。'
-       . '地点の位置はOpenStreetMapのデータに基づく手がかりです。移動時間は直線距離からの目安です。'
+    echo '</main><footer>'
+       . '<p class="beta-note"><strong>このサイトはβ版です。</strong>'
+       . '掲載している情報は、公開データなどから機械的に集めたものを含みます。誤りや古い情報が含まれることがあり、内容・表示は予告なく変わります。'
+       . '撮影の可否、立入、許可の要否は保証しません。利用の前に、必ず現地と各管理者に確認してください。'
+       . '誤りに気づいたら、地点のページの「この情報は違う」からお知らせください。</p>'
+       . '<p>候補は組み合わせの提案です。地点の位置はOpenStreetMapのデータに基づく手がかりで、移動時間は直線距離からの目安です。'
        . '地図データ © Google / <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>（ODbL）'
-       . '・住所 国土地理院　<a href="privacy.php">記録の取り扱い</a></footer>'
+       . '・住所 国土地理院</p>'
+       . '<p><a href="privacy.php">記録の取り扱い・利用の決まり</a>　<a href="updates.php">更新の記録</a></p></footer>'
        . '<script src="assets/list.js"></script></body></html>';
 }

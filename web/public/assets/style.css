@@ -347,3 +347,12 @@ dl.facts form{display:inline;margin-left:8px}
 
 .tagpick{margin:4px 0 12px}.tagpick summary{cursor:pointer;font-size:13px}.tagpick label.chip{cursor:pointer}
 .interp p{margin:4px 0}
+
+/* β版の表示（順5） */
+.brand .beta{display:inline-block;margin-left:.9em;padding:2px 5px 1px;border:1px solid var(--line-strong);border-radius:3px;font:500 10px/1.2 var(--sans, inherit);letter-spacing:.05em;color:var(--faint);vertical-align:2px}
+footer p{margin:0 0 8px}
+footer .beta-note{color:var(--ink);font-size:12px;line-height:1.7}
+.reportbox{margin-top:8px}
+.reportbox summary{cursor:pointer;font-size:12.5px}
+.reportbox textarea{width:100%;min-height:5em}
+.reportbox .hp{position:absolute;left:-9999px;height:0;overflow:hidden}
