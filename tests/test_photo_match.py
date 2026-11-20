@@ -75,3 +75,8 @@ def test_dedup_targets_only_unmatched_copies_behind_a_matched_top():
             row(6, "w", "rejected", True, 1), row(7, "w", "candidate", False, 8)]                  # 先頭が不採用：触れない
     rank = dup_order(rows)
     assert [r["id"] for r in dedup_targets(rows, rank)] == [2]
+
+
+def test_reject_sign_sql_targets_only_low_sign_candidates():
+    from tools.photo_rescreen import REJECT_SIGN_SQL
+    assert "status = 'candidate'" in REJECT_SIGN_SQL and "= 'low'" in REJECT_SIGN_SQL and "= 'sign'" in REJECT_SIGN_SQL
