@@ -344,3 +344,6 @@ dl.facts form{display:inline;margin-left:8px}
 .lightbox-close{position:absolute;top:12px;right:16px;width:40px;height:40px;border:0;border-radius:50%;background:rgba(255,255,255,.18);color:#fff;font-size:26px;line-height:1;cursor:pointer}
 .sortbar label{display:inline-flex;gap:8px;align-items:center;margin-right:12px}
 .sortbar select{width:auto}
+
+.tagpick{margin:4px 0 12px}.tagpick summary{cursor:pointer;font-size:13px}.tagpick label.chip{cursor:pointer}
+.interp p{margin:4px 0}

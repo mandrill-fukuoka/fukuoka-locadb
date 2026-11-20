@@ -7,13 +7,18 @@ $q     = trim($_GET['q'] ?? '');
 $area  = $_GET['area'] ?? '';
 $cat   = $_GET['cat'] ?? '';
 $grp   = $_GET['grp'] ?? '';
-$tag   = $_GET['tag'] ?? '';
+$tagList = array_slice(array_values(array_unique(array_filter(array_map('strval', (array)($_GET['tag'] ?? [])), fn($v) => $v !== ''))), 0, 6);   // 雰囲気：複数指定（?tag=x も ?tag[]=x も可）
 $terr  = ($_GET['terrain'] ?? '') === 'high' ? 'high' : '';      // 高台：周りより+10m以上（タスクF）
 // 周辺の特徴（推定）：空間特徴（タスクI）。段階の境界は sql/api/10_spots.sql
 $spOpen  = in_array($_GET['sp_open'] ?? '', ['open', 'closed'], true) ? $_GET['sp_open'] : '';
 $spWater = in_array($_GET['sp_water'] ?? '', ['near', 'within150'], true) ? $_GET['sp_water'] : '';
 $spBuilt = in_array($_GET['sp_built'] ?? '', ['few', 'many'], true) ? $_GET['sp_built'] : '';
 $spRoad  = in_array($_GET['sp_road'] ?? '', ['narrow', 'wide'], true) ? $_GET['sp_road'] : '';
+// 計算済みの距離（順3）：騒音・トイレ・駐車場・ドローンの目安。境界は sql/api/10_spots.sql の search_spots
+$spQuiet   = ($_GET['sp_quiet'] ?? '') === 'quiet' ? 'quiet' : '';
+$spToilet  = in_array((int)($_GET['sp_toilet'] ?? 0), [100, 300, 500], true) ? (int)$_GET['sp_toilet'] : 0;
+$spParking = in_array((int)($_GET['sp_parking'] ?? 0), [100, 300, 500], true) ? (int)$_GET['sp_parking'] : 0;
+$spDrone   = ($_GET['sp_drone'] ?? '') === 'easy' ? 'easy' : '';
 $photoSt = photo_state_filter();
 // 並び順（search_spots の p_sort）。指定なし＝おすすめ順
 $sortLabels = ['relevance' => 'おすすめ順', 'name' => '名前順', 'address' => '住所順', 'created' => '登録が新しい順',
@@ -24,7 +29,7 @@ if (!isset($sortLabels[$sort]) || $sort === 'relevance') $sort = '';
 $near  = (int)($_GET['near'] ?? 0);
 $page  = max(0, (int)($_GET['p'] ?? 0));
 $per   = 40;
-$error = ''; $rows = []; $nearby = []; $nearSpot = null;
+$error = ''; $rows = []; $nearby = []; $nearSpot = null; $interp = null; $flowHint = false;
 
 try {
     $cats   = sb_get('spot_categories?select=code,name,landscape_group&order=landscape_group,code') ?? [];
@@ -33,7 +38,7 @@ try {
 } catch (Throwable $e) { $error = $e->getMessage(); $cats = $groups = $tags = []; }
 $groupNames = array_column($groups, 'name', 'code');
 
-$searched = $q !== '' || $area !== '' || $cat !== '' || $grp !== '' || $tag !== '' || $terr !== '' || $spOpen !== '' || $spWater !== '' || $spRoad !== '' || $spBuilt !== '' || $photoSt !== '';
+$searched = $q !== '' || $area !== '' || $cat !== '' || $grp !== '' || $tagList || $terr !== '' || $spOpen !== '' || $spWater !== '' || $spRoad !== '' || $spBuilt !== '' || $spQuiet !== '' || $spToilet || $spParking || $spDrone !== '' || $photoSt !== '';
 try {
     if ($near) {
         $nearby = sb_rpc('spots_nearby', ['p_id' => $near, 'p_radius' => 800]) ?? [];
@@ -41,15 +46,43 @@ try {
         $nearSpot = $ns[0] ?? null;
     }
     if ($searched) {
-        $rows = sb_rpc('search_spots', [
+        $base = [
             'p_q' => $q ?: null, 'p_area' => $area ?: null, 'p_category' => $cat ?: null,
-            'p_group' => $grp ?: null, 'p_tags' => $tag ? [$tag] : null,
+            'p_group' => $grp ?: null, 'p_tags' => $tagList ?: null, 'p_tags_all' => count($tagList) > 1,
             'p_offset' => $page * $per, 'p_limit' => $per, 'p_relief_min' => $terr === 'high' ? HIGH_GROUND_M : null,
             'p_open' => $spOpen ?: null, 'p_water' => $spWater ?: null, 'p_road' => $spRoad ?: null, 'p_built' => $spBuilt ?: null, 'p_photo' => $photoSt ?: null,
-            'p_sort' => $sort ?: null]) ?? [];
+            'p_quiet' => $spQuiet ?: null, 'p_toilet_m' => $spToilet ?: null, 'p_parking_m' => $spParking ?: null, 'p_drone' => $spDrone ?: null,
+            'p_sort' => $sort ?: null];
+        $rows = sb_rpc('search_spots', $base) ?? [];
+        // 入力欄の文を辞書で条件に読み替える（順3）。名前・住所で1件も見つからず、ほかに景観・種類・雰囲気・エリアの指定がないときだけ
+        if ($q !== '' && $area === '' && $cat === '' && $grp === '' && !$tagList) {
+            $cs = scene_to_conditions($q);
+            $flowHint = $cs['flow'];
+            if (!$rows && $cs['any']) {
+                $okTags = array_column($tags, 'code');
+                $iGroup = ($cs['group'] && isset($groupNames[$cs['group']])) ? $cs['group'] : null;
+                $iTags  = array_values(array_intersect($cs['tags'], $okTags));
+                $iCodes = $iGroup ? ($cs['kinds'][$iGroup] ?? []) : [];
+                $iCat   = count($iCodes) === 1 ? $iCodes[0] : null;                       // 種類が1つに決まるときだけ種類で絞る
+                $try = fn(?array $t, ?string $c) => sb_rpc('search_spots', array_merge($base, ['p_q' => null, 'p_area' => $cs['area'],
+                    'p_group' => $iGroup, 'p_category' => $c, 'p_tags' => $t ?: null, 'p_tags_all' => false])) ?? [];
+                $rows = $try($iTags, $iCat);
+                if (!$rows && $iTags) { $rows = $try(null, $iCat); $iTags = []; }     // 雰囲気が付いた地点が少ないので、なければ雰囲気を外す
+                if (!$rows && $iCat) { $rows = $try(null, null); $iCat = null; $iTags = []; }
+                $interp = ['group' => $iGroup, 'tags' => $iTags, 'area' => $cs['area'], 'cat' => $iCat, 'unparsed' => $cs['unparsed'], 'flow' => $cs['flow']];
+            }
+        }
         if ($page === 0) {   // 利用の記録：何で探して何件だったか（0件の検索が辞書を育てる材料）
-            $cond = array_filter(['cat' => $cat, 'grp' => $grp, 'tag' => $tag, 'terrain' => $terr, 'sp_open' => $spOpen,
-                'sp_water' => $spWater, 'sp_road' => $spRoad, 'sp_built' => $spBuilt, 'photo' => $photoSt, 'sort' => $sort], fn($v) => $v !== '');
+            $cond = array_filter(['cat' => $cat, 'grp' => $grp, 'tag' => implode(',', $tagList), 'terrain' => $terr, 'sp_open' => $spOpen,
+                'sp_water' => $spWater, 'sp_road' => $spRoad, 'sp_built' => $spBuilt, 'sp_quiet' => $spQuiet, 'sp_toilet' => $spToilet ?: '',
+                'sp_parking' => $spParking ?: '', 'sp_drone' => $spDrone, 'photo' => $photoSt, 'sort' => $sort], fn($v) => $v !== '');
+            if ($interp) {   // 語を条件に読み替えた検索：読めた条件と、読めなかった語（辞書を育てる材料）
+                $cond['interp'] = array_filter(['grp' => $interp['group'], 'tags' => $interp['tags'], 'area' => $interp['area'], 'cat' => $interp['cat'],
+                    'unparsed' => $interp['unparsed']], fn($v) => $v !== null && $v !== []);
+            } elseif ($q !== '' && !empty($cs) && !$cs['any'] && !$rows) {
+                $cond['interp'] = ['none' => true];   // 名前にも辞書にも当たらなかった語
+            }
+            if ($flowHint) $cond['flow_hint'] = true;
             usage_log('spots', ['scene' => $q !== '' ? mb_substr($q, 0, 100) : null, 'tags' => (object)$cond, 'area_code' => $area ?: null,
                 'result_count' => $rows ? (int)($rows[0]['total'] ?? count($rows)) : 0]);
         }
@@ -57,8 +90,9 @@ try {
 } catch (Throwable $e) { $error = $e->getMessage(); }
 
 $embedKey = cfg('google_maps_embed_key');
-$qs = fn(array $o) => '?' . http_build_query(array_merge(['q' => $q, 'area' => $area, 'cat' => $cat, 'grp' => $grp, 'tag' => $tag, 'terrain' => $terr,
-    'sp_open' => $spOpen, 'sp_water' => $spWater, 'sp_road' => $spRoad, 'sp_built' => $spBuilt, 'photo' => $photoSt, 'sort' => $sort], $o));
+$qs = fn(array $o) => '?' . http_build_query(array_merge(['q' => $q, 'area' => $area, 'cat' => $cat, 'grp' => $grp, 'tag' => $tagList, 'terrain' => $terr,
+    'sp_open' => $spOpen, 'sp_water' => $spWater, 'sp_road' => $spRoad, 'sp_built' => $spBuilt, 'sp_quiet' => $spQuiet, 'sp_toilet' => $spToilet ?: '',
+    'sp_parking' => $spParking ?: '', 'sp_drone' => $spDrone, 'photo' => $photoSt, 'sort' => $sort], $o));
 // 全件数（まとめたあとの件数）。ページ送りの終わりもこれで決める
 $total = $rows ? (int)($rows[0]['total'] ?? count($rows)) : 0;
 $pages = max(1, (int)ceil($total / $per));
@@ -76,11 +110,15 @@ page_header('場所を探す', 'index.php');
       <?php foreach ($groupNames as $k => $v): ?><option value="<?= h($k) ?>" <?= $grp === $k ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></label>
     <label>種別<select name="cat"><option value="">すべて</option>
       <?php foreach ($cats as $c): ?><option value="<?= h($c['code']) ?>" <?= $cat === $c['code'] ? 'selected' : '' ?>><?= h($c['name']) ?></option><?php endforeach; ?></select></label>
-    <label>雰囲気<select name="tag"><option value="">指定なし</option>
-      <?php foreach ($tags as $t): ?><option value="<?= h($t['code']) ?>" <?= $tag === $t['code'] ? 'selected' : '' ?>><?= h($t['name']) ?></option><?php endforeach; ?></select></label>
+
     <label>地形<select name="terrain"><option value="">指定なし</option>
       <option value="high" <?= $terr === 'high' ? 'selected' : '' ?>>高台（周りより<?= HIGH_GROUND_M ?>m以上高い）</option></select></label>
   </div>
+  <details class="tagpick"<?= $tagList ? ' open' : '' ?>>
+    <summary>雰囲気<?= $tagList ? '（' . count($tagList) . '件を指定）' : '（複数選べます）' ?></summary>
+    <p class="small muted">複数選ぶと、すべてに当てはまる地点だけに絞ります。</p>
+    <p><?php foreach ($tags as $t): ?><label class="chip"><input type="checkbox" name="tag[]" value="<?= h($t['code']) ?>" <?= in_array($t['code'], $tagList, true) ? 'checked' : '' ?>> <?= h($t['name']) ?></label> <?php endforeach; ?></p>
+  </details>
   <div class="row">
     <label>開放感（推定）<select name="sp_open"><option value="">指定なし</option>
       <option value="open" <?= $spOpen === 'open' ? 'selected' : '' ?>>開けている</option>
@@ -95,13 +133,23 @@ page_header('場所を探す', 'index.php');
       <option value="narrow" <?= $spRoad === 'narrow' ? 'selected' : '' ?>>狭い道</option>
       <option value="wide" <?= $spRoad === 'wide' ? 'selected' : '' ?>>広い道</option></select></label>
   </div>
+  <div class="row">
+    <label>騒音（推定）<select name="sp_quiet"><option value="">指定なし</option>
+      <option value="quiet" <?= $spQuiet === 'quiet' ? 'selected' : '' ?>>静かめ（線路・幹線道路が150m以上、滑走路が2.5km以上）</option></select></label>
+    <label>公衆トイレ<select name="sp_toilet"><option value="">指定なし</option>
+      <?php foreach ([100, 300, 500] as $m): ?><option value="<?= $m ?>" <?= $spToilet === $m ? 'selected' : '' ?>><?= $m ?>m以内</option><?php endforeach; ?></select></label>
+    <label>駐車場<select name="sp_parking"><option value="">指定なし</option>
+      <?php foreach ([100, 300, 500] as $m): ?><option value="<?= $m ?>" <?= $spParking === $m ? 'selected' : '' ?>><?= $m ?>m以内</option><?php endforeach; ?></select></label>
+    <label>ドローン（目安）<select name="sp_drone"><option value="">指定なし</option>
+      <option value="easy" <?= $spDrone === 'easy' ? 'selected' : '' ?>>人口集中地区の外で、空港から6km以上</option></select></label>
+  </div>
   <?php if (current_user()): ?><div class="row">
     <label>写真の状態（ログイン時のみ）<select name="photo"><option value="">指定なし</option>
       <?php foreach (PHOTO_STATE_LABEL as $k => $v): ?><option value="<?= h($k) ?>" <?= $photoSt === $k ? 'selected' : '' ?>><?= h($v) ?></option><?php endforeach; ?></select></label>
   </div><?php endif; ?>
   <input type="hidden" name="sort" value="<?= h($sort) ?>">
   <button>検索</button>
-  <p class="small muted">雰囲気での絞り込みは、雰囲気のタグが付いた地点だけが対象です（「推定」のタグは、種別や位置から機械的に付けたものです）。「推定」の条件は、OpenStreetMapの建物・道・水辺から計算した目安で、周りに建物のデータが少ない地点（未判定）は対象外です。</p>
+  <p class="small muted">雰囲気での絞り込みは、雰囲気のタグが付いた地点だけが対象です（「推定」のタグは、種別や位置から機械的に付けたものです）。「推定」の条件は、OpenStreetMapの建物・道・水辺から計算した目安で、周りに建物のデータが少ない地点（未判定）は対象外です。騒音・トイレ・駐車場・ドローンは、OpenStreetMapなどから計算した距離の目安で、現地の状況や飛行の可否を保証するものではありません（ドローンは必ず国土交通省の最新の区域・許可を確認してください）。計算がまだの地点は対象外です。</p>
 </form>
 
 <?php if (!$searched && !$near): ?>
@@ -116,6 +164,26 @@ page_header('場所を探す', 'index.php');
 <?php endif; ?>
 
 <?php if ($error): ?><p class="error"><?= h($error) ?></p><?php endif; ?>
+
+<?php if ($interp): ?>
+  <section class="card interp">
+    <p>「<strong><?= h($q) ?></strong>」に当てはまる名前・住所がなかったので、語を条件に読み替えて探しました：
+      <?php $parts = [];
+        if ($interp['group']) $parts[] = '景観＝' . h($groupNames[$interp['group']] ?? $interp['group']);
+        if ($interp['cat']) { $cn = array_column($cats, 'name', 'code'); $parts[] = '種別＝' . h($cn[$interp['cat']] ?? $interp['cat']); }
+        if ($interp['tags']) { $tn = array_column($tags, 'name', 'code'); $parts[] = '雰囲気＝' . h(implode('・', array_map(fn($c) => $tn[$c] ?? $c, $interp['tags']))) . '（どれか）'; }
+        if ($interp['area']) $parts[] = 'エリア＝' . h(AREA_LABEL[$interp['area']] ?? $interp['area']);
+        echo implode('／', $parts); ?></p>
+    <?php if ($interp['unparsed']): ?><p class="small muted">読み取れなかった語：<?= h(implode('、', $interp['unparsed'])) ?>（条件には使っていません）</p><?php endif; ?>
+    <p class="small muted">読み替えは辞書による機械的なものです。違うときは、上の条件欄で指定してください。</p>
+  </section>
+<?php endif; ?>
+<?php if ($flowHint): ?>
+  <section class="card interp">
+    <form method="post" action="flow.php"><?= csrf_field() ?><input type="hidden" name="action" value="search"><input type="hidden" name="scene" value="<?= h($q) ?>">
+      <p>「<?= h(mb_strimwidth($q, 0, 60, '…')) ?>」は、景観が移り変わる流れの指定に見えます。<button>流れで探す</button></p></form>
+  </section>
+<?php endif; ?>
 
 <?php if ($near && $nearSpot): ?>
   <section class="card">

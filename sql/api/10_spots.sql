@@ -137,7 +137,12 @@ create function search_spots(
   p_relief_min real default null,
   p_open text default null, p_water text default null, p_road text default null,
   p_built text default null, p_photo text default null,
-  p_sort text default null      -- 並び順：null/relevance（おすすめ順）・name（名前順）・address（住所順）・created（登録が新しい順）・updated（更新が新しい順）・relief（周りより高い順）・facts（事実の多い順）・importance（重要度順）・hidden（穴場順）。2026-11-12／重要度は2026-11-19（順2）
+  p_sort text default null,     -- 並び順：null/relevance（おすすめ順）・name（名前順）・address（住所順）・created（登録が新しい順）・updated（更新が新しい順）・relief（周りより高い順）・facts（事実の多い順）・importance（重要度順）・hidden（穴場順）。2026-11-12／重要度は2026-11-19（順2）
+  p_quiet text default null,     -- 騒音の目安：quiet＝線路・幹線道路が150m以上、滑走路が2500m以上（推定。DB変更なし・順3）
+  p_toilet_m int default null,   -- 公衆トイレが p_toilet_m m 以内（推定）
+  p_parking_m int default null,  -- 駐車場が p_parking_m m 以内（私有・路肩は除く。推定）
+  p_drone text default null,     -- ドローンの目安：easy＝人口集中地区の外で、福岡空港の滑走路から6km以上（飛行の可否は判断しない）
+  p_tags_all boolean default false   -- true：p_tags のすべてのタグが付いた地点（false：どれか1つ）
 ) returns jsonb language sql stable as $$
 with opt as (
   select case when p_sort in ('name','address','created','updated','relief','facts','importance','hidden') then p_sort else 'relevance' end as s
@@ -170,8 +175,17 @@ hits as (
                                     or (p_water = 'within150' and sp_water(x.water_dist_m) in ('near','close')))   -- within150（150m未満）
                and (p_built is null or sp_built(x.building_cover_100) = p_built)                 -- few（少ない）/ many（多い）
                and (p_road is null or sp_road(x.road_class, x.road_width_m) = p_road)))  -- narrow（狭い道）/ wide
-     and (p_tags is null or cardinality(p_tags) = 0 or exists (
-            select 1 from spot_tags st where st.spot_id = s.id and st.tag_code = any (p_tags)))
+     and (p_quiet is null and p_toilet_m is null and p_parking_m is null and p_drone is null or exists (      -- 計算済みの距離（spatial-3以降）。値のない地点は対象外
+            select 1 from spot_spatial y where y.spot_id = s.id and y.spatial_version >= 'spatial-3'
+               and (p_quiet is null or (y.rail_m >= 150 and y.major_road_m >= 150 and y.runway_m >= 2500))
+               and (p_toilet_m is null or y.toilet_m <= p_toilet_m)
+               and (p_parking_m is null or y.parking_m <= p_parking_m)
+               and (p_drone is null or (y.runway_m >= 6000 and exists (select 1 from did_areas) and not exists (select 1 from did_areas d where ST_Covers(d.geom, s.geom))))))
+     and (p_tags is null or cardinality(p_tags) = 0
+          or (not coalesce(p_tags_all, false) and exists (
+                select 1 from spot_tags st where st.spot_id = s.id and st.tag_code = any (p_tags)))
+          or (coalesce(p_tags_all, false) and not exists (
+                select 1 from unnest(p_tags) w(c) where not exists (select 1 from spot_tags st where st.spot_id = s.id and st.tag_code = w.c))))
      and (p_photo is null or photo_state(s.id, s.category, s.name like '（無名）%') = p_photo)    -- 写真の状態での絞り込み（ログイン時のみ画面から使う）
 ),
 grouped as (
