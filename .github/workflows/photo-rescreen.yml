@@ -1,0 +1,40 @@
+# 写真候補のふるい直し（順4）。analyze は読み取りのみ（DBは SELECT のみ、Commons の API を直列で読む）。apply は未決の候補だけを整える
+name: photo-rescreen
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: analyze（読み取りのみ）／apply（未決の候補を整える。DB変更270のあと）
+        type: choice
+        options: [analyze, apply]
+        default: analyze
+      mode:
+        description: apply のとき：dry_run（最後に取り消す）／apply（保存する）
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+concurrency: { group: database, cancel-in-progress: false }
+jobs:
+  rescreen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: ふるい直し
+        shell: bash
+        run: |
+          set -o pipefail
+          if [ "${{ inputs.command }}" = "analyze" ]; then
+            python -m tools.photo_rescreen analyze --out photo-rescreen-out | tee rescreen.log
+            { echo '## 写真候補のふるい直し（分析）'; cat photo-rescreen-out/summary.md; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            flag=""; [ "${{ inputs.mode }}" = "apply" ] && flag="--yes"
+            python -m tools.photo_rescreen apply $flag | tee rescreen.log
+          fi
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: photo-rescreen, path: "photo-rescreen-out/", retention-days: 7 }
