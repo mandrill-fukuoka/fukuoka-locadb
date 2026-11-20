@@ -70,7 +70,7 @@ returns jsonb language sql stable as $$
 select coalesce(jsonb_agg(x), '[]'::jsonb) from (
   select c.id, c.spot_id, s.name, s.code, sc.name as category, s.address,
          c.file_title, c.page_url, c.image_url, c.author, c.license, c.license_url, c.description, c.shot_at,
-         round(c.dist_m::numeric, c.match_kind) as dist_m, c.name_match, c.status, c.decided_by, c.decided_at, c.reject_reason,
+         round(c.dist_m::numeric) as dist_m, c.name_match, c.status, c.decided_by, c.decided_at, c.reject_reason,
          photo_suggest(c.source, c.name_match, c.description, c.file_title, s.category, c.dist_m::numeric, c.match_kind) as suggest,
          case when c.status = 'adopted' then '[]'::jsonb else photo_targets(c.source, c.file_title, c.description, c.spot_id) end as targets
     from spot_photo_candidates c
