@@ -64,3 +64,14 @@ def test_fetch_categories_batches_and_retries():
 
     out = fetch_categories([f"File:{i}.jpg" for i in range(60)], S(), sleep=lambda s: None)
     assert len(calls) == 3 and len(out) == 60 and out["File:0.jpg"] == ["Kushida Shrine"]        # 500 → 再試行。50件ずつ
+
+
+def test_dedup_targets_only_unmatched_copies_behind_a_matched_top():
+    from tools.photo_rescreen import dedup_targets
+    def row(i, url, st, match, d, src="commons"):
+        return dict(id=i, page_url=url, status=st, new_match=match, dist_m=d, source=src)
+    rows = [row(1, "u", "adopted", True, 10), row(2, "u", "candidate", False, 40), row(3, "u", "candidate", True, 50),
+            row(4, "v", "candidate", False, 5), row(5, "v", "candidate", False, 9),               # 先頭も不一致：触れない
+            row(6, "w", "rejected", True, 1), row(7, "w", "candidate", False, 8)]                  # 先頭が不採用：触れない
+    rank = dup_order(rows)
+    assert [r["id"] for r in dedup_targets(rows, rank)] == [2]

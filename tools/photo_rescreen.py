@@ -9,8 +9,10 @@
   2. 同じ写真が複数の地点に出る問題：同じ出典ページの候補を、一致→近さの順に並べ、先頭とそれ以外の採用率
   3. 現在の「見込み低」の規則ごとの採用率（一括不採用の候補にしてよい群があるか）
 apply の内容（未決の候補だけ）
-  - match_kind（ja / romaji / category）と categories を保存し、name_match を新しい照合で更新する（一致 → true）
-  - 同じ写真の2か所目以降は「別の場所」で不採用にする（decided_by = auto:dedup。先頭は一致→近さの順）。採用済みがあれば、その地点が先頭
+  - match_kind（ja / romaji / category）と categories を保存する。name_match は、日本語の別名での一致（ja）のときだけ true にする
+    （ローマ字・英語名・カテゴリ名での一致は過去の採用率が61%で、見込み高の基準を満たさないため。判定は photo_suggest が match_kind で「どちらでもない」に上げる）
+  - 同じ写真が複数の地点にあるとき、先頭（採用済み→一致→近さの順）が一致し、自分は一致しない2か所目以降だけを「別の場所」で不採用にする
+    （decided_by = auto:dedup。過去の採用率は6%。「確認画面の候補に戻す」（reset）でいつでも戻せる）。ほかの2か所目以降（先頭も一致しない）は触れない
 採用は人が決める（自動採用はしない）。画像は保存しない。
 """
 import argparse
@@ -100,6 +102,13 @@ def dup_order(rows):
     return rank
 
 
+def dedup_targets(rows, rank):
+    """不採用にする候補：同じ写真の2か所目以降で、自分は一致せず、先頭が一致している（先頭が採用済みか未決）。決定済みのものは対象外"""
+    top = {r["page_url"]: r for r in rows if rank.get(r["id"]) == 1}
+    return [r for r in rows if r["source"] == "commons" and r["status"] == "candidate" and rank.get(r["id"], 1) > 1 and not r["new_match"]
+            and top.get(r["page_url"], {}).get("new_match") and top[r["page_url"]]["status"] in ("adopted", "candidate")]
+
+
 def evaluate(rows, cats):
     for r in rows:
         r["categories"] = cats.get(r["file_title"]) or r["categories"] or []
@@ -129,6 +138,8 @@ def report(rows, rank):
     for label, f in (("先頭（採用済み→一致→近さ）", lambda r: rank[r["id"]] == 1), ("2か所目以降", lambda r: rank[r["id"]] > 1)):
         a, rj, u = dec([r for r in multi if f(r)])
         md.append(f"| {label} | {a} | {rj} | {rate(a, rj)} | {u} |")
+    narrow = dedup_targets(rows, rank)
+    md.append(f"\napply で不採用にする候補（2か所目以降で、自分は不一致・先頭が一致）：未決 {len(narrow)}件\n")
     md.append("\n### 3. 現在の判定の規則ごと（新しい照合を入れる前／入れた後）\n| 規則 | 採用 | 不採用 | 採用率（決定済み） | 未決 | 新しい照合で一致に変わる未決 |\n|---|---|---|---|---|---|")
     g = collections.defaultdict(list)
     for r in rows:
@@ -171,9 +182,9 @@ def cmd_apply(a):
         todo = [r for r in rows if r["status"] == "candidate" and r["source"] == "commons"]
         with conn.cursor() as cur:
             for r in todo:
-                cur.execute("update spot_photo_candidates set match_kind = %s, categories = %s, name_match = %s, rescreened_at = now() where id = %s",
-                            (r["kind"], r["categories"], r["new_match"], r["id"]))
-            dup = [r for r in todo if rank.get(r["id"], 1) > 1]
+                cur.execute("update spot_photo_candidates set match_kind = %s, categories = %s, name_match = name_match or %s, rescreened_at = now() where id = %s",
+                            (r["kind"], r["categories"], r["kind"] == "ja", r["id"]))
+            dup = dedup_targets(rows, rank)
             for r in dup:
                 cur.execute("update spot_photo_candidates set status = 'rejected', reject_reason = 'wrong_place', decided_by = 'auto:dedup', decided_at = now() "
                             "where id = %s and status = 'candidate'", (r["id"],))
