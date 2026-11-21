@@ -117,7 +117,11 @@ $osmUrl = fn($f) => $f['kind'] === 'element'
 $lineName = ($s['shape'] ?? '') === 'line' ? preg_replace('/^（無名）.*/u', '', (string)($s['osm'][0]['name'] ?? '')) : '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') usage_log('spot_view', ['start_spot' => $id]);   // 利用の記録（どの地点が見られたか）
-page_header(sn($s), '');
+$seoImg = '';
+foreach ($s['photos'] ?? [] as $ph0) { if (preg_match('#^https://#', (string)($ph0['url'] ?? ''))) { $seoImg = $ph0['url']; break; } }
+page_header(sn($s) . '（' . ($s['category_name'] ?? '') . '・' . (AREA_LABEL[$s['area_code'] ?? ''] ?? '福岡市') . '）', '', [
+    'index' => !empty($s['indexable']), 'canonical' => 'spot.php?id=' . (int)$s['id'],
+    'description' => seo_description($s, $facts), 'image' => $seoImg]);   // 材料のない地点・名前のない地点は index にしない（DBの spot_is_indexable）
 ?>
 <article class="spotpage">
   <p class="crumb small muted"><a href="index.php?grp=<?= h($s['grp_code']) ?>"><?= dot($s['grp_code']) ?><?= h($s['grp']) ?></a>

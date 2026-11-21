@@ -19,6 +19,8 @@ return [
     'ffc_url'                => '',
     // 検索エンジンに載せる場合は true（公開準備が整うまでは false のまま）
     'allow_indexing'         => false,
+    // サイトの公開URL（末尾の / なし。例 https://example.com/locadb）。サイトマップ・canonical・共有表示に使う。空欄なら今のアクセスから作る
+    'base_url'               => '',
 
     // アクセス解析（Cloudflare Web Analytics のサイトトークン。空欄なら計測しない。トークンはページに出る公開値）
     'cf_analytics_token'     => '',

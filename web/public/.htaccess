@@ -13,5 +13,10 @@ DirectoryIndex index.php
   Header set X-Frame-Options "DENY"
   Header set X-Content-Type-Options "nosniff"
   Header set Referrer-Policy "same-origin"
-  Header set X-Robots-Tag "noindex, nofollow"
+</IfModule>
+# robots.txt と sitemap.xml は config の allow_indexing に合わせて PHP が作る（noindex の X-Robots-Tag も PHP が出す）
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^robots\.txt$ robots.php [L]
+  RewriteRule ^sitemap\.xml$ sitemap.php [L]
 </IfModule>
