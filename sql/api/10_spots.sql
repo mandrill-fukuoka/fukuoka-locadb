@@ -4,7 +4,7 @@ declare f record;
 begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname in (
-              'grp_match','spot_label','search_spots','spots_nearby','spots_similar','spot_detail','review_queue','review_spot',
+              'grp_match','spot_label','search_spots','spots_nearby','spots_similar','spot_is_indexable','spot_detail','review_queue','review_spot',
               'photo_state','spatial_view','logistics_view','drone_view','tide_view','aed_view','sp_open','sp_built','sp_water','sp_road','set_spot_state','review_risk','ping','diag_summary','diag_heavy','duplicate_candidates','merge_spots','spots_by_ids','live_root','precinct_word')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
@@ -330,6 +330,17 @@ select coalesce(jsonb_agg(to_jsonb(x) - 'ord' order by x.ord), '[]'::jsonb) from
 where x.ord <= greatest(least(p_limit, 20), 1);
 $$;
 
+-- 検索エンジンに載せてよい地点（順5の後・追補1）：名前があり、確認待ちでも対象外でもなく、材料（説明文・承認済みの事実・写真・FFC登録）が1つ以上ある地点。
+--  サイトマップ（sitemap_spots）と地点ページの robots は、この条件を使う
+create function spot_is_indexable(p_id bigint) returns boolean language sql stable as $$
+  select exists (
+    select 1 from spots s
+     where s.id = p_id and s.data_status = 'current' and s.name not like '（無名）%'
+       and (s.summary is not null or s.ffc_registered
+            or exists (select 1 from spot_facts f where f.spot_id = s.id and f.status = 'approved')
+            or exists (select 1 from spot_photos ph where ph.spot_id = s.id)));
+$$;
+
 -- 地点の詳細（地点ページ用）
 create function spot_detail(p_id bigint, p_with_history boolean default false)
 returns jsonb language sql stable as $$
@@ -345,6 +356,7 @@ select jsonb_build_object(
   'line_count', (select count(*) from spots o where o.line_key = s.line_key and o.data_status <> 'archived'),
   'status', s.status, 'confidence', s.confidence, 'data_status', s.data_status, 'review_reason', s.review_reason,
   'fact_count', (select count(*) from spot_facts f where f.spot_id = s.id and f.status = 'approved'),
+  'indexable', spot_is_indexable(s.id),
   'photo_state', photo_state(s.id, s.category, s.name like '（無名）%'),
   'archived_reason', s.archived_reason, 'origin', s.origin, 'locked', s.locked,
   'era_feel', s.era_feel, 'shoot_scope', s.shoot_scope, 'owner_type', s.owner_type,

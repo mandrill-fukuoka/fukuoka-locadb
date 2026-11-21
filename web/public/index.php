@@ -130,7 +130,22 @@ $total = $rows ? (int)($rows[0]['total'] ?? count($rows)) : 0;
 $pages = max(1, (int)ceil($total / $per));
 
 
-page_header('場所を探す', 'index.php');
+// 検索エンジンに載せるのは、トップと、景観またはエリアだけで開いた入口のページ（条件の組み合わせは載せない）
+$onlyGrpOrArea = ($grp !== '') xor ($area !== '');
+$others = $q !== '' || $cat !== '' || $tagList || $terr !== '' || $spOpen !== '' || $spWater !== '' || $spRoad !== '' || $spBuilt !== ''
+    || $spQuiet !== '' || $spToilet || $spParking || $spDrone !== '' || $photoSt !== '' || $sort !== '' || $near || $page > 0;
+$seoMeta = ['index' => false];
+if (!$searched && !$near) {
+    $seoMeta = ['index' => true, 'canonical' => 'index.php',
+        'description' => '福岡市周辺の撮影ロケーション候補を、景観・雰囲気・条件から探せるデータベース（β版）。地図と一覧で、場所の特徴・出典を確かめられます。'];
+} elseif ($onlyGrpOrArea && !$others && $rows && !$error) {
+    $what = $grp !== '' ? ($groupNames[$grp] ?? $grp) : (AREA_LABEL[$area] ?? $area);
+    $seoMeta = ['index' => true, 'canonical' => 'index.php?' . ($grp !== '' ? 'grp=' . rawurlencode($grp) : 'area=' . rawurlencode($area)),
+        'description' => '福岡市の' . $what . 'の撮影ロケーション候補 全' . number_format($total) . '件を、地図と一覧で。出典つきで、位置・周辺の特徴を確かめられます（β版）。'];
+}
+$seoTitle = !empty($seoMeta['index']) && ($grp !== '' || $area !== '')
+    ? ($grp !== '' ? ($groupNames[$grp] ?? $grp) : (AREA_LABEL[$area] ?? $area)) . 'の撮影ロケーション候補（福岡）' : '場所を探す';
+page_header($seoTitle, 'index.php', $seoMeta);
 ?>
 <form method="get" class="card">
   <h1>場所を探す</h1>

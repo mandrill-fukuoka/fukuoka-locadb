@@ -72,6 +72,7 @@ jobs:
           put -O $DIR/_app web/app/scene.php
           put -O $DIR/_app web/app/.htaccess
           rm -f $DIR/make_hash.php
+          rm -f $DIR/robots.txt
           bye
           EOF2
       - name: 確認

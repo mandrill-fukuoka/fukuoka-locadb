@@ -260,14 +260,54 @@ function analytics_tag(): string {
     return '<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon=\'{"token": "' . h($t) . '"}\'></script>';
 }
 
-function page_header(string $title, string $active = ''): void {
+// サイトの公開URL（サイトマップ・canonical・共有表示用）。config の base_url があればそれ、なければ今のアクセスから作る
+function site_base(): string {
+    $b = trim((string)cfg('base_url', ''));
+    if ($b !== '') return rtrim($b, '/');
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    $host = preg_replace('/[^A-Za-z0-9.:\-]/', '', (string)($_SERVER['HTTP_HOST'] ?? ''));
+    return ($https ? 'https' : 'http') . '://' . $host . rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? '/'), '/');
+}
+// 検索エンジンに載せてよいか：config の allow_indexing が true で、ページが index を求め、ログイン中でないとき
+function indexing_allowed(array $meta): bool {
+    return (bool)cfg('allow_indexing', false) && !empty($meta['index']) && !current_user();
+}
+// 地点ページの説明文（検索結果・共有時の表示）。事実と、人が採用した説明文だけで作る。撮影の可否・評判は書かない
+function seo_description(array $s, array $facts = [], int $max = 140): string {
+    $area = AREA_LABEL[$s['area_code'] ?? ''] ?? '';
+    $parts = [trim('福岡市' . $area . 'の' . ($s['category_name'] ?? '場所'))];
+    if (!empty($s['address'])) $parts[] = (string)$s['address'];
+    if (!empty($s['summary'])) $parts[] = trim(preg_replace('/\s+/u', ' ', (string)$s['summary']));
+    foreach (array_slice($facts, 0, 2) as $f) $parts[] = ($f['item'] ?? '') . '：' . ($f['value'] ?? '');
+    $text = implode('。', array_map(fn($x) => rtrim($x, '。'), array_filter($parts))) . '。';
+    return mb_strlen($text) > $max ? mb_substr($text, 0, $max - 1) . '…' : $text;
+}
+
+// $meta：index（検索エンジンに載せてよいページ）／description／canonical（このサイト内の相対URL。例 spot.php?id=3）／image（共有時の画像のURL）
+function page_header(string $title, string $active = '', array $meta = []): void {
     $nav = ['index.php' => '場所を探す', 'flow.php' => '流れで探す', 'flows.php' => 'おすすめの流れ', 'list.php' => 'ロケハンリスト'];
     if (current_user()) $nav += ['spots.php' => '地点の確認', 'risks.php' => '変化リスク', 'runs.php' => '収集の記録', 'usage.php' => '利用の記録',
                                  'reports.php' => '誤りの連絡', 'edit.php' => '＋地点を追加'];
+    $robots = indexing_allowed($meta) ? 'index,follow' : 'noindex,nofollow';
+    if (!headers_sent()) header('X-Robots-Tag: ' . $robots);
+    $full = $title . ' | FUKUOKA LOCATIONS';
+    $seo = '<meta name="robots" content="' . $robots . '">';
+    if (!empty($meta['description'])) $seo .= '<meta name="description" content="' . h($meta['description']) . '">';
+    if (!empty($meta['canonical'])) {
+        $url = site_base() . '/' . ltrim((string)$meta['canonical'], '/');
+        $seo .= '<link rel="canonical" href="' . h($url) . '">'
+              . '<meta property="og:url" content="' . h($url) . '">';
+    }
+    if (indexing_allowed($meta)) {
+        $seo .= '<meta property="og:site_name" content="FUKUOKA LOCATIONS"><meta property="og:type" content="website">'
+              . '<meta property="og:title" content="' . h($full) . '">'
+              . (!empty($meta['description']) ? '<meta property="og:description" content="' . h($meta['description']) . '">' : '')
+              . (!empty($meta['image']) && preg_match('#^https://#', (string)$meta['image']) ? '<meta property="og:image" content="' . h($meta['image']) . '"><meta name="twitter:card" content="summary_large_image">' : '<meta name="twitter:card" content="summary">');
+    }
     echo '<!doctype html><html lang="ja"><head><meta charset="utf-8">'
        . '<meta name="viewport" content="width=device-width,initial-scale=1">'
-       . (cfg('allow_indexing', false) ? '' : '<meta name="robots" content="noindex,nofollow">')
-       . '<title>' . h($title) . ' | FUKUOKA LOCATIONS</title>'
+       . $seo
+       . '<title>' . h($full) . '</title>'
        . '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
        . '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Noto+Sans+JP:wght@400;500&family=Shippori+Mincho:wght@600;700&display=swap">'
        . '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">'
