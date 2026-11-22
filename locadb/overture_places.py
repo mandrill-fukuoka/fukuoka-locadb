@@ -20,6 +20,7 @@ BBOX = (130.20, 33.43, 130.52, 33.72)          # lon_min, lat_min, lon_max, lat_
 MIN_CONF = 0.5
 MIN_POINTS = 20000                              # これ未満なら取得の失敗とみる（2026-11 の試算では約5.8万件・信頼度0.5以上は約5.2万件）
 MIN_KEEP_RATIO = 0.5
+MAX_GONE_RATIO = 0.3                            # 前回の点のうち、これを超える割合が一度に消えたら ID の振り直しとみて、消失は記録しない（DB変更292）
 
 NIGHT = {"bar", "pub", "nightclub", "izakaya", "karaoke", "cocktail_bar", "beer_bar", "wine_bar", "sake_bar", "lounge",
          "hostess_club", "beer_garden", "gay_bar", "dive_bar", "sports_bar", "hookah_bar", "tiki_bar"}
@@ -91,15 +92,34 @@ def fetch(release: str | None = None, con=None) -> tuple[list[tuple], str]:
     return out, rel
 
 
-def replace_points(conn, rows: list[tuple], release: str) -> int:
+def replace_points(conn, rows: list[tuple], release: str) -> dict:
+    """place_points を作り直す。前回のリリースにあって今回ない点は place_points_gone に残す（変化の材料。DB変更292）。
+    リリースが同じとき、または消えた割合が MAX_GONE_RATIO を超えるとき（ID の振り直し）は、消失を記録しない"""
     with conn.transaction():
+        old = conn.execute("select count(*) n, max(release) rel from place_points").fetchone()
+        conn.execute("drop table if exists pp_old")
+        conn.execute("create temp table pp_old as select gers_id, cls, cat, geom, release from place_points")
         conn.execute("delete from place_points")
         with conn.cursor() as cur:
             with cur.copy("copy place_points (gers_id, cls, cat, conf, geom, release) from stdin") as cp:
                 for gid, cls, cat, conf, lon, lat in rows:
                     # geography の COPY は WKT 文字列で渡す（SRID は列の型で決まる）
                     cp.write_row((gid, cls, cat, conf, f"SRID=4326;POINT({lon} {lat})", release))
-    return len(rows)
+        conn.execute("delete from place_points_gone")
+        gone = 0
+        note = ""
+        if old["n"] and old["rel"] != release:
+            gone = conn.execute("select count(*) n from pp_old o where not exists "
+                                "(select 1 from place_points p where p.gers_id = o.gers_id)").fetchone()["n"]
+            if gone > old["n"] * MAX_GONE_RATIO:
+                note = f"消えた点が多すぎる（{gone}/{old['n']}）ので、消失は記録しない（ID の振り直しの可能性）"
+                gone = 0
+            elif gone:
+                conn.execute("insert into place_points_gone (gers_id, cls, cat, geom, release_from, release_to) "
+                             "select o.gers_id, o.cls, o.cat, o.geom, o.release, %s from pp_old o "
+                             "where not exists (select 1 from place_points p where p.gers_id = o.gers_id)", (release,))
+        conn.execute("drop table if exists pp_old")
+    return {"points": len(rows), "gone": gone, "gone_note": note}
 
 
 def main(argv=None) -> int:
@@ -124,8 +144,9 @@ def main(argv=None) -> int:
         if a.apply and before and len(rows) < before * MIN_KEEP_RATIO:
             raise SystemExit(f"取り込む件数（{len(rows)}）が今の件数（{before}）の半分未満なので止めました（取得の失敗かも）")
         if a.apply:
-            replace_points(conn, rows, rel)
+            stats.update({k: v for k, v in replace_points(conn, rows, rel).items() if k != "points" and v})
             stats["spots_refreshed"] = conn.execute("select density_refresh() n").fetchone()["n"]
+            stats["change_flags"] = conn.execute("select change_overture_flags() r").fetchone()["r"]
             stats["vibe"] = {k: v for k, v in conn.execute("select vibe_apply() v").fetchone()["v"].items()
                              if k in ("updated", "version")}
             stats.update({k: v for k, v in conn.execute("select density_stats() d").fetchone()["d"].items()

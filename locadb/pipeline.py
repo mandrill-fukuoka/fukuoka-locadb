@@ -17,7 +17,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import address, build_clusters, containment, monitor_risk, name_overrides, osm_source, ruletags, slopes, spatial, terrain, vibe
+from . import address, build_clusters, change_signals, containment, monitor_risk, name_overrides, osm_source, ruletags, slopes, spatial, terrain, vibe
 from .categories import RULES_VERSION
 from .db import code_version, connect
 from .sync import MAX_ARCHIVE_RATIO, Sync
@@ -195,7 +195,8 @@ def main() -> int:
             with connect() as conn:
                 conn.execute("insert into job_runs (run_id, job, finished_at, stats) values (%s,'classify',now(),%s)",
                              (run_id, json.dumps({"skipped": "ANTHROPIC_API_KEY 未設定"}, ensure_ascii=False)))
-        print("[7] 変化リスク監視")
+        print("[7] 変化の材料（OSM のタグの変化）と変化リスク監視")
+        change_signals.run(run_id)
         monitor_risk.run(run_id)
     return 0
 
