@@ -2,7 +2,7 @@
 
   python -m tools.monthly_imports --group published|candidates --mode dry_run|apply [--rescreen]
 
-  published  公開データそのもの：AED（BODIK）→ 事実カード（BODIK）→ 重要度（Wikidata・閲覧数）
+  published  公開データそのもの：AED（BODIK）→ 事実カード（BODIK）→ 店の密度（Overture）→ 重要度（Wikidata・閲覧数）
   candidates 候補の収集（公開しない。確認画面に出る）：Commons 写真 → Mapillary 写真 → 追加候補 → BODIK 追加候補
              --rescreen を付けると、最後に未決の写真候補の重複を整える（photo_rescreen apply --yes。reset で戻せる）
 
@@ -36,6 +36,8 @@ STEPS: dict[str, list[Step]] = {
     "published": [
         Step("aed", [PY, "-m", "locadb.bodik_aed", "{mode}"], timeout_min=30),
         Step("bodik-facts", [PY, "-m", "locadb.bodik_facts", "{mode}"], timeout_min=45),
+        # 店の密度（DB変更290）。Overture の最新リリースから福岡市の点を作り直し、周りの店の数を数え直す
+        Step("overture-places", [PY, "-m", "locadb.overture_places", "{mode}"], timeout_min=60),
         Step("importance", [PY, "tools/importance_import.py", "run", "{apply}", "--json", "importance-out.json"],
              json_file="importance-out.json", timeout_min=45),
     ],
