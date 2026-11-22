@@ -42,7 +42,7 @@ def stations(out: dict, outdir: Path) -> None:
         z = zipfile.ZipFile(io.BytesIO(r.content))
         names = z.namelist()
         out["s12_files"] = names[:30]
-        gj = next((n for n in names if n.lower().endswith(".geojson")), None)
+        gj = next((n for n in names if n.lower().endswith(".geojson") and n.startswith("UTF-8/")), None)
         if not gj:
             out["s12_error"] = "GeoJSON が入っていない"
             return
@@ -74,12 +74,35 @@ def stations(out: dict, outdir: Path) -> None:
         return
 
 
-def estat(out: dict) -> None:
-    r = get(ESTAT_PAGE)
-    out["estat_page"] = {"status": r.status_code, "bytes": len(r.content)}
-    links = sorted(set(re.findall(r"""["'](/?[^"']*statmap-search/data\?[^"']+|[^"']*file-download\?[^"']+)["']""", r.text)))
-    out["estat_links"] = links[:20]
-    out["estat_form_hints"] = sorted(set(re.findall(r'(?:name|id)="([A-Za-z]*(?:serve|code|coord|format|download)[A-Za-z]*)"', r.text)))[:30]
+def estat(out: dict, outdir: Path) -> None:
+    """統計GISのダウンロードURLを直接試す（地図の画面は JavaScript で、HTML にリンクがない）。
+    経済センサス-活動調査 2021 の町丁・大字別（serveyId B002005512021）、福岡市中央区（40133）で、境界のみ／統計＋境界を試す"""
+    tries = []
+    for survey in ("B002005512021", "B002005502021"):
+        for dtype in (1, 2, 5):
+            url = (f"https://www.e-stat.go.jp/gis/statmap-search/data?dlserveyId={survey}&code=40133"
+                   f"&coordSys=1&format=csv&downloadType={dtype}&datum=2011")
+            r = get(url)
+            t = {"survey": survey, "downloadType": dtype, "status": r.status_code, "bytes": len(r.content),
+                 "content_type": r.headers.get("content-type", ""), "disposition": r.headers.get("content-disposition", "")}
+            if r.status_code == 200 and r.content[:2] == b"PK":
+                z = zipfile.ZipFile(io.BytesIO(r.content))
+                t["zip_files"] = z.namelist()[:20]
+                for n in z.namelist():
+                    if n.lower().endswith(".txt") or n.lower().endswith(".csv"):
+                        raw = z.read(n)
+                        for enc in ("cp932", "utf-8"):
+                            try:
+                                t["head_" + n] = raw.decode(enc)[:1500]
+                                break
+                            except UnicodeDecodeError:
+                                continue
+                        break
+                (outdir / f"estat_{survey}_{dtype}.zip").write_bytes(r.content)
+            else:
+                t["head"] = r.text[:200]
+            tries.append(t)
+    out["estat_tries"] = tries
 
 
 def main(argv=None):
@@ -91,7 +114,7 @@ def main(argv=None):
     out = {}
     for fn in (stations, estat):
         try:
-            fn(out, outdir) if fn is stations else fn(out)
+            fn(out, outdir)
         except Exception as e:  # noqa: BLE001
             out[f"{fn.__name__}_error"] = f"{type(e).__name__}: {e}"
     (outdir / "summary.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
