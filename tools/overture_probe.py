@@ -36,9 +36,15 @@ def main(argv=None):
     con, src = connect(a.release or None)
     cols = [r[0] for r in con.execute(f"describe select * from {src}").fetchall()]
     print("columns:", cols)
+    print("types:", {r[0]: r[1][:200] for r in con.execute(f"describe select * from {src}").fetchall() if r[0] in ("taxonomy", "brand", "basic_category", "operating_status")})
     x0, y0, x1, y1 = BBOX
     where = f"bbox.xmin >= {x0} and bbox.xmax <= {x1} and bbox.ymin >= {y0} and bbox.ymax <= {y1}"
-    con.execute(f"create temp table p as select id, names.primary as name, categories.primary as cat, confidence, "
+    CAT = "basic_category" if "basic_category" in cols else "categories.primary"
+    try:
+        con.execute(f"select taxonomy.primary from {src} limit 1"); TAX = "taxonomy.primary"
+    except duckdb.Error:
+        TAX = "cast(null as varchar)"
+    con.execute(f"create temp table p as select id, names.primary as name, {CAT} as cat, {TAX} as tax, confidence, "
                 f"{'operating_status' if 'operating_status' in cols else 'cast(null as varchar)'} as status, "
                 f"{'brand.names.primary' if 'brand' in cols else 'cast(null as varchar)'} as brand, "
                 f"bbox.xmin as lon, bbox.ymin as lat from {src} where {where}")
@@ -50,7 +56,8 @@ def main(argv=None):
            "status": {str(k): v for k, v in q("select status, count(*) from p group by 1")},
            "chain": q("select count(*) from p where brand is not null")[0][0],
            "top_cat": q("select cat, count(*) n from p group by 1 order by n desc limit 40"),
-           "night": q(f"select count(*) from p where cat in ({','.join(repr(c) for c in NIGHT)})")[0][0]}
+           "top_tax": q("select tax, count(*) n from p group by 1 order by n desc limit 40"),
+           "night": q(f"select count(*) from p where cat in ({','.join(repr(c) for c in NIGHT)}) or tax in ({','.join(repr(c) for c in NIGHT)})")[0][0]}
     # 500m四方（緯度0.0045度・経度0.0054度）ごとの店の数の分布
     cells = q("select floor(lat/0.0045) la, floor(lon/0.0054) lo, count(*) n from p where confidence>=0.5 group by 1,2")
     ns = sorted(c[2] for c in cells)
@@ -65,7 +72,8 @@ def main(argv=None):
     L += [f"| 営業状態 {k} | {v:,} |" for k, v in res["status"].items()]
     L += ["", f"500m四方 {res['cells']['n_cells']} 区画（信頼度0.5以上）：中央値 {res['cells']['p50']}・90% {res['cells']['p90']}・99% {res['cells']['p99']}・最大 {res['cells']['max']}", "",
           "上位の区画（緯度・経度・件数）：" + "、".join(f"({c['lat']},{c['lon']}) {c['n']}" for c in res["top_cells"]), "",
-          "種別（上位40）：" + "、".join(f"{c}:{n}" for c, n in res["top_cat"])]
+          "種別 basic_category（上位40）：" + "、".join(f"{c}:{n}" for c, n in res["top_cat"]), "",
+          "種別 taxonomy.primary（上位40）：" + "、".join(f"{c}:{n}" for c, n in res["top_tax"])]
     (out / "summary.md").write_text("\n".join(L) + "\n", encoding="utf-8")
     print("\n".join(L))
 
