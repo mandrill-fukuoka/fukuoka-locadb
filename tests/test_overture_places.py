@@ -111,9 +111,9 @@ def gone(db, dx, dy, n):
 
 
 def test_overture_flags_need_many_and_most_gone(db):
-    sid = add(db, "旧天神ビル", "building", 0, 0)
-    few = add(db, "港の倉庫群", "building", 5000, 0)
-    mixed = add(db, "駅前ビル", "building", 0, 5000)
+    sid = add(db, "旧天神ビル", "new_building", 0, 0)
+    few = add(db, "港の倉庫群", "new_building", 5000, 0)
+    mixed = add(db, "駅前ビル", "new_building", 0, 5000)
     infra = add(db, "那珂川の橋", "bridge_overpass", 0, 10000)
     gone(db, 10, 0, 4)                       # 4 件消えて 0 件残る → 出す
     gone(db, 5000, 10, 2)                    # 2 件だけ → 出さない
@@ -139,8 +139,8 @@ def link(db, spot_id, key, tags, osm_type="w", osm_id=1):
 
 
 def test_osm_marks_baseline_then_new_marks(db):
-    a = add(db, "大名の古い店", "building", 0, 0)
-    b = add(db, "渡辺通りの建物", "building", 500, 0)
+    a = add(db, "大名の古い店", "new_building", 0, 0)
+    b = add(db, "渡辺通りの建物", "new_building", 500, 0)
     c = add(db, "那珂川の橋", "bridge_overpass", 1000, 0)
     link(db, a, "w1", {"shop": "bar", "disused:shop": "bar"}, osm_id=1)          # 最初から閉鎖の印あり
     link(db, b, "w2", {"building": "yes"}, osm_id=2)
