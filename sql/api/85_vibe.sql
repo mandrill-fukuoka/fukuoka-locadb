@@ -14,7 +14,7 @@ begin
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
-create function vibe_version() returns text language sql immutable as $$ select 'vibe-v2'::text $$;
+create function vibe_version() returns text language sql immutable as $$ select 'vibe-v3'::text $$;
 
 -- 0〜1 に収め、小数3桁にする
 create function clamp01(v double precision) returns numeric language sql immutable as $$
@@ -30,9 +30,11 @@ with x as (
          case when ss.confidence = 'ok' then ss.open_ratio end as open_r,
          case when ss.confidence = 'ok' then ss.building_cover_100 end as cover,
          case when ss.confidence = 'ok' then sp_road(ss.road_class, ss.road_width_m) end as road,
-         ss.water_dist_m as wd, ss.water_kind as wk, ss.spot_id is not null as has_ss
+         ss.water_dist_m as wd, ss.water_kind as wk, ss.spot_id is not null as has_ss,
+         sk.tall_300 as tall
     from spots s join spot_categories sc on sc.code = s.category
     left join spot_spatial ss on ss.spot_id = s.id
+    left join spot_skyline sk on sk.spot_id = s.id          -- PLATEAU の建物の高さ（DB変更291。なければ null）
    where s.id = p_id
 ), v as (
   select x.*,
@@ -64,7 +66,8 @@ select jsonb_strip_nulls(jsonb_build_object(
                              when wk = 'river' then near_w else 0 end),
   'sea_view',  clamp01(case when cat in ('coast','beach') then 1.0 when near_w is null then null
                              when wk in ('coast','beach') then near_w else 0 end),
-  'skyline',   clamp01(case when cat = 'new_building' then 1.0 when cover is null then null else 0.5 * least(cover / 0.35, 1) end),
+  'skyline',   clamp01(case when cat = 'new_building' then 1.0 when cover is null and tall is null then null
+                            else greatest(0.5 * least(coalesce(cover, 0) / 0.35, 1), 0.8 * least(coalesce(tall, 0) / 8.0, 1)) end),
   'futuristic', clamp01(case when cat = 'new_building' then 1.0 when cover is null then null else 0.5 * least(cover / 0.35, 1) end),
   'industrial_structure', clamp01(case when cat in ('factory','port','warehouse') then 1.0 when cat = 'fishing_port' then 0.6 else 0 end),
   'inorganic', clamp01(case when cat in ('factory','port','warehouse','new_building') then 1.0 when cat = 'fishing_port' then 0.6 else 0 end),
@@ -198,7 +201,8 @@ create function vibe_line(p_id bigint) returns text language sql stable as $$
                 when ss.shops_150 = 0 then '周り150mに店なし' end,
            case when ss.confidence = 'ok' and sp_road(ss.road_class, ss.road_width_m) = 'narrow' then '狭い道' end,
            case when ss.confidence = 'ok' and sp_open(ss.open_ratio) = 'open' then '開けている' end,
-           case sp_water(ss.water_dist_m) when 'near' then '水辺まで50m未満' when 'close' then '水辺まで150m未満' end), '')
+           case sp_water(ss.water_dist_m) when 'near' then '水辺まで50m未満' when 'close' then '水辺まで150m未満' end,
+           case when sk.tall_300 > 0 then '周り300mに高さ45m以上のビル' || sk.tall_300 || '棟' end), '')
          || '（推定）'
-    from spot_spatial ss where ss.spot_id = p_id;
+    from spot_spatial ss left join spot_skyline sk on sk.spot_id = ss.spot_id where ss.spot_id = p_id;
 $$;

@@ -72,7 +72,7 @@ def test_density_refresh_counts_and_vibe_uses_it(db):
     db.commit()
     r = db.execute("select bars_150, eateries_150, shops_150 from spot_spatial where spot_id = %s", [sid]).fetchone()
     assert (r["bars_150"], r["eateries_150"], r["shops_150"]) == (5, 8, 17)
-    assert db.execute("select vibe_version() v").fetchone()["v"] == "vibe-v2"
+    assert db.execute("select vibe_version() v").fetchone()["v"] == "vibe-v3"
     st = db.execute("select density_stats() d").fetchone()["d"]
     assert st["points"] == 30 and st["by_cls"]["bar"] == 8
 

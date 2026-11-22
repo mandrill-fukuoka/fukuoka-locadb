@@ -1,0 +1,41 @@
+# PLATEAU（福岡市の3D都市モデル）の建物の高さから、地点ごとに周りの建物の高さの目安を作る（DB変更291が先。AIなし・費用ゼロ）
+#  - dry_run：地点の位置を読むだけ。件数と分布だけ出す。files で抜き取り（試し用）
+#  - apply：spot_skyline を作り直し、vibe_apply を流す（全ファイル必須）。データは年1回ほどの更新なので手動で動かす
+name: plateau-import
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run（読み取りのみ）/ apply（取り込む）"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+      files:
+        description: "試し用：抜き取るファイル数（0＝全部。apply は 0 のときだけ）"
+        type: string
+        default: "0"
+concurrency:
+  group: ${{ inputs.mode == 'apply' && 'database' || format('plateau-import-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  plateau:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 取り込み
+        shell: bash
+        run: |
+          if [ "$MODE" = apply ] && [ "$FILES" != 0 ]; then echo "apply は全ファイルのときだけ（files=0）" >&2; exit 1; fi
+          python -m locadb.plateau_heights --${MODE//_/-} --files "$FILES" --out plateau-out | tee plateau.log
+          { echo '```json'; tail -1 plateau.log; echo '```'; echo "モード：$MODE"; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODE: ${{ inputs.mode }}
+          FILES: ${{ inputs.files }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: plateau, path: plateau-out/, retention-days: 7 }
