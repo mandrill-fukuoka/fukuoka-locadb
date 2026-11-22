@@ -1,0 +1,40 @@
+# Overture Maps の店の点を取り込み、周りの店の数を数え直す（DB変更290が先。AIなし・費用ゼロ）
+#  - dry_run：本番DBは読むだけ。件数と種別の内訳だけ出す
+#  - apply：place_points を作り直し、density_refresh と vibe_apply を流す（件数の安全装置つき）。月次の取り込みにも入っている
+name: overture-import
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run（読み取りのみ）/ apply（取り込む）"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+      release:
+        description: "リリース名（例 2026-11-19.0。空なら最新）"
+        type: string
+        default: ""
+concurrency:
+  group: ${{ inputs.mode == 'apply' && 'database' || format('overture-import-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  overture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 取り込み
+        shell: bash
+        run: |
+          python -m locadb.overture_places --${MODE//_/-} --release "$REL" --out overture-out | tee overture.log
+          { echo '```json'; tail -1 overture.log; echo '```'; echo "モード：$MODE"; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODE: ${{ inputs.mode }}
+          REL: ${{ inputs.release }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: overture, path: overture-out/, retention-days: 7 }
