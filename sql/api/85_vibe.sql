@@ -42,6 +42,8 @@ with x as (
   select x.*,
          -- 店が少ないほど高い（0〜2軒で1.0）
          case when shops is null then null when shops <= 2 then 1.0 when shops <= 5 then 0.6 when shops <= 15 then 0.3 else 0 end as few_shops,
+         case when shops is null then null
+              else 0.8 * least(shops / 30.0, 1) + 0.2 * coalesce(least(cover / 0.3, 1), least(shops / 30.0, 1)) end as ht0,
          case when road = 'narrow' then 1.0 when road = 'normal' then 0.3 when road = 'wide' then 0 end as narrow,
          -- 水辺の近さ（50m未満で1.0、150m未満で0.5）
          case when not has_ss then null when wd is null or wd >= 150 then 0 when wd < 50 then 1.0 else 0.5 end as near_w
@@ -53,9 +55,8 @@ select jsonb_strip_nulls(jsonb_build_object(
   'neon',      clamp01(case when bars is null then null else least(bars / 10.0, 1)
                          + case when cat in ('eatery_street','nightlife_area','yatai_area') then 0.2 else 0 end end),
   'lively',    clamp01(case when shops is null then null else 0.8 * least(shops / 30.0, 1) + 0.2 * coalesce(least(cover / 0.3, 1), least(shops / 30.0, 1)) end),
-  'high_traffic', clamp01(case when shops is null then null
-                         when st is null then 0.8 * least(shops / 30.0, 1) + 0.2 * coalesce(least(cover / 0.3, 1), least(shops / 30.0, 1))
-                         else 0.55 * least(shops / 30.0, 1) + 0.15 * coalesce(least(cover / 0.3, 1), least(shops / 30.0, 1)) + 0.3 * st end),
+  -- 駅が近いときだけ上げる（店の数の点 ht0 に、駅の人の多さの分を残りの幅に加える。駅が遠い地点は変わらない）
+  'high_traffic', clamp01(case when ht0 is null then null else ht0 + 0.3 * coalesce(st, 0) * (1 - least(ht0, 1)) end),
   'lonely',    clamp01(case when few_shops is null then null else 0.6 * few_shops
                          + case when grp in ('residential','green','river','sea','lake','beach') then 0.2 else 0 end
                          + 0.2 * coalesce(narrow, 0) - 0.3 * coalesce(st, 0) end),
