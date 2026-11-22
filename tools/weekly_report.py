@@ -13,8 +13,9 @@ from datetime import datetime, timedelta, timezone
 
 JST = timezone(timedelta(hours=9))
 # 毎週動くはずの処理と、最後の成功がこの日数より古ければ「止まっている疑い」とする日数
-EXPECTED_WEEKLY = {"pipeline": 9, "verify": 9}
-WATCHED = ["pipeline", "verify", "keepalive", "ci", "deploy-web", "db-migrate", "yardstick"]
+# 月次の取り込み（毎月1日）は、最後の成功が40日より古ければ止まっている疑いとする
+EXPECTED_WEEKLY = {"pipeline": 9, "verify": 9, "monthly-imports-published": 40, "monthly-imports-candidates": 40}
+WATCHED = ["pipeline", "verify", "keepalive", "ci", "deploy-web", "db-migrate", "yardstick", "monthly-imports"]
 
 
 def summarize_runs(runs: list[dict]) -> dict[str, Counter]:
@@ -91,6 +92,10 @@ def db_facts() -> tuple[dict, dict]:
         r = c.execute("select max(finished_at) from job_runs where job = 'verify' and error is null "
                       "and finished_at is not null").fetchone()
         last_ok["verify"] = r[0]
+        for g in ("published", "candidates"):
+            r = c.execute("select max(finished_at) from job_runs where job = %s and error is null "
+                          "and finished_at is not null", (f"monthly-imports-{g}",)).fetchone()
+            last_ok[f"monthly-imports-{g}"] = r[0]
         db["掲載中の地点"] = c.execute("select count(*) from spots where data_status <> 'archived'").fetchone()[0]
         db["要確認の地点"] = c.execute("select count(*) from spots where data_status = 'needs_review'").fetchone()[0]
         db["自動チェックの未対応の指摘"] = c.execute("select count(*) from spot_checks where status = 'open'").fetchone()[0]

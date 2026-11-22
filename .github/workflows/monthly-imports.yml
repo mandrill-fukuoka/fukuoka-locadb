@@ -1,0 +1,71 @@
+# 毎月1日 4:00（日本時間）：公開データの取り込み（published）→ 候補の収集（candidates）
+# 手動実行：Actions →「monthly-imports」→ Run workflow（mode は dry_run＝試し／apply＝本番）
+# 試し（dry_run）はDBを書き換えない。本番（apply）の前に暗号化バックアップを取る（pipeline と同じ）。
+name: monthly-imports
+on:
+  schedule: [{ cron: "0 19 1 * *" }]
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run（試し：変更しない）/ apply（本番に反映）"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+      rescreen:
+        description: "候補の収集のあと、未決の写真候補の重複を整える（reset で戻せる。定期実行では常に整える）"
+        type: boolean
+        default: true
+concurrency: { group: database, cancel-in-progress: false }
+jobs:
+  published:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: バックアップの暗号化の準備（本番のとき。未登録ならここで止まる）
+        if: github.event_name == 'schedule' || inputs.mode == 'apply'
+        run: tools/backup_crypt.sh check
+        env: { BACKUP_PASSPHRASE: "${{ secrets.BACKUP_PASSPHRASE }}" }
+      - name: 反映前のバックアップ（本番のときだけ。暗号化してから保存）
+        if: github.event_name == 'schedule' || inputs.mode == 'apply'
+        run: |
+          docker run --rm -v "$PWD:/out" -e DATABASE_URL postgres:17 \
+            pg_dump "$DATABASE_URL" --no-owner --no-privileges -n public -n legacy -Fc -f /out/before-$(date +%Y%m%d-%H%M).dump
+          for f in before-*.dump; do tools/backup_crypt.sh encrypt "$f"; done
+        env:
+          DATABASE_URL: "${{ secrets.DATABASE_URL }}"
+          BACKUP_PASSPHRASE: "${{ secrets.BACKUP_PASSPHRASE }}"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'schedule' || inputs.mode == 'apply'
+        with: { name: backup-before, path: "before-*.dump.gpg", retention-days: 30 }
+      - name: 公開データの取り込み
+        run: python -m tools.monthly_imports --group published --mode "${{ inputs.mode || 'apply' }}"
+        env: { DATABASE_URL: "${{ secrets.DATABASE_URL }}" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: published-out, path: "aed-out\nbodik-facts-out\nimportance-out.json", retention-days: 7, if-no-files-found: ignore }
+
+  candidates:
+    needs: published
+    if: always()                      # 公開データの取り込みが失敗しても、候補の収集は別に回す
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 候補の収集
+        run: |
+          ARGS=""
+          if [ "${{ github.event_name }}" = schedule ] || [ "${{ inputs.rescreen }}" = "true" ]; then ARGS="--rescreen"; fi
+          python -m tools.monthly_imports --group candidates --mode "${{ inputs.mode || 'apply' }}" $ARGS
+        env:
+          DATABASE_URL: "${{ secrets.DATABASE_URL }}"
+          MAPILLARY_TOKEN: "${{ secrets.MAPILLARY_TOKEN }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: candidates-out, path: "commons-out\nmapillary-out\nadditions-out\nbodik-out", retention-days: 7, if-no-files-found: ignore }
