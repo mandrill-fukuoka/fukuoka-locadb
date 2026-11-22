@@ -19,3 +19,13 @@ def test_context_limited_to_ctx_chars():
 def test_infra_categories_not_matched():
     assert "bridge_overpass" in m.INFRA_CATEGORIES and "river" in m.INFRA_CATEGORIES
     assert "shrine_temple" not in m.INFRA_CATEGORIES        # 建物・施設は従来どおり照合する
+
+
+def test_keywords_only_strong_words():
+    import re
+    def kind(ctx):
+        return next((t for t, pat in m.KEYWORDS if re.search(pat, ctx)), None)
+    assert kind("旧市民会館は解体される") == "demolition"
+    assert kind("店舗は閉店した") == "closure" and kind("来年度に移転する") == "use_change"
+    for weak in ("バス路線の廃止", "工場跡地の活用", "古い倉庫のリノベーション", "都市計画決定の告示"):
+        assert kind(weak) is None, weak

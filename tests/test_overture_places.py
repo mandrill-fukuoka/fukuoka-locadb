@@ -79,9 +79,85 @@ def test_density_refresh_counts_and_vibe_uses_it(db):
 
 def test_replace_points_is_atomic(db):
     rows = [("a", "bar", "bar", 0.9, 130.4, 33.59), ("b", "eat", "cafe", 0.8, 130.41, 33.59)]
-    assert op.replace_points(db, rows, "2026-11-19.0") == 2
+    assert op.replace_points(db, rows, "2026-11-19.0")["points"] == 2
     db.commit()
     assert db.execute("select count(*) n from place_points where release = '2026-11-19.0'").fetchone()["n"] == 2
-    assert op.replace_points(db, rows[:1], "2026-12-17.0") == 1
+    assert op.replace_points(db, rows[:1], "2026-12-17.0")["points"] == 1
     db.commit()
     assert db.execute("select count(*) n from place_points").fetchone()["n"] == 1
+
+
+def test_replace_points_records_gone(db):
+    rows = [(f"g{i}", "eat", "cafe", 0.9, 130.4 + i * 0.0001, 33.59) for i in range(10)]
+    assert op.replace_points(db, rows, "r1")["gone"] == 0                     # 初回は前がないので記録しない
+    out = op.replace_points(db, rows[:8], "r2")                               # 2/10 が消えた（上限の3割以内）
+    assert out["gone"] == 2
+    gone = db.execute("select gers_id, release_from, release_to from place_points_gone order by gers_id").fetchall()
+    assert [g["gers_id"] for g in gone] == ["g8", "g9"] and gone[0]["release_from"] == "r1" and gone[0]["release_to"] == "r2"
+    assert op.replace_points(db, rows[:8], "r2")["gone"] == 0                 # 同じリリースの再実行では何も残さない
+    assert db.execute("select count(*) n from place_points_gone").fetchone()["n"] == 0
+    out = op.replace_points(db, rows[:3], "r3")                               # 5/8 が一度に消えた → ID の振り直しとみる
+    assert out["gone"] == 0 and "振り直し" in out["gone_note"]
+    assert db.execute("select count(*) n from place_points_gone").fetchone()["n"] == 0
+
+
+def gone(db, dx, dy, n):
+    lon, lat = at(dx, dy)
+    for i in range(n):
+        db.execute("insert into place_points_gone (gers_id, cls, cat, geom, release_from, release_to) values "
+                   "(%s, 'eat', 'x', ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography, 'r1', 'r2')",
+                   (f"x{dx}-{dy}-{i}", lon, lat))
+    db.commit()
+
+
+def test_overture_flags_need_many_and_most_gone(db):
+    sid = add(db, "旧天神ビル", "new_building", 0, 0)
+    few = add(db, "港の倉庫群", "new_building", 5000, 0)
+    mixed = add(db, "駅前ビル", "new_building", 0, 5000)
+    infra = add(db, "那珂川の橋", "bridge_overpass", 0, 10000)
+    gone(db, 10, 0, 4)                       # 4 件消えて 0 件残る → 出す
+    gone(db, 5000, 10, 2)                    # 2 件だけ → 出さない
+    gone(db, 10, 5000, 3)
+    put(db, "eat", 10, 5000, 5)              # 3 件消えて 5 件残る（37%）→ 出さない
+    gone(db, 10, 10000, 5)                   # 橋は照合しない
+    r = db.execute("select change_overture_flags() r").fetchone()["r"]
+    db.commit()
+    assert r["flagged"] == 1 and r["gone"] == 14
+    rk = db.execute("select spot_id, risk_type, source_kind, verified, certainty from change_risks").fetchall()
+    assert [(x["spot_id"], x["risk_type"], x["source_kind"], x["verified"], x["certainty"]) for x in rk] == \
+        [(sid, "closure", "overture", False, "keyword")]
+    assert db.execute("select change_overture_flags() r").fetchone()["r"]["flagged"] == 0     # 同じリリースで二重に出さない
+    assert few and mixed and infra
+
+
+def link(db, spot_id, key, tags, osm_type="w", osm_id=1):
+    import json
+    db.execute("insert into features (key, kind, osm_type, osm_id, tags) values (%s,'element',%s,%s,%s::jsonb) "
+               "on conflict (key) do update set tags = excluded.tags", (key, osm_type, osm_id, json.dumps(tags)))
+    db.execute("insert into spot_features (spot_id, feature_key) values (%s,%s) on conflict do nothing", (spot_id, key))
+    db.commit()
+
+
+def test_osm_marks_baseline_then_new_marks(db):
+    a = add(db, "大名の古い店", "new_building", 0, 0)
+    b = add(db, "渡辺通りの建物", "new_building", 500, 0)
+    c = add(db, "那珂川の橋", "bridge_overpass", 1000, 0)
+    link(db, a, "w1", {"shop": "bar", "disused:shop": "bar"}, osm_id=1)          # 最初から閉鎖の印あり
+    link(db, b, "w2", {"building": "yes"}, osm_id=2)
+    link(db, c, "w3", {"bridge": "yes"}, osm_id=3)
+    r = db.execute("select change_osm_marks_refresh() r").fetchone()["r"]
+    db.commit()
+    assert r == {"baseline": True, "features_marked": 1, "new_marks": 0, "flagged": 0}      # 初回は基準を覚えるだけ
+    assert db.execute("select count(*) n from change_risks").fetchone()["n"] == 0
+    link(db, b, "w2", {"building": "construction"}, osm_id=2)                  # 工事中になった
+    link(db, c, "w3", {"bridge": "yes", "demolished:bridge": "yes"}, osm_id=3)  # 橋は照合しない
+    link(db, a, "w1", {"shop": "bar", "disused:shop": "bar", "demolished:building": "yes"}, osm_id=1)   # 解体の印が増えた
+    r = db.execute("select change_osm_marks_refresh() r").fetchone()["r"]
+    db.commit()
+    assert r["baseline"] is False and r["flagged"] == 2
+    rows = {(x["spot_id"], x["risk_type"]): x for x in db.execute("select * from change_risks").fetchall()}
+    assert set(rows) == {(b, "redevelopment"), (a, "demolition")}
+    x = rows[(b, "redevelopment")]
+    assert x["source_kind"] == "osm_tags" and not x["verified"] and x["source_url"] == "https://www.openstreetmap.org/way/2"
+    r = db.execute("select change_osm_marks_refresh() r").fetchone()["r"]       # 変化がなければ何も出さない
+    assert r["flagged"] == 0 and r["new_marks"] == 0
