@@ -14,7 +14,7 @@ begin
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
-create function vibe_version() returns text language sql immutable as $$ select 'vibe-v1'::text $$;
+create function vibe_version() returns text language sql immutable as $$ select 'vibe-v2'::text $$;
 
 -- 0〜1 に収め、小数3桁にする
 create function clamp01(v double precision) returns numeric language sql immutable as $$
@@ -135,8 +135,9 @@ $$;
 create function vibe_apply() returns jsonb language plpgsql as $$
 declare v_n int;
 begin
+  perform density_refresh();                       -- Overture の店の点があれば、地点の数ではなくそれで数える（DB変更290）
   update spot_spatial ss set
-         bars_150     = c.bars, eateries_150 = c.eat, shops_150 = c.shops
+         bars_150     = coalesce(d.bar_150, c.bars), eateries_150 = coalesce(d.eat_150, c.eat), shops_150 = coalesce(d.shop_150, c.shops)
     from (select s.id,
                  count(o.id) filter (where o.category = 'bar') as bars,
                  count(o.id) filter (where o.category in ('restaurant','cafe')) as eat,
@@ -146,6 +147,7 @@ begin
             left join spots o on o.id <> s.id and o.data_status <> 'archived' and ST_DWithin(o.geom, s.geom, 150)
             left join spot_categories oc on oc.code = o.category
            group by s.id) c
+    left join spot_density d on d.spot_id = c.id
    where ss.spot_id = c.id;
   update spot_spatial ss set signals = vibe_signals(ss.spot_id),
          typicality = group_typicality(ss.spot_id, sc.landscape_group),

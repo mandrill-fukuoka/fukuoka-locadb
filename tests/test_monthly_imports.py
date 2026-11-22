@@ -11,7 +11,7 @@ from tools import monthly_imports as m
 def test_build_argv_modes():
     s = m.STEPS["published"][0]
     assert m.build_argv(s, "dry_run")[-1] == "--dry-run" and m.build_argv(s, "apply")[-1] == "--apply"
-    imp = m.STEPS["published"][2]
+    imp = next(x for x in m.STEPS["published"] if x.name == "importance")
     assert "--apply" in m.build_argv(imp, "apply") and "--apply" not in m.build_argv(imp, "dry_run")   # 試しは既定のまま
     assert m.build_argv(imp, "apply")[-2:] == ["--json", "importance-out.json"]
 
@@ -60,7 +60,7 @@ def test_main_continues_after_failure_and_exits_1(monkeypatch, capsys):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     assert m.main(["--group", "published", "--mode", "dry_run"]) == 1
-    assert calls == ["aed", "bodik-facts", "importance"]          # 失敗のあとも続く
+    assert calls == ["aed", "bodik-facts", "overture-places", "importance"]          # 失敗のあとも続く
     assert "bodik-facts の失敗：却下があります" in capsys.readouterr().out
 
 
