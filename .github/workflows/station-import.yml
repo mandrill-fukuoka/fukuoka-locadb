@@ -1,0 +1,40 @@
+# 駅別乗降客数（国土数値情報 S12。CC BY 4.0）を取り込み、地点ごとの駅の人の多さを数え直す（DB変更293が先。AIなし・費用ゼロ）
+#  - dry_run：本番DBは読むだけ。駅の数と上位だけ出す
+#  - apply：station_flow を作り直し、footfall_refresh と vibe_apply を流す（駅の数の安全装置つき）。年1回ほど。月次には入れていない
+name: station-import
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run（読み取りのみ）/ apply（取り込む）"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+      url:
+        description: "zip の URL（空なら既定の最新版）"
+        type: string
+        default: ""
+concurrency:
+  group: ${{ inputs.mode == 'apply' && 'database' || format('station-import-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  station:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 取り込み
+        shell: bash
+        run: |
+          python -m locadb.station_flow --${MODE//_/-} --url "$URL" --out station-out | tee station.log
+          { echo '```json'; tail -1 station.log; echo '```'; echo "モード：$MODE"; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODE: ${{ inputs.mode }}
+          URL: ${{ inputs.url }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: station, path: station-out/, retention-days: 7 }
