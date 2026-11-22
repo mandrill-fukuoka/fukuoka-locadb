@@ -1,0 +1,26 @@
+# Overture Maps の店舗が福岡市にどれだけあるか・質はどうかを数える（読み取りだけ。DBは触らない）
+name: overture-probe
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "リリース名（例 2026-11-19.0。空なら最新）"
+        default: ""
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install duckdb
+      - name: 数える
+        shell: bash
+        run: |
+          python tools/overture_probe.py --out overture-out --release "$REL" | tee overture.log
+          { echo '## Overture の店舗（福岡市の範囲）'; cat overture-out/summary.md; } >> "$GITHUB_STEP_SUMMARY"
+        env: { REL: "${{ inputs.release }}" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: overture-probe, path: "overture-out/", retention-days: 7 }
