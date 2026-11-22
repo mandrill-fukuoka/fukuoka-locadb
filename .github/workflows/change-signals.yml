@@ -1,0 +1,33 @@
+# OSM のタグの印（廃業・解体・工事）を数え直し、増えた分を変化リスクにする（DB変更292が先。AIなし・費用ゼロ）
+# 毎週の pipeline にも入っている。これは単独で流す用（最初の基準づくり・確認）。
+#  - dry_run：印のある地物の数だけ出す（書き込みなし）
+#  - apply：印を覚え直し、増えた分を change_risks に入れる（初回は基準を覚えるだけで何も出さない）
+name: change-signals
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run（読み取りのみ）/ apply"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+concurrency:
+  group: ${{ inputs.mode == 'apply' && 'database' || format('change-signals-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  signals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 実行
+        shell: bash
+        run: |
+          python -m locadb.change_signals $( [ "$MODE" = dry_run ] && echo --dry-run ) | tee signals.log
+          { echo '```json'; tail -1 signals.log; echo '```'; echo "モード：$MODE"; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          MODE: ${{ inputs.mode }}
