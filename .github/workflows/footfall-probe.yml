@@ -1,0 +1,21 @@
+# 人通りの材料の調査（国土数値情報の駅別乗降客数・e-Stat の経済センサス）。読み取りだけ。DBは触らない
+name: footfall-probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install requests
+      - name: 調べる
+        shell: bash
+        run: |
+          python tools/footfall_probe.py --out footfall-out | tee footfall.log
+          { echo '## 人通りの材料の調査'; cat footfall-out/summary.md; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: footfall-probe, path: "footfall-out/", retention-days: 7 }
