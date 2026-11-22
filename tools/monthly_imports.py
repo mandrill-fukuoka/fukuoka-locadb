@@ -43,7 +43,8 @@ STEPS: dict[str, list[Step]] = {
         Step("commons-photos", [PY, "-m", "locadb.commons_photos", "{mode}", "--limit", "200"], timeout_min=120),
         Step("mapillary-photos", [PY, "-m", "locadb.mapillary_photos", "{mode}", "--limit", "200"], timeout_min=120),
         Step("addition-candidates", [PY, "-m", "locadb.addition_candidates", "{mode}"], timeout_min=60),
-        Step("bodik-import", [PY, "-m", "locadb.bodik_import", "{mode}"], timeout_min=30),
+        # 住所だけの一覧は座標を引くのに時間がかかる（全件だと30分で終わらない）ので、1回200件ずつ。保存済みは数えないので毎月続きから進む
+        Step("bodik-import", [PY, "-m", "locadb.bodik_import", "{mode}", "--limit", "200"], timeout_min=120),
     ],
 }
 RESCREEN = Step("photo-rescreen", [PY, "-m", "tools.photo_rescreen", "apply", "--yes"], timeout_min=30, only_apply=True)
