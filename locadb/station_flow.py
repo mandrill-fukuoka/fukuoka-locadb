@@ -22,8 +22,16 @@ BBOX = (130.20, 33.43, 130.52, 33.72)           # lon_min, lat_min, lon_max, lat
 URLS = ["https://nlftp.mlit.go.jp/ksj/gml/data/S12/S12-24/S12-24_GML.zip",
         "https://nlftp.mlit.go.jp/ksj/gml/data/S12/S12-23/S12-23_GML.zip"]      # 新しい版が出たらここに足す（上から順に試す）
 MIN_STATIONS = 60                                # これ未満なら取得の失敗とみる（2022年度版で福岡市の範囲に101駅）
-# 年度ごとの4項目（重複コード・データ有無・備考・乗降客数）。最新の版の並び：乗降客数は S12_053（2022）、049（2021）、045（2020）…
-YEAR_PAX = [(2022, "S12_053", "S12_050"), (2021, "S12_049", "S12_046"), (2019, "S12_041", "S12_038")]
+# 年度ごとの4項目（重複コード・データ有無・備考・乗降客数）が2011年度から順に並ぶ（S12_006〜）。最新の年度は列の数から決める：
+#   2022年度版（S12_053まで）→ 2022、次の版（S12_057まで）→ 2023。年度 y の乗降客数は S12_(9+4*(y-2011))、重複コードは S12_(6+4*(y-2011))
+FIRST_YEAR, MIN_YEAR = 2011, 2019                # 最新から 2019（コロナ前）まで、値のある最新の年度を使う
+
+
+def year_keys(props: dict) -> list[tuple[int, str, str]]:
+    n = max((int(k[4:]) for k in props if k.startswith("S12_") and k[4:].isdigit()), default=0)
+    latest = FIRST_YEAR + (n - 5) // 4 - 1
+    return [(y, f"S12_{9 + 4 * (y - FIRST_YEAR):03d}", f"S12_{6 + 4 * (y - FIRST_YEAR):03d}")
+            for y in range(latest, MIN_YEAR - 1, -1)]
 
 
 def fetch_zip(url: str | None = None) -> tuple[bytes, str]:
@@ -71,7 +79,7 @@ def group(feats: list[dict]) -> list[dict]:
         lon, lat = point_of(f["geometry"])
         if not (x0 <= lon <= x1 and y0 <= lat <= y1):
             continue
-        for year, pax_key, dup_key in YEAR_PAX:
+        for year, pax_key, dup_key in year_keys(p):
             pax = p.get(pax_key)
             if pax is not None and pax > 0 and p.get(dup_key) == 1:        # 重複コード 1 だけ数える
                 break
@@ -112,7 +120,8 @@ def main(argv=None) -> int:
     data, url = fetch_zip(a.url or None)
     rows = parse(data)
     source = url.rsplit("/", 1)[-1].replace("_GML.zip", "")
-    stats = {"dry_run": a.dry_run, "source": source, "stations": len(rows), "pax_total": sum(r["pax"] for r in rows),
+    stats = {"dry_run": a.dry_run, "source": source, "stations": len(rows),
+             "years": {str(y): sum(1 for r in rows if r["fiscal_year"] == y) for y in sorted({r["fiscal_year"] for r in rows})}, "pax_total": sum(r["pax"] for r in rows),
              "top": [(r["name"], r["pax"]) for r in rows[:8]]}
     Path(a.out).mkdir(parents=True, exist_ok=True)
     with connect() as conn, job(conn, "station_flow") as st:
