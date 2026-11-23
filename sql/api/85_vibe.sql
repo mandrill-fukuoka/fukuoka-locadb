@@ -14,7 +14,7 @@ begin
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
-create function vibe_version() returns text language sql immutable as $$ select 'vibe-v3'::text $$;
+create function vibe_version() returns text language sql immutable as $$ select 'vibe-v4'::text $$;
 
 -- 0〜1 に収め、小数3桁にする
 create function clamp01(v double precision) returns numeric language sql immutable as $$
@@ -31,15 +31,19 @@ with x as (
          case when ss.confidence = 'ok' then ss.building_cover_100 end as cover,
          case when ss.confidence = 'ok' then sp_road(ss.road_class, ss.road_width_m) end as road,
          ss.water_dist_m as wd, ss.water_kind as wk, ss.spot_id is not null as has_ss,
-         sk.tall_300 as tall
+         sk.tall_300 as tall,
+         case when sf.spot_id is null then null else least(sf.flow_800 / 50000.0, 1) end as st      -- 駅の人の多さ 0〜1（DB変更293。なければ null）
     from spots s join spot_categories sc on sc.code = s.category
     left join spot_spatial ss on ss.spot_id = s.id
     left join spot_skyline sk on sk.spot_id = s.id          -- PLATEAU の建物の高さ（DB変更291。なければ null）
+    left join spot_footfall sf on sf.spot_id = s.id
    where s.id = p_id
 ), v as (
   select x.*,
          -- 店が少ないほど高い（0〜2軒で1.0）
          case when shops is null then null when shops <= 2 then 1.0 when shops <= 5 then 0.6 when shops <= 15 then 0.3 else 0 end as few_shops,
+         case when shops is null then null
+              else 0.8 * least(shops / 30.0, 1) + 0.2 * coalesce(least(cover / 0.3, 1), least(shops / 30.0, 1)) end as ht0,
          case when road = 'narrow' then 1.0 when road = 'normal' then 0.3 when road = 'wide' then 0 end as narrow,
          -- 水辺の近さ（50m未満で1.0、150m未満で0.5）
          case when not has_ss then null when wd is null or wd >= 150 then 0 when wd < 50 then 1.0 else 0.5 end as near_w
@@ -51,13 +55,14 @@ select jsonb_strip_nulls(jsonb_build_object(
   'neon',      clamp01(case when bars is null then null else least(bars / 10.0, 1)
                          + case when cat in ('eatery_street','nightlife_area','yatai_area') then 0.2 else 0 end end),
   'lively',    clamp01(case when shops is null then null else 0.8 * least(shops / 30.0, 1) + 0.2 * coalesce(least(cover / 0.3, 1), least(shops / 30.0, 1)) end),
-  'high_traffic', clamp01(case when shops is null then null else 0.8 * least(shops / 30.0, 1) + 0.2 * coalesce(least(cover / 0.3, 1), least(shops / 30.0, 1)) end),
+  -- 駅が近いときだけ上げる（店の数の点 ht0 に、駅の人の多さの分を残りの幅に加える。駅が遠い地点は変わらない）
+  'high_traffic', clamp01(case when ht0 is null then null else ht0 + 0.3 * coalesce(st, 0) * (1 - least(ht0, 1)) end),
   'lonely',    clamp01(case when few_shops is null then null else 0.6 * few_shops
                          + case when grp in ('residential','green','river','sea','lake','beach') then 0.2 else 0 end
-                         + 0.2 * coalesce(narrow, 0) end),
+                         + 0.2 * coalesce(narrow, 0) - 0.3 * coalesce(st, 0) end),
   'low_traffic', clamp01(case when few_shops is null then null else 0.6 * few_shops
                          + case when grp in ('residential','green','river','sea','lake','beach') then 0.2 else 0 end
-                         + 0.2 * coalesce(narrow, 0) end),
+                         + 0.2 * coalesce(narrow, 0) - 0.3 * coalesce(st, 0) end),
   'calm',      clamp01(case when few_shops is null then null else 0.6 * few_shops
                          + case when grp in ('residential','green','river','sea','lake','beach') then 0.4 else 0 end end),
   'narrow_street', clamp01(case when cat = 'alley' then 1.0 else narrow end),
@@ -138,6 +143,7 @@ $$;
 create function vibe_apply() returns jsonb language plpgsql as $$
 declare v_n int;
 begin
+  perform footfall_refresh();                      -- 駅の乗降客数があれば、地点ごとの駅の人の多さを数え直す（DB変更293）
   perform density_refresh();                       -- Overture の店の点があれば、地点の数ではなくそれで数える（DB変更290）
   update spot_spatial ss set
          bars_150     = coalesce(d.bar_150, c.bars), eateries_150 = coalesce(d.eat_150, c.eat), shops_150 = coalesce(d.shop_150, c.shops)
@@ -202,7 +208,12 @@ create function vibe_line(p_id bigint) returns text language sql stable as $$
            case when ss.confidence = 'ok' and sp_road(ss.road_class, ss.road_width_m) = 'narrow' then '狭い道' end,
            case when ss.confidence = 'ok' and sp_open(ss.open_ratio) = 'open' then '開けている' end,
            case sp_water(ss.water_dist_m) when 'near' then '水辺まで50m未満' when 'close' then '水辺まで150m未満' end,
-           case when sk.tall_300 > 0 then '周り300mに高さ45m以上のビル' || sk.tall_300 || '棟' end), '')
+           case when sk.tall_300 > 0 then '周り300mに高さ45m以上のビル' || sk.tall_300 || '棟' end,
+           case when sf.station_m is not null then '最寄り駅' || sf.station_name || '（1日の乗降 約'
+                  || case when sf.station_pax >= 10000 then round(sf.station_pax / 10000.0, 1) || '万人' else sf.station_pax || '人' end
+                  || '）まで' || sf.station_m || 'm' end), '')
          || '（推定）'
-    from spot_spatial ss left join spot_skyline sk on sk.spot_id = ss.spot_id where ss.spot_id = p_id;
+    from spot_spatial ss left join spot_skyline sk on sk.spot_id = ss.spot_id
+         left join spot_footfall sf on sf.spot_id = ss.spot_id
+   where ss.spot_id = p_id;
 $$;
