@@ -5,7 +5,8 @@ from locadb import station_flow as sf
 
 
 def feat(name, op, line, code, lon, lat, pax22=None, dup22=1, pax19=None, dup19=1):
-    p = {"S12_001": name, "S12_001c": code, "S12_001g": code, "S12_002": op, "S12_003": line,
+    p = {f"S12_{i:03d}": None for i in range(1, 54)}                # 2022年度版の列の数
+    p |= {"S12_001": name, "S12_001c": code, "S12_001g": code, "S12_002": op, "S12_003": line,
          "S12_050": dup22, "S12_053": pax22, "S12_038": dup19, "S12_041": pax19, "S12_046": 1, "S12_049": None}
     return {"geometry": {"type": "LineString", "coordinates": [[lon, lat], [lon + 0.0002, lat]]}, "properties": p}
 
@@ -25,6 +26,15 @@ def test_group_sums_operators_and_skips_duplicates_and_outside():
     assert rows["小さな駅"]["pax"] == 900 and rows["小さな駅"]["fiscal_year"] == 2019
     assert 130.42 < rows["博多"]["lon"] < 130.421                                        # 線の代表点は頂点の平均
     assert sf.group(feats)[0]["name"] == "博多"                                           # 乗降客数の多い順
+
+
+def test_year_keys_follow_the_number_of_columns():
+    p22 = {f"S12_{i:03d}": 0 for i in range(1, 54)}                 # 2022年度版：S12_053 まで
+    ys = sf.year_keys(p22)
+    assert ys[0] == (2022, "S12_053", "S12_050") and ys[1] == (2021, "S12_049", "S12_046") and ys[-1][0] == 2019
+    assert ys[-1] == (2019, "S12_041", "S12_038")
+    p23 = {f"S12_{i:03d}": 0 for i in range(1, 58)}                 # 次の版：S12_057 まで → 2023
+    assert sf.year_keys(p23)[0] == (2023, "S12_057", "S12_054")
 
 
 def test_point_of_handles_point_and_nested_lines():
