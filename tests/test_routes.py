@@ -211,7 +211,7 @@ def test_any_mode_uses_walk_for_short_routes(db):
 
 def test_route_spot_title_reads_unnamed_spots_like_the_screen(db):
     # 保存する流れの名前：名前のない地点は画面と同じ「町丁目の種別」にする（2026-11-24）
-    t = lambda n: db.execute("select route_spot_title(%s)", (n,)).fetchone()[0]
+    t = lambda n: db.execute("select route_spot_title(%s) as t", (n,)).fetchone()["t"]
     assert t("（無名）橋（春吉3丁目）") == "春吉3丁目の橋"
     assert t("（無名）路地") == "路地（名称なし）"
     assert t("中洲屋台街") == "中洲屋台街"
