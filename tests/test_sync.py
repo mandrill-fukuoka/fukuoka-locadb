@@ -67,7 +67,7 @@ def test_A_download_retries_transient_failure_then_succeeds(tmp_path, monkeypatc
     monkeypatch.setattr(osm_source.requests, "get", get)
     info = osm_source.download(tmp_path / "x.pbf", log=lambda *_: None)
     assert info["attempts"] == 3 and info["bytes"] == 4
-    assert no_wait == list(osm_source.DOWNLOAD_WAIT_S)
+    assert no_wait == list(osm_source.DOWNLOAD_WAIT_S[:2])                       # 2回失敗して3回目で成功
 
 
 def test_A_download_does_not_retry_client_error(tmp_path, monkeypatch, no_wait):
