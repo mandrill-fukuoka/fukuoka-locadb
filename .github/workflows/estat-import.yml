@@ -1,0 +1,37 @@
+# 経済センサス（平成28年・500m メッシュ）の従業者数を e-Stat から取り込み、地点ごとの昼の人の多さを数え直す（DB変更294が先。AIなし・費用ゼロ）
+#  - dry_run：本番DBは読むだけ。メッシュの数・合計・上位だけ出す
+#  - apply：workplace_mesh を作り直し、daytime_refresh と vibe_apply を流す（メッシュの数の安全装置つき）。調査は数年に1回なので月次には入れていない
+#  - appId は Secrets の ESTAT_APP_ID（ログには出ない・コードにも書かない）
+name: estat-import
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry_run（読み取りのみ）/ apply（取り込む）"
+        type: choice
+        options: [dry_run, apply]
+        default: dry_run
+concurrency:
+  group: ${{ inputs.mode == 'apply' && 'database' || format('estat-import-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  estat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: 取り込み
+        shell: bash
+        run: |
+          python -m locadb.estat_workers --${MODE//_/-} --out estat-out | tee estat.log
+          { echo '```json'; tail -1 estat.log; echo '```'; echo "モード：$MODE"; } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ESTAT_APP_ID: ${{ secrets.ESTAT_APP_ID }}
+          MODE: ${{ inputs.mode }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: estat, path: estat-out/, retention-days: 7 }
