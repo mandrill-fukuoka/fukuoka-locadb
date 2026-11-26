@@ -1,0 +1,17 @@
+# e-Stat の経済センサス（メッシュ）の表を探す。読み取りだけ。DBは触らない。ESTAT_APP_ID（Secrets）を使う
+name: estat-probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install requests
+      - name: 調べる
+        shell: bash
+        run: python tools/estat_probe.py | tee -a "$GITHUB_STEP_SUMMARY"
+        env: { ESTAT_APP_ID: "${{ secrets.ESTAT_APP_ID }}" }
