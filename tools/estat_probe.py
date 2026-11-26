@@ -9,10 +9,7 @@ import requests
 
 API = "https://api.e-stat.go.jp/rest/3.0/app/json"
 QUERIES = [
-    {"searchWord": "経済センサス M5030", "searchKind": "2"},
-    {"searchWord": "経済センサス メッシュ", "searchKind": "2", "surveyYears": "2021"},
-    {"searchWord": "経済センサス メッシュ", "searchKind": "2", "surveyYears": "2016"},
-    {"searchWord": "経済センサス メッシュ 令和3年", "searchKind": "2"},
+    {"searchWord": "経済センサス M5030 500m", "searchKind": "2", "surveyYears": "2016"},
 ]
 
 
@@ -50,7 +47,7 @@ def main():
         if isinstance(infos, dict):
             infos = [infos]
         if infos:
-            first = infos[0].get("@id"); break
+            first = "8003006559"; break
     if first:
         code, js = call("getMetaInfo", {"statsDataId": first}, app_id)
         cls = (((js.get("GET_META_INFO") or {}).get("METADATA_INF") or {}).get("CLASS_INF") or {}).get("CLASS_OBJ") or []
@@ -58,7 +55,15 @@ def main():
         for o in cls:
             cl = o.get("CLASS")
             cl = [cl] if isinstance(cl, dict) else (cl or [])
-            out.append(f"- {o.get('@id')} {o.get('@name')}: {len(cl)}件 例=" + " / ".join(f"{c.get('@code')}:{c.get('@name')}" for c in cl[:12]))
+            out.append(f"- {o.get('@id')} {o.get('@name')}: {len(cl)}件 例=" + " / ".join(f"{c.get('@code')}:{c.get('@name')}" for c in cl[:40]))
+    if first:
+        code, js = call("getStatsData", {"statsDataId": first, "limit": "12", "metaGetFlg": "N"}, app_id)
+        res = js.get("GET_STATS_DATA") or {}
+        st = (res.get("STATISTICAL_DATA") or {})
+        out.append(f"### 先頭の値 12件（http={code}, 全件数={(st.get('RESULT_INF') or {}).get('TOTAL_NUMBER')}）")
+        vals = (st.get("DATA_INF") or {}).get("VALUE") or []
+        for v in vals[:12]:
+            out.append("- " + json.dumps(v, ensure_ascii=False))
     print("\n".join(out))
     return 0
 
