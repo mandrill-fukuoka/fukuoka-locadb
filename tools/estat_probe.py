@@ -9,9 +9,10 @@ import requests
 
 API = "https://api.e-stat.go.jp/rest/3.0/app/json"
 QUERIES = [
-    {"searchWord": "経済センサス 従業者数 メッシュ", "searchKind": "2"},
-    {"searchWord": "経済センサス 活動調査 500mメッシュ", "searchKind": "2"},
-    {"searchWord": "経済センサス 基礎調査 1kmメッシュ 従業者", "searchKind": "2"},
+    {"searchWord": "経済センサス 5030", "searchKind": "2", "surveyYears": "2021"},
+    {"searchWord": "経済センサス 5030", "searchKind": "2", "surveyYears": "2016"},
+    {"searchWord": "経済センサス 5030 500m", "searchKind": "2"},
+    {"searchWord": "経済センサス 5030 1km", "searchKind": "2"},
 ]
 
 
@@ -42,6 +43,22 @@ def main():
             title = title.get("$") if isinstance(title, dict) else title
             out.append(f"- id={t.get('@id')} 調査年月={t.get('SURVEY_DATE')} 統計={t.get('STATISTICS_NAME')} 表題={title} 範囲={t.get('COLLECT_AREA') or ''}")
         out.append("")
+    first = None
+    for q in QUERIES:
+        code, js = call("getStatsList", {**q, "limit": "5"}, app_id)
+        infos = (((js.get("GET_STATS_LIST") or {}).get("DATALIST_INF") or {}).get("TABLE_INF")) or []
+        if isinstance(infos, dict):
+            infos = [infos]
+        if infos:
+            first = infos[0].get("@id"); break
+    if first:
+        code, js = call("getMetaInfo", {"statsDataId": first}, app_id)
+        cls = (((js.get("GET_META_INFO") or {}).get("METADATA_INF") or {}).get("CLASS_INF") or {}).get("CLASS_OBJ") or []
+        out.append(f"### 先頭の表 {first} の分類（http={code}）")
+        for o in cls:
+            cl = o.get("CLASS")
+            cl = [cl] if isinstance(cl, dict) else (cl or [])
+            out.append(f"- {o.get('@id')} {o.get('@name')}: {len(cl)}件 例=" + " / ".join(f"{c.get('@code')}:{c.get('@name')}" for c in cl[:12]))
     print("\n".join(out))
     return 0
 
