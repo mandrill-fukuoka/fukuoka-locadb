@@ -14,7 +14,7 @@ begin
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
-create function vibe_version() returns text language sql immutable as $$ select 'vibe-v4'::text $$;
+create function vibe_version() returns text language sql immutable as $$ select 'vibe-v5'::text $$;
 
 -- 0〜1 に収め、小数3桁にする
 create function clamp01(v double precision) returns numeric language sql immutable as $$
@@ -32,11 +32,13 @@ with x as (
          case when ss.confidence = 'ok' then sp_road(ss.road_class, ss.road_width_m) end as road,
          ss.water_dist_m as wd, ss.water_kind as wk, ss.spot_id is not null as has_ss,
          sk.tall_300 as tall,
-         case when sf.spot_id is null then null else least(sf.flow_800 / 50000.0, 1) end as st      -- 駅の人の多さ 0〜1（DB変更293。なければ null）
+         case when sf.spot_id is null and sd.spot_id is null then null
+              else least(coalesce(sf.flow_800 / 50000.0, 0) + 0.5 * coalesce(sd.workers_800 / 60000.0, 0), 1) end as st      -- 人の多さ 0〜1。駅の乗降客数（DB変更293）＋昼の従業者数の半分（DB変更294）。なければ null
     from spots s join spot_categories sc on sc.code = s.category
     left join spot_spatial ss on ss.spot_id = s.id
     left join spot_skyline sk on sk.spot_id = s.id          -- PLATEAU の建物の高さ（DB変更291。なければ null）
     left join spot_footfall sf on sf.spot_id = s.id
+    left join spot_daytime sd on sd.spot_id = s.id          -- 経済センサスの従業者数（DB変更294。なければ null）
    where s.id = p_id
 ), v as (
   select x.*,
@@ -143,6 +145,7 @@ $$;
 create function vibe_apply() returns jsonb language plpgsql as $$
 declare v_n int;
 begin
+  perform daytime_refresh();                       -- 経済センサスの従業者数があれば、地点ごとの周りの従業者数を数え直す（DB変更294）
   perform footfall_refresh();                      -- 駅の乗降客数があれば、地点ごとの駅の人の多さを数え直す（DB変更293）
   perform density_refresh();                       -- Overture の店の点があれば、地点の数ではなくそれで数える（DB変更290）
   update spot_spatial ss set
@@ -211,9 +214,11 @@ create function vibe_line(p_id bigint) returns text language sql stable as $$
            case when sk.tall_300 > 0 then '周り300mに高さ45m以上のビル' || sk.tall_300 || '棟' end,
            case when sf.station_m is not null then '最寄り駅' || sf.station_name || '（1日の乗降 約'
                   || case when sf.station_pax >= 10000 then round(sf.station_pax / 10000.0, 1) || '万人' else sf.station_pax || '人' end
-                  || '）まで' || sf.station_m || 'm' end), '')
+                  || '）まで' || sf.station_m || 'm' end,
+           case when sd.workers_800 >= 3000 then '周り800mの従業者 約' || round(sd.workers_800 / 10000.0, 1) || '万人（2016年）' end), '')
          || '（推定）'
     from spot_spatial ss left join spot_skyline sk on sk.spot_id = ss.spot_id
          left join spot_footfall sf on sf.spot_id = ss.spot_id
+         left join spot_daytime sd on sd.spot_id = ss.spot_id
    where ss.spot_id = p_id;
 $$;
