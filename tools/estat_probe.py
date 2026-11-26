@@ -9,10 +9,10 @@ import requests
 
 API = "https://api.e-stat.go.jp/rest/3.0/app/json"
 QUERIES = [
-    {"searchWord": "経済センサス 5030", "searchKind": "2", "surveyYears": "2021"},
-    {"searchWord": "経済センサス 5030", "searchKind": "2", "surveyYears": "2016"},
-    {"searchWord": "経済センサス 5030 500m", "searchKind": "2"},
-    {"searchWord": "経済センサス 5030 1km", "searchKind": "2"},
+    {"searchWord": "経済センサス M5030", "searchKind": "2"},
+    {"searchWord": "経済センサス メッシュ", "searchKind": "2", "surveyYears": "2021"},
+    {"searchWord": "経済センサス メッシュ", "searchKind": "2", "surveyYears": "2016"},
+    {"searchWord": "経済センサス メッシュ 令和3年", "searchKind": "2"},
 ]
 
 
