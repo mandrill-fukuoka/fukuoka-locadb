@@ -6,7 +6,7 @@ begin
   for f in select p.oid::regprocedure as sig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname = 'public' and p.proname in (
               'build_routes','route_name_key','route_score','upsert_route','record_route_search','recommended_flows','popular_sequences',
-              'archive_flow','clear_flow_review')
+              'archive_flow','clear_flow_review','route_spot_title')
   loop execute format('drop function %s', f.sig); end loop;
 end $$;
 
@@ -63,7 +63,9 @@ begin
     v_cand := (select coalesce(jsonb_agg(e.value order by (e.value ->> 'match')::numeric desc, e.ord), '[]'::jsonb)
                  from jsonb_array_elements(
                         coalesce(build_routes(p_seq, p_tags, 'walk', p_area, p_start, greatest(p_limit - p_limit / 2, 1), p_near_lat, p_near_lon, p_near_m, p_kinds), '[]'::jsonb)
-                     || coalesce(build_routes(p_seq, p_tags, 'car',  p_area, p_start, greatest(p_limit / 2, 1), p_near_lat, p_near_lon, p_near_m, p_kinds), '[]'::jsonb))
+                     || coalesce((select jsonb_agg(r.value)          -- 車の候補のうち、全体で4分未満（直線で約900 m 以内）のものは歩ける距離なので出さない（短い流れは徒歩を既定にする。2026-11-24）
+                                    from jsonb_array_elements(build_routes(p_seq, p_tags, 'car', p_area, p_start, greatest(p_limit / 2, 1), p_near_lat, p_near_lon, p_near_m, p_kinds)) r
+                                   where coalesce((r.value ->> 'total_minutes')::numeric, 0) >= 4), '[]'::jsonb))
                       with ordinality e(value, ord));
     for c in select value from jsonb_array_elements(v_cand) loop
       v_ok := true;
@@ -276,6 +278,13 @@ begin
 end $$;
 
 
+-- 流れの名前に使う地点名。「（無名）種別（町丁目）」は「町丁目の種別」、「（無名）種別」は「種別（名称なし）」にする（web/app/lib.php の表示と同じ）
+create function route_spot_title(p_name text) returns text language sql immutable as $$
+  select case when p_name ~ '^（無名）.+（.+）$' then regexp_replace(p_name, '^（無名）(.+?)（(.+)）$', '\2の\1')
+              when p_name like '（無名）%' then substr(p_name, 5) || '（名称なし）'
+              else p_name end
+$$;
+
 -- ---------- ルートを「流れ」として保存（検索ログからの自動保存・手動保存の両方） ----------
 create function upsert_route(p_route jsonb, p_origin text default 'search', p_user text default null)
 returns bigint language plpgsql volatile as $$
@@ -292,7 +301,7 @@ begin
     insert into clusters (code, name, area_code, transition_score, transition_label, total_minutes,
                           travel_mode, origin, route_key, hit_count, last_hit_at)
     values ('FUK-R' || substr(md5(v_key), 1, 8),
-            (select name from spots where id = v_ids[1]) || ' 〜 ' || (select name from spots where id = v_ids[cardinality(v_ids)]),
+            route_spot_title((select name from spots where id = v_ids[1])) || ' 〜 ' || route_spot_title((select name from spots where id = v_ids[cardinality(v_ids)])),   -- 名前のない地点は「町丁目の種別」と書く（画面の表示と同じ。2026-11-24）
             (select area_code from spots where id = v_ids[1]),
             (p_route ->> 'match')::real, p_route ->> 'transition_label',
             (p_route ->> 'total_minutes')::real, p_route ->> 'travel_mode', p_origin, v_key, 0, now())

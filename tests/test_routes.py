@@ -195,6 +195,28 @@ def test_any_mode_does_not_repeat_the_same_places_for_walk_and_car(db):
     assert len({names(r)[0] for r in one}) == len(one)
 
 
+def test_any_mode_uses_walk_for_short_routes(db):
+    # 全体で4分未満（直線で約900 m 以内）の流れは歩ける距離。車の候補は出さず、徒歩にする（2026-11-24）
+    add(db, "港1", "port", 0, 0)
+    add(db, "海1", "coast", 400, 0)
+    seq = ["port_industrial", "sea"]
+    rs = routes(db, seq, mode="any")
+    assert rs and {r["travel_mode"] for r in rs} == {"walk"}
+    # 遠い組（車でしか回れない）は車のまま残る
+    add(db, "港2", "port", 0, 6000)
+    add(db, "海2", "coast", 2500, 6000)
+    rs = routes(db, seq, mode="any")
+    assert any(r["travel_mode"] == "car" and names(r) == ["港2", "海2"] for r in rs)
+
+
+def test_route_spot_title_reads_unnamed_spots_like_the_screen(db):
+    # 保存する流れの名前：名前のない地点は画面と同じ「町丁目の種別」にする（2026-11-24）
+    t = lambda n: db.execute("select route_spot_title(%s) as t", (n,)).fetchone()["t"]
+    assert t("（無名）橋（春吉3丁目）") == "春吉3丁目の橋"
+    assert t("（無名）路地") == "路地（名称なし）"
+    assert t("中洲屋台街") == "中洲屋台街"
+
+
 def php_kinds(scene, seq):
     code = ("require 'web/app/scene.php'; echo json_encode(scene_kinds($argv[1], json_decode($argv[2], true)), JSON_UNESCAPED_UNICODE);")
     out = subprocess.run(["php", "-r", code, scene, json.dumps(seq)], cwd=ROOT, capture_output=True, text=True, check=True)
