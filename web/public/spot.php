@@ -271,7 +271,7 @@ page_header(sn($s) . '（' . ($s['category_name'] ?? '') . '・' . (AREA_LABEL[$
         <h2>撮影の相談先の目安</h2>
         <ul class="permits">
           <?php foreach ($permits as $k): [$t, $d] = PERMIT_HINTS[$k]; ?>
-            <li><strong><?= h($t) ?></strong><span><?= h($d) ?></span></li>
+            <li><strong><?= h($t) ?></strong><span><?= h($d) ?><?= $k === 'road' ? ' ' . h(police_hint($s['area_code'] ?? null)) : '' ?></span></li>
           <?php endforeach; ?>
           <li><strong>まとめて相談</strong><span>福岡市内のロケは、福岡フィルムコミッションが撮影の相談・調整の窓口になれる場合があります。<?php if (cfg('ffc_url')): ?><a href="<?= h(cfg('ffc_url')) ?>" target="_blank" rel="noopener">サイト</a><?php endif; ?></span></li>
         </ul>

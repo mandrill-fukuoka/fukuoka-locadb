@@ -253,6 +253,16 @@ const MODE_LABEL = ['walk' => '徒歩', 'car' => '車', 'mixed' => '徒歩＋車
 const AREA_LABEL = ['fuk-chuo' => '中央区', 'fuk-hakata' => '博多区', 'fuk-higashi' => '東区',
                     'fuk-sawara' => '早良区', 'fuk-nishi' => '西区', 'fuk-minami' => '南区', 'fuk-jonan' => '城南区'];
 
+// 道路使用許可の窓口の目安：地点の区から所轄の警察署の名前を出す（福岡県警。市内は7署。町丁目ごとの公式の管轄表は見つかっていないので、区ごとの目安）
+const POLICE_BY_AREA = ['fuk-higashi' => '東警察署', 'fuk-hakata' => '博多警察署', 'fuk-chuo' => '中央警察署', 'fuk-minami' => '南警察署',
+                        'fuk-jonan' => '城南警察署', 'fuk-sawara' => '早良警察署', 'fuk-nishi' => '西警察署'];
+function police_hint(?string $areaCode): string {
+    $name = POLICE_BY_AREA[$areaCode ?? ''] ?? '';
+    if ($name === '') return '';
+    return 'この地点の区（' . (AREA_LABEL[$areaCode] ?? '') . '）では、' . $name . 'が窓口になるのが目安です。町によっては隣の署の管轄になります。'
+         . '博多港の港湾内は博多臨港警察署、福岡空港の周辺は福岡空港警察署になる場合があります。';
+}
+
 // アクセス解析（Cloudflare Web Analytics。Cookieなし・個人を特定しない）。トークン未設定、またはログイン中（自分の閲覧）は出さない
 function analytics_tag(): string {
     $t = (string)cfg('cf_analytics_token', '');
